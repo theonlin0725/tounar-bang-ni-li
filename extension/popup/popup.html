@@ -64,14 +64,14 @@
       <button id="revoke-all" class="link">全部撤销</button>
     </div>
     <details>
-      <summary>支持的招聘站点（草案选择器，待真实验证）</summary>
+      <summary>内置适配的招聘站点（其余站点授权后自动用通用识别）</summary>
       <div id="site-list"></div>
     </details>
     <div class="row">
       <button id="grant-selected">授权选中站点</button>
     </div>
     <p id="sites-status" class="hint"></p>
-    <p class="warn">站点适配规则尚未用真实登录态逐一验证（G04）；通用页面仅依赖 JSON-LD 结构化岗位信息。</p>
+    <p class="warn">所有已授权站点都会无感采集：内置站点用专属适配器（目前仅字节跳动经真实验证，其余为草案选择器），其余站点用通用识别（结构化数据 + 投递按钮信号）。聊天/沟通页面一律不采集。</p>
   </section>
 
   <footer>

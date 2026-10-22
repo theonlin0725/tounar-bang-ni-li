@@ -14,23 +14,53 @@
 (function () {
   const GENERIC = {
     key: 'generic',
-    label: '通用页面（JSON-LD JobPosting）',
-    version: '1.0.0',
+    label: '通用识别（任意已授权站点）',
+    version: '1.1.0-universal',
     channel: '网页',
     hosts: [],
-    jobUrlPatterns: [/\/job[s]?[/#-]/i, /\/position[s]?\//i, /\/apply/i, /\/career/i, /\/campus/i, /\/zhaopin/i],
-    listUrlPatterns: [/\/job[s]?\/?(\?|$)/i, /\/search/i, /\/list/i],
+    // 覆盖面优先的详情页 URL 线索（只放「指向详情页」的形态；landing 页泛词如 /campus、/career
+    // 不在此处，由 tracker 的「投递按钮信号」把关，避免把公司招聘首页误记为岗位）
+    jobUrlPatterns: [
+      /\/job[s]?[/#-]/i, /\/position[s]?[/#-]/i, /\/post[s]?[/#-]/i, /\/opening[s]?[/#-]/i,
+      /\/vacancy|\/vacancies/i, /\/detail/i, /\/jobdetail/i, /\/jobinfo/i,
+      /job_?id=/i, /position_?id=/i, /post_?id=/i
+    ],
+    listUrlPatterns: [/\/job[s]?\/?(\?|$)/i, /\/position[s]?\/?(\?|$)/i, /\/search/i, /\/list/i, /\/jobs\/?\?/i],
     selectors: {
-      title: ['h1', '[class*="job-title"]', '[class*="jobTitle"]', '[class*="position-title"]'],
-      company: ['[class*="company-name"]', '[class*="companyName"]'],
-      jd: ['[class*="job-detail"]', '[class*="jobDetail"]', '[class*="position-detail"]'],
-      location: ['[class*="job-location"]', '[class*="location"]'],
+      title: ['h1', '[class*="job-title"]', '[class*="jobTitle"]', '[class*="position-title"]', '[class*="post-title"]', '[class*="detail-title"]'],
+      company: ['[class*="company-name"]', '[class*="companyName"]', '[class*="employer"]'],
+      jd: ['[class*="job-detail"]', '[class*="jobDetail"]', '[class*="position-detail"]', '[class*="job-desc"]', '[class*="description"]'],
+      location: ['[class*="job-location"]', '[class*="location"]', '[class*="address"]'],
       success: ['[class*="success"]', '[class*="result"]', '[class*="message"]']
     },
     statusPage: null,
     site_verified: false,
-    notes: '只依赖结构化数据（JSON-LD）与显式 data-tounar-* 状态块；不猜测任意页面文本。'
+    notes: '通用识别链：结构化数据(JSON-LD/data-tounar) → URL 线索 + 投递按钮信号 → og:title/h1/标题 → meta/og 公司名 → 主机映射。不猜测任意页面正文。'
   };
+
+  // 已知招聘官网域名 → 公司名（通用识别的公司字段兜底；聚合平台返回 null，不猜）
+  const HOST_COMPANY = {
+    'join.qq.com': '腾讯', 'careers.tencent.com': '腾讯', 'hr.tencent.com': '腾讯',
+    'jobs.bytedance.com': '字节跳动', 'job.bytedance.com': '字节跳动',
+    'talent.alibaba.com': '阿里巴巴', 'campus.alibaba.com': '阿里巴巴',
+    'campus.meituan.com': '美团', 'zhaopin.meituan.com': '美团', 'hr.meituan.com': '美团',
+    'campus.jd.com': '京东', 'zhaopin.jd.com': '京东',
+    'campus.xiaomi.com': '小米', 'hr.xiaomi.com': '小米',
+    'talent.baidu.com': '百度',
+    'campus.163.com': '网易', 'hr.163.com': '网易',
+    'www.zhipin.com': null, 'zhipin.com': null,
+    'www.nowcoder.com': null, 'nowcoder.com': null,
+    'www.shixiseng.com': null, 'shixiseng.com': null
+  };
+
+  function companyForHost(hostname) {
+    const host = String(hostname || '').toLowerCase().replace(/^www\./, '');
+    if (Object.prototype.hasOwnProperty.call(HOST_COMPANY, host)) return HOST_COMPANY[host];
+    for (const [key, value] of Object.entries(HOST_COMPANY)) {
+      if (host.endsWith(`.${key}`)) return value;
+    }
+    return undefined; // 未知站点：没有映射，也不反对
+  }
 
   const ADAPTERS = [
     {
@@ -384,6 +414,7 @@
     resolveAdapter,
     supportedHosts,
     whitelist,
+    companyForHost,
     statusTextToCanonical,
     SOURCE_NOTE: 'adapter rules are drafts until per-site real-session verification (G04)'
   };

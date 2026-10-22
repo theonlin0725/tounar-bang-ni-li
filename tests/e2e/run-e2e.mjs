@@ -147,7 +147,7 @@ try {
   const ownerHint = await popup.textContent('#owner-hint');
   check('E2E-01b popup 自动完成绑定', paired && String(ownerHint).includes('demo@tounar.local'), `owner=${ownerHint}`);
   const g04Warn = await popup.textContent('.warn');
-  check('E2E-01c popup 明确标注 G04 未验证提示', /G04/.test(String(g04Warn)), String(g04Warn).slice(0, 40));
+  check('E2E-01c popup 如实标注适配验证状态', /仅字节跳动经真实验证|G04/.test(String(g04Warn)), String(g04Warn).slice(0, 40));
 
   // ---------- 4. 岗位详情：2 秒不入库，≥3 秒入库为「看过没投」 ----------
   const pageJob = await context.newPage();

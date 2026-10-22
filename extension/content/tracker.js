@@ -167,6 +167,51 @@
     return '';
   }
 
+  /* 通用识别辅助（任意已授权站点生效，不依赖站点适配器） */
+
+  // 标题清洗：去掉「- 某公司招聘」「_XX官网」这类站点后缀
+  function cleanPageTitle(text) {
+    let t = String(text || '').replace(/\s+/g, ' ').trim();
+    const parts = t.split(/\s+[-_—–·｜|]\s+/);
+    if (parts.length > 1) t = parts[0].trim();
+    t = t.replace(/[-_—–·｜|]?\s*[^-_—–·｜|]{0,20}(招聘|校园招聘|校招|官网|人才招聘|社会招聘|求职|猎聘)\s*$/, '').trim();
+    return t.length > 120 ? t.slice(0, 120) : t;
+  }
+
+  // 从标题尾段拆公司：「产品经理 - 字节跳动招聘」→ 字节跳动
+  function companyFromTitleSuffix() {
+    const title = String(document.title || '');
+    const parts = title.split(/\s+[-_—–·｜|]\s+/);
+    if (parts.length < 2) return '';
+    const last = parts[parts.length - 1].trim();
+    const m = last.match(/^(.{2,20}?)(招聘|校园招聘|校招|官网|人才招聘|社会招聘|求职|猎聘)$/);
+    return m ? m[1].trim() : '';
+  }
+
+  // 投递按钮信号：页面上存在「投递/申请/Apply」类按钮，是岗位详情页的强信号
+  const APPLY_SIGNAL = /^(投递|立即投递|投递简历|申请|立即申请|申请职位|申请岗位|我要申请|网申|报名|立即报名|apply|apply now|apply for|sign up)/i;
+  function findApplySignal() {
+    let nodes;
+    try { nodes = document.querySelectorAll('a, button, [role="button"], input[type="submit"], input[type="button"]'); } catch { return false; }
+    const limit = Math.min(nodes.length, 400);
+    for (let i = 0; i < limit; i += 1) {
+      const el = nodes[i];
+      const text = (el.tagName === 'INPUT' ? el.value : textOf(el)) || '';
+      if (text && text.length <= 15 && APPLY_SIGNAL.test(text.trim())) return true;
+      const hint = `${el.id || ''} ${el.className || ''}`;
+      if (/apply|deliver|toudi/i.test(hint) && text && text.length <= 15) return true;
+    }
+    return false;
+  }
+
+  function titleFromPage(adapterSelectors) {
+    const fromSelectors = firstText(adapterSelectors);
+    if (fromSelectors) return fromSelectors;
+    const og = metaContent(['og:title', 'twitter:title']);
+    if (og) return cleanPageTitle(og);
+    return cleanPageTitle(document.title);
+  }
+
   function hostAsCompany() {
     const host = String(location.hostname || '').replace(/^www\./, '');
     const main = host.split('.')[0] || '';
@@ -202,10 +247,22 @@
     return job;
   }
 
+  // 公司名清洗：「图拉斯招聘」「XX校园招聘」→「图拉斯」
+  function cleanCompanyName(text) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim();
+    const m = t.match(/^(.{2,30}?)(招聘|校园招聘|校招|人才招聘|社会招聘|官网|求职)$/);
+    return (m ? m[1] : t).trim();
+  }
+
   function fillJobFallbacks(job) {
     if (typeof adapter.refine === 'function') applyAdapterRefine(job);
     if (!job.company_name) {
-      job.company_name = firstText(adapter.selectors.company) || metaContent(['og:site_name', 'application-name', 'twitter:site']) || hostAsCompany();
+      job.company_name = cleanCompanyName(
+        firstText(adapter.selectors.company)
+          || metaContent(['og:site_name', 'application-name', 'twitter:site'])
+      ) || Adapters.companyForHost(location.hostname)
+        || companyFromTitleSuffix()
+        || hostAsCompany();
     }
     if (!job.jd_summary) {
       job.jd_summary = clipJd(metaContent(['description', 'og:description', 'twitter:description']) || longestTextBlock());
@@ -251,7 +308,8 @@
     }
 
     const urlLooksDetail = (adapter.jobUrlPatterns || []).some((p) => p.test(location.href));
-    const urlLooksList = (adapter.listUrlPatterns || []).some((p) => p.test(location.href));
+    const urlLooksList = (adapter.listUrlPatterns || []).some((p) => p.test(location.href))
+      || (adapter !== Adapters.GENERIC && (Adapters.GENERIC.listUrlPatterns || []).some((p) => p.test(location.href)));
     if (urlLooksDetail && !urlLooksList) {
       const title = firstText(adapter.selectors.title);
       if (title) {
@@ -262,6 +320,28 @@
           site_job_id: idFromUrl(location.href),
           job_url: canonicalUrl(location.href),
           jd_summary: clipJd(jd),
+          location: firstText(adapter.selectors.location),
+          recruitment_batch: batchFromText(title),
+          channel: adapter.channel
+        });
+      }
+    }
+
+    /* 通用兜底（2026-10-22）：站点适配器没命中时，对**所有**已授权站点启用。
+       判据 = 页面上存在「投递/申请」按钮信号 且 不在列表页 —— 能投的页面才是岗位页，
+       这条规则把所有已授权站点（含用户随手授权的新站点）纳入无感采集。
+       标题走 适配器选择器 → h1 → og:title → document.title（去站点后缀）。
+       只读取可见文本与 meta，不读取表单内容、不上传正文。 */
+    const genericList = (Adapters.GENERIC.listUrlPatterns || []).some((p) => p.test(location.href));
+    if (!genericList && findApplySignal()) {
+      const title = titleFromPage(adapter.selectors.title);
+      if (title && title.length >= 2) {
+        return fillJobFallbacks({
+          company_name: firstText(adapter.selectors.company),
+          job_title: title,
+          site_job_id: idFromUrl(location.href),
+          job_url: canonicalUrl(location.href),
+          jd_summary: clipJd(firstText(adapter.selectors.jd)),
           location: firstText(adapter.selectors.location),
           recruitment_batch: batchFromText(title),
           channel: adapter.channel
