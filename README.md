@@ -2,6 +2,8 @@
 
 投递线索整理与进度追踪：浏览器插件自动采集 → 后台入库 → 网页台账 → 邮件提醒。
 
+仓库：<https://github.com/theonlin0725/tounar-bang-ni-li>（私有）
+
 > 当前状态：**本地链路已跑通并可体验，真实环境尚未验收**（详见 `docs/DELIVERY-REPORT.md`）。
 
 ---
