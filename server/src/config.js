@@ -40,7 +40,8 @@ export const config = {
   dataDir: DATA_DIR,
   dbPath: process.env.DB_PATH || path.join(DATA_DIR, 'tounar.sqlite'),
   webDir: path.join(ROOT, 'web'),
-  host: process.env.HOST || '127.0.0.1',
+  // 发布到托管沙箱时反向代理要求监听 0.0.0.0；本地想收窄可用 HOST=127.0.0.1 覆盖
+  host: process.env.HOST || '0.0.0.0',
   port: intEnv('PORT', 4310),
   appBaseUrl: (process.env.APP_BASE_URL || `http://127.0.0.1:${intEnv('PORT', 4310)}`).replace(/\/$/, ''),
   appEnv: process.env.APP_ENV || 'development',
@@ -84,7 +85,13 @@ export const config = {
   pairingTtlMinutes: intEnv('PAIRING_TTL_MINUTES', 10),
   deviceTokenDays: intEnv('DEVICE_TOKEN_DAYS', 180),
   reminderLinkDays: intEnv('REMINDER_LINK_DAYS', 14),
-  confirmationTtlMinutes: intEnv('CONFIRMATION_TTL_MINUTES', 10)
+  confirmationTtlMinutes: intEnv('CONFIRMATION_TTL_MINUTES', 10),
+  // WorkBuddy 云服务（wbapp_Yw3dKlnEp4jVVAuyNDilAW）：免密钥大模型，用于邮件/页面线索的兜底识别（D09 第一阶段）。
+  // endpoint/publishableKey 属于可公开配置；置空则云端能力整体关闭，自动回退纯规则解析。
+  cloudEndpoint: process.env.CLOUD_ENDPOINT || '',
+  cloudPublishableKey: process.env.CLOUD_PUBLISHABLE_KEY || '',
+  cloudLlmEnabled: boolEnv('CLOUD_LLM_ENABLED', true),
+  cloudLlmTimeoutMs: intEnv('CLOUD_LLM_TIMEOUT_MS', 20000)
 };
 
 export const featureFlags = {
@@ -96,7 +103,7 @@ export const featureFlags = {
   D06: 'frozen 2026-10-22: daily digest; status-updated records silenced next day (consumed outbox); B-class 7-day per-record throttle',
   D07: 'frozen: no inferred interview completion; 已面 N 天 as email tag only',
   D08: `frozen: auto terminal when confidence >= ${config.autoTerminalConfidence}; else review; review digest every ${config.reviewDigestDays} days`,
-  D09: 'frozen direction 2026-10-22: LLM for plugin scanning (site recognition / user behavior / lead capture); implementation planned',
+  D09: 'frozen direction 2026-10-22: LLM for plugin scanning (site recognition / user behavior / lead capture); phase 1 live 2026-10-22: WorkBuddy cloud keyless LLM as mail-parse fallback (never auto-terminal, always review)',
   D10: 'custom local pairing/whitelist; external platform verification blocked (G01/G03)',
   D11: 'frozen: 08:00 Asia/Shanghai trigger; same-day retry; no second-precision guarantee',
   D12: 'frozen: auto-capture default; manual entry fallback with lead autofill',

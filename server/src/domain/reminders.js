@@ -132,13 +132,18 @@ function isMondayShanghai(date = new Date()) {
    避免待确认队列默默堆积无人处理。 */
 export function reviewDigestState(ownerId, now = new Date()) {
   const prefs = getPreferences(ownerId);
-  const open = all(`SELECT * FROM review_items WHERE owner_id = ? AND status = 'open' ORDER BY created_at ASC LIMIT 20`,
+  // 日期标注用原始邮件的接收时间（mail_messages.received_at），不是线索入库时间；
+  // 非邮件来源的线索退回用 created_at。
+  const open = all(`SELECT r.*, m.received_at AS mail_received_at
+    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
+    WHERE r.owner_id = ? AND r.status = 'open' ORDER BY r.created_at ASC LIMIT 20`,
     [ownerId]);
   const total = one(`SELECT COUNT(*) AS c FROM review_items WHERE owner_id = ? AND status = 'open'`, [ownerId])?.c || 0;
   const lastAt = prefs.last_review_digest_at || null;
   const due = total > 0 && (!lastAt || daysBetweenShanghai(lastAt, now) >= config.reviewDigestDays);
   return { due, total, last_at: lastAt, items: open.map((r) => ({
-    id: r.id, summary: r.summary, kind: r.kind, created_at: r.created_at
+    id: r.id, summary: r.summary, kind: r.kind, created_at: r.created_at,
+    dated_at: r.mail_received_at || r.created_at, from_mail: !!r.mail_received_at
   })) };
 }
 
@@ -208,7 +213,9 @@ function reminderBatchText({ owner, a, b, links, digest }) {
   if (digest && digest.due) {
     lines.push(`三、待你确认（${digest.total}）`);
     for (const item of digest.items.slice(0, 8)) {
+      const date = String(item.dated_at || '').slice(0, 10);
       lines.push(`· ${item.summary}`);
+      lines.push(`  ${item.kind} · ${item.from_mail ? '邮件收到于' : '记录创建于'} ${date}`);
     }
     if (digest.total > digest.items.length) lines.push(`  …及其余 ${digest.total - digest.items.length} 条`);
     lines.push(`  处理入口：${appUrl('/?panel=reviews')}`);
@@ -239,7 +246,7 @@ function reminderBatchHtml({ owner, a, b, links, asOf, digest }) {
     ? digest.items.slice(0, 8).map((item) => `
       <tr><td style="padding:10px 0;border-bottom:1px solid #e2e7e1">
         <div style="font-size:14px;color:#151a19">${escapeHtml(item.summary || '')}</div>
-        <div style="margin-top:3px;color:#66716d;font-size:12px">${escapeHtml(item.kind || '')} · ${escapeHtml(String(item.created_at || '').slice(0, 10))}</div>
+        <div style="margin-top:3px;color:#66716d;font-size:12px">${escapeHtml(item.kind || '')} · ${item.from_mail ? '邮件收到于' : '记录创建于'} ${escapeHtml(String(item.dated_at || '').slice(0, 10))}</div>
       </td></tr>`).join('') +
       (digest.total > digest.items.length
         ? `<tr><td style="padding:10px 0;color:#66716d;font-size:13px">…及其余 ${digest.total - digest.items.length} 条</td></tr>` : '')

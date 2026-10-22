@@ -130,11 +130,14 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     const card = h('div', { class: 'tn-review-card', 'data-test': 'review-card', 'data-review-id': review.id });
     const state = { selected: review.candidates?.length === 1 ? review.candidates[0].application_id : null, busy: false, createOpen: false };
 
+    const dateText = review.mail_received_at
+      ? `邮件收到于 ${fmtDateTime(review.mail_received_at)}`
+      : fmtDateTime(review.created_at);
     const head = h('div', { class: 'tn-review-head' },
       h('span', { class: 'tn-review-kind', text: kindLabel(review.kind) }),
       h('div', { class: 'tn-grow' },
         h('div', { class: 'tn-review-title', text: review.summary || '（无摘要）' }),
-        h('div', { class: 'tn-small tn-muted', text: `${reasonLabel(review.reason_code)} · ${fmtDateTime(review.created_at)} · 复核 v${review.version}` })
+        h('div', { class: 'tn-small tn-muted', text: `${reasonLabel(review.reason_code)} · ${dateText} · 复核 v${review.version}` })
       )
     );
     card.append(head);

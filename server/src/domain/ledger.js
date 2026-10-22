@@ -143,8 +143,10 @@ export function reviewList(ownerId, query = {}) {
   const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || '20', 10) || 20));
   const status = query.status || 'open';
   if (!['open', 'resolved', 'dismissed', 'all'].includes(status)) throw new AppError(400, 'VALIDATION_ERROR', 'status 无效');
-  const rows = all(`SELECT * FROM review_items WHERE owner_id = ? ${status === 'all' ? '' : 'AND status = ?'}
-    ORDER BY created_at DESC LIMIT ?`, status === 'all' ? [ownerId, limit] : [ownerId, status, limit]);
+  const rows = all(`SELECT r.*, m.received_at AS mail_received_at
+    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
+    WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
+    ORDER BY r.created_at DESC LIMIT ?`, status === 'all' ? [ownerId, limit] : [ownerId, status, limit]);
   return {
     data: rows.map((row) => ({
       id: row.id,
@@ -159,6 +161,7 @@ export function reviewList(ownerId, query = {}) {
       resolution: safeJsonParse(row.resolution_json, null),
       version: row.version,
       created_at: row.created_at,
+      mail_received_at: row.mail_received_at || null,
       resolved_at: row.resolved_at
     })),
     page: { next_cursor: null, has_more: false }

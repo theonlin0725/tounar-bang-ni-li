@@ -15,11 +15,13 @@
     "test:web": "node tests/e2e/run-web-e2e.mjs",
     "otp:latest": "node server/scripts/latest-otp.js",
     "probe:site": "node tools/probe-site.mjs",
+    "probe:llm": "node --env-file-if-exists .env tools/probe-llm.mjs",
     "plugin:tryrun": "node tools/tryrun-plugin.mjs",
     "remind": "node --env-file-if-exists .env server/scripts/run-reminders.js",
     "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js"
   },
   "dependencies": {
+    "@tencent-ai/workbuddy-cloud-sdk": "^0.1.4-dev.ca27990.202610161713",
     "imapflow": "^2.5.9",
     "nodemailer": "^10.1.7"
   },

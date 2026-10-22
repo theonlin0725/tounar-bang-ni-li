@@ -124,7 +124,17 @@ npm run plugin:tryrun -- "https://某招聘站/某职位页"
 | QQ 邮箱 IMAP 收信 | ✅ | 2026-10-22 真实授权码首扫 71 封成功 |
 | SMTP 真实发信 | ✅ | `smtp.qq.com:465`，需显式 TLS（已在 `mailer.js` 修好） |
 | ≥8 家真实站点 | 🟡 1/8 | 见第七节 |
-| WorkBuddy 云环境 | ⬜ | 仍是本地替代方案 |
+| WorkBuddy 云环境 | ✅ | 2026-10-22 已开通并发布上线，云端免密钥大模型接入邮件解析兜底（D09 第一阶段） |
+
+## 九、云服务与线上版（2026-10-22 接入）
+
+- 线上地址：`https://bangnili.app.workbuddy.host`（托管在 WorkBuddy 应用沙箱，SQLite 随应用运行）
+- 云端大模型：规则解析拿不准的招聘邮件，会调用 WorkBuddy 云（免密钥）做兜底识别；
+  置信度封顶 0.88，**只进待确认队列，绝不自动判终态**（守住 D08 冻结决策）；
+  云端失败静默回退纯规则解析，不影响主流程
+- 开关与配置（`.env`）：`CLOUD_ENDPOINT` / `CLOUD_PUBLISHABLE_KEY` / `CLOUD_LLM_ENABLED`
+- 验证云端链路：`npm run probe:llm`
+- 代码位置：`server/src/cloud/llm.js`（客户端封装）、`server/src/domain/mailSync.js`（调用点）
 
 配真实邮件只需在 `.env` 里填（模板见 `.env.example`）：
 

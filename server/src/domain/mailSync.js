@@ -8,6 +8,7 @@ import {
   candidateApplicationsForText, classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
 } from './mailParser.js';
 import { processMailEvent } from './applications.js';
+import { cloudLlmAvailable, llmClassifyMail } from '../cloud/llm.js';
 
 const IMAP_HOST = process.env.IMAP_HOST || 'imap.qq.com';
 const IMAP_PORT = Number(process.env.IMAP_PORT || 993);
@@ -305,6 +306,25 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           subject, fromDomain: from.address.split('@')[1] || '', bodyText, mode: fresh.mode
         });
         const fields = extractMailFields({ subject, bodyText, fromAddress: from.address });
+        /* D09 第一阶段（2026-10-22）：规则拿不准时（不像招聘邮件 / 类别不明 / 公司名缺失），
+           调用 WorkBuddy 云端大模型兜底。LLM 置信度封顶 0.88，结果只进待确认队列，
+           永远不会触发 D08 的自动终态；云端失败静默回退纯规则结果。 */
+        if (cloudLlmAvailable() && tentativeHeader &&
+            (!classification.relevant || classification.category === 'other' || !fields.company_name)) {
+          const llm = await llmClassifyMail({ subject, bodyText });
+          if (llm) {
+            if (!classification.relevant && llm.relevant && llm.confidence >= 0.5) {
+              const llmStatus = { assessment: 'assessment', interview: 'interview', offer: 'offer', rejection: 'rejected' }[llm.category] || null;
+              classification.relevant = true;
+              classification.category = llm.category === 'rejection' ? 'rejected' : (llm.category || 'other');
+              classification.status = llmStatus;
+              classification.confidence = llm.confidence;
+              classification.reason = 'cloud_llm';
+            }
+            if (!fields.company_name && llm.company_name) fields.company_name = llm.company_name;
+            if (!fields.job_title && llm.job_title) fields.job_title = llm.job_title;
+          }
+        }
         const parsed = { uidvalidity: uidValidity, subject, classification, fields };
         ingestMessage(fresh, {
           uid: message.uid,
