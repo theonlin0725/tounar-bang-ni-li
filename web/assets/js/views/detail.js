@@ -9,7 +9,10 @@ import {
 } from '../util.js';
 
 const SOURCE_LABELS = { plugin: '插件采集', mail: '招聘邮件', manual: '用户确认' };
-const PRECISION_LABELS = { exact: '精确时间', date: '日期级记录', unknown: '时间未知' };
+const PRECISION_LABELS = {
+  exact: '精确时间', date: '日期级记录', unknown: '时间未知',
+  inferred_before: '邮件收到前（推断）'
+};
 
 export function openDetail(id, { gen, onChanged } = {}) {
   const layer = document.getElementById('tn-drawer-layer');
@@ -48,6 +51,21 @@ export function openDetail(id, { gen, onChanged } = {}) {
       clear(bodyEl);
       bodyEl.append(h('div', { class: 'tn-banner err' }, h('div', { class: 'tn-banner-body', text: errorText(err) })));
     }
+  }
+
+  async function undoAutoMail(entry) {
+    const ok = await confirmDialog({
+      title: '撤回这次邮件自动更新？',
+      message: `将把「${current.company_name} · ${current.job_title}」恢复到 ${fmtDateTime(entry.changed_at)} 之前的状态。`,
+      detail: '如果这条记录之后又被改过，系统会拒绝整条撤回，避免覆盖你后来的修改。',
+      confirmLabel: '撤回这次自动更新'
+    });
+    if (!ok) return;
+    await act(async () => api.post(`/api/v1/applications/${encodeURIComponent(id)}/undo-auto-mail`,
+      { expected_version: current.version, history_id: entry.id },
+      { idempotencyKey: idemKey('undo-auto-mail') }), '已撤回这次自动更新', (err) => {
+      toast(err?.message || '撤回失败，请刷新后重试', 'err');
+    });
   }
 
   function render() {
@@ -136,14 +154,21 @@ export function openDetail(id, { gen, onChanged } = {}) {
 
     /* 时间线 */
     const tl = h('ul', { class: 'tn-timeline', 'data-test': 'detail-history' });
-    for (const entry of app.history || []) {
+    for (const [index, entry] of (app.history || []).entries()) {
       const from = entry.from_status ? (STATUS_LABELS[entry.from_status] || entry.from_status) : '—';
       const to = entry.to_status ? (STATUS_LABELS[entry.to_status] || entry.to_status) : '—';
       const fields = Object.keys(entry.changed_fields || {});
+      const canUndoAutoMail = index === 0 && entry.source_method === 'mail'
+        && String(entry.reason || '').startsWith('邮件自动判定');
       tl.append(h('li', {},
         h('div', { class: 'tn-h-time', text: fmtDateTime(entry.changed_at) }),
         h('div', { class: 'tn-h-main', text: entry.from_status === entry.to_status ? `${to}（无状态变化）` : `${from} → ${to}` }),
-        h('div', { class: 'tn-h-fields', text: `${SOURCE_LABELS[entry.source_method] || entry.source_method}${entry.reason ? ` · ${entry.reason}` : ''}${fields.length ? ` · 变更字段：${fields.join(', ')}` : ''}` })
+        h('div', { class: 'tn-h-fields', text: `${SOURCE_LABELS[entry.source_method] || entry.source_method}${entry.reason ? ` · ${entry.reason}` : ''}${fields.length ? ` · 变更字段：${fields.join(', ')}` : ''}` }),
+        canUndoAutoMail ? h('div', { style: { marginTop: '6px' } }, h('button', {
+          class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'detail-undo-auto-mail',
+          text: '这条自动更新不对，撤回',
+          onclick: () => undoAutoMail(entry)
+        })) : null
       ));
     }
     bodyEl.append(section('状态时间线', app.history && app.history.length ? tl : h('div', { class: 'tn-muted tn-small', text: '暂无历史。' })));

@@ -5,7 +5,7 @@
 import { api, errorText } from '../api.js';
 import { App, isStale } from '../app.js';
 import {
-  h, clear, statusChip, fmtDateTime, daysText, debounce, extLink,
+  h, clear, toast, statusChip, fmtDateTime, daysText, debounce, extLink,
   STATUS_LABELS, STATUS_ORDER
 } from '../util.js';
 import { openDetail } from './detail.js';
@@ -25,10 +25,12 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
     items: [], stats: null, counts: null, filtered_total: null,
     page: { has_more: false, next_cursor: null },
     freshness: null, as_of: null, data_revision: null,
-    loading: false, error: null, errorStale: false, lastLoadedAt: null
+    loading: false, error: null, errorStale: false, lastLoadedAt: null,
+    changedIds: new Set(), notice: null, refreshing: false
   };
   let reqSeq = 0;
   let mounted = true;
+  let noticeTimer = null;
 
   main.append(
     h('div', { class: 'tn-stats', id: 'tn-stats' }),
@@ -88,6 +90,11 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
     toolbarEl.append(
       searchInput, statusSelect, sourceSelect, dueWrap, clearBtn,
       h('div', { class: 'tn-toolbar-right' },
+        h('button', {
+          class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'mail-sync-now',
+          title: '立即拉取 QQ 邮箱里的招聘进展；完成后台账自动刷新',
+          onclick: (e) => syncMailNow(e.currentTarget)
+        }, '立即同步邮箱'),
         h('button', {
           class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'open-manual',
           title: '补录漏采岗位（与「已归档」记录入口不同）',
@@ -157,7 +164,12 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
   }
 
   function renderRow(item) {
-    const tr = h('tr', { class: 'tn-row-click', 'data-test': 'ledger-row', 'data-app-id': item.id });
+    const changed = state.changedIds.has(item.id);
+    const tr = h('tr', {
+      class: `tn-row-click${changed ? ' is-changed' : ''}`,
+      'data-test': 'ledger-row', 'data-app-id': item.id,
+      title: changed ? '刚刚根据邮件更新了这条记录' : null
+    });
     tr.addEventListener('click', () => openDetailFor(item.id));
     const subParts = [item.recruitment_batch, item.location].filter(Boolean);
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
@@ -343,6 +355,20 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
       }
     }
     const f = state.freshness;
+    if (state.notice) {
+      bannerEl.append(h('div', { class: 'tn-banner info', 'data-test': 'mail-update-notice' },
+        h('div', { class: 'tn-banner-body', text: state.notice }),
+        h('button', {
+          class: 'tn-btn tn-btn-sm', type: 'button', text: '知道了',
+          onclick: () => {
+            state.notice = null;
+            state.changedIds = new Set();
+            renderBanner();
+            if (state.view !== 'reviews') renderTable();
+          }
+        })
+      ));
+    }
     if (f && (f.mail_status === 'reauth_required' || f.mail_status === 'degraded')) {
       bannerEl.append(h('div', { class: 'tn-banner warn', 'data-test': 'mail-banner' },
         h('div', { class: 'tn-banner-body', text: f.mail_status === 'reauth_required'
@@ -362,7 +388,100 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
     );
   }
 
-  /* ---------- 交互 ---------- */
+  /* ---------- 实时联动（P2） ---------- */
+  async function fetchRevision() {
+    const res = await api.get('/api/v1/revision');
+    return Number(res.data?.data_revision ?? 0);
+  }
+
+  /* 静默检查台账修订号；有变化才重新拉当前列表，并高亮被改动的行。
+     刷新失败不覆盖旧数据、不把失败转成 0（doLoad 自己的错误横幅负责如实展示）。 */
+  async function checkForUpdates({ force = false, announce = true } = {}) {
+    if (!mounted || isStale(gen) || state.refreshing) return;
+    state.refreshing = true;
+    try {
+      const revision = await fetchRevision();
+      if (!force && state.data_revision != null && revision === Number(state.data_revision)) return;
+      const before = new Map(state.items.map((item) => [
+        item.id, `${item.status}|${item.updated_at}|${item.applied_at || ''}`
+      ]));
+      await doLoad({ silent: true });
+      if (!mounted || isStale(gen)) return;
+      const changed = state.items
+        .filter((item) => before.has(item.id)
+          && before.get(item.id) !== `${item.status}|${item.updated_at}|${item.applied_at || ''}`)
+        .map((item) => item.id);
+      const added = state.items.filter((item) => !before.has(item.id)).map((item) => item.id);
+      const ids = [...changed, ...added];
+      if (!announce || !ids.length) return;
+      state.changedIds = new Set(ids);
+      state.notice = `刚刚根据邮件更新了 ${ids.length} 条记录`;
+      renderBanner();
+      if (state.view !== 'reviews') renderTable();
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => {
+        if (!mounted) return;
+        state.changedIds = new Set();
+        state.notice = null;
+        renderBanner();
+        if (state.view !== 'reviews') renderTable();
+      }, 12000);
+    } catch {
+      /* 静默检查失败不打扰用户；手动刷新/错误横幅仍会如实展示 */
+    } finally {
+      state.refreshing = false;
+    }
+  }
+
+  async function syncMailNow(btn) {
+    if (btn.dataset.busy === '1') return;
+    btn.dataset.busy = '1';
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '同步中…';
+    try {
+      const list = await api.get('/api/v1/mail-connections');
+      const conn = (list.data || []).find((c) => c.status !== 'disconnected');
+      if (!conn) {
+        toast('还没有授权 QQ 邮箱；请先到「数据与授权」连接', 'info');
+        openSettingsTab('data');
+        return;
+      }
+      const beforeSuccess = conn.last_sync_success_at || null;
+      await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/sync`, {});
+      toast('同步已开始；完成后台账会自动刷新', 'info');
+      const deadline = Date.now() + 45000;
+      let refreshed = false;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        if (!mounted) return;
+        const revision = await fetchRevision().catch(() => null);
+        if (revision != null && revision !== Number(state.data_revision)) {
+          await checkForUpdates({ force: true, announce: true });
+          refreshed = true;
+          break;
+        }
+        const freshList = await api.get('/api/v1/mail-connections').catch(() => null);
+        const fresh = (freshList?.data || []).find((c) => c.id === conn.id);
+        if (fresh?.last_sync_success_at && fresh.last_sync_success_at !== beforeSuccess) {
+          await checkForUpdates({ force: true, announce: true });
+          refreshed = true;
+          break;
+        }
+        if (fresh && ['reauth_required', 'degraded'].includes(fresh.status)) break;
+      }
+      if (!refreshed) await checkForUpdates({ force: true, announce: true });
+      toast(refreshed ? '台账已按最新邮件刷新' : '同步已结束；台账已刷新', 'ok');
+    } catch (err) {
+      toast(errorText(err), 'err');
+    } finally {
+      btn.dataset.busy = '0';
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+
   function switchView(id) {
     if (state.view === id) return;
     state.view = id;
@@ -420,14 +539,26 @@ export async function renderLedger(main, { gen, panel = null, appId = null } = {
   dueCheck.addEventListener('change', () => { state.due = dueCheck.checked; state.cursor = null; state.cursorStack = []; updateClearBtn(); doLoad(); });
   clearBtn.addEventListener('click', () => { resetFilters(); resetAndLoad(); });
 
-  // 页面重新可见时检查新鲜度（超过 5 分钟则静默刷新）
+  // P2：60 秒 / 重新聚焦时静默检查台账修订号；有变化才刷新，并高亮刚更新的行。
   const onVisible = () => {
     if (document.visibilityState !== 'visible' || !mounted) return;
-    if (!state.lastLoadedAt || Date.now() - state.lastLoadedAt.getTime() > 5 * 60 * 1000) {
-      doLoad({ silent: true });
-    }
+    checkForUpdates();
+  };
+  const onFocus = () => {
+    if (mounted) checkForUpdates();
   };
   document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onFocus);
+  const revisionTimer = setInterval(() => {
+    if (!mounted || isStale(gen)) return;
+    if (document.visibilityState === 'visible') checkForUpdates();
+  }, 60000);
+  window.addEventListener('pagehide', () => {
+    clearInterval(revisionTimer);
+    clearTimeout(noticeTimer);
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', onFocus);
+  }, { once: true });
 
   /* ---------- 首次加载 ---------- */
   buildToolbar();

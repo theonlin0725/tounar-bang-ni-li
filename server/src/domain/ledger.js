@@ -11,7 +11,10 @@ const MATCH_CONFIDENCE = {
   site_application_id: 1,
   site_job_id: 0.9,
   canonical_job_url: 0.9,
-  company_title_only: 0.5
+  company_title_similar: 0.9,
+  company_single_active: 0.85,
+  company_title_only: 0.5,
+  company_multi: 0.5
 };
 
 function matchConfidenceFor(reason) {
@@ -25,12 +28,17 @@ function reviewProjection(row) {
   const classification = Number.isFinite(Number(evidence.confidence)) && evidence.confidence !== null
     ? Number(evidence.confidence) : null;
   const ranked = candidates
-    .map((c) => ({ ...c, match_confidence: matchConfidenceFor(c.match_reason) }))
+    .map((c) => ({
+      ...c,
+      match_confidence: Number.isFinite(Number(c.match_confidence)) && c.match_confidence !== null
+        ? Number(c.match_confidence) : matchConfidenceFor(c.match_reason)
+    }))
     .sort((a, b) => b.match_confidence - a.match_confidence);
   const top = ranked[0] || null;
-  const topIsUnique = !!top && ranked.filter((c) => c.match_confidence === top.match_confidence).length === 1;
-  const suggestedTarget = topIsUnique ? top : null;
-  const matchConfidence = suggestedTarget ? suggestedTarget.match_confidence : (top ? top.match_confidence : null);
+  // P2：只有「唯一候选」才预选目标。多个候选（哪怕最高分唯一）也必须让用户明确选一条，
+  // 否则一键确认会把邮件套到错误的记录上。
+  const suggestedTarget = ranked.length === 1 ? top : null;
+  const matchConfidence = top ? top.match_confidence : null;
   const totalConfidence = matchConfidence == null
     ? null
     : Number(((classification == null ? 1 : classification) * matchConfidence).toFixed(3));
@@ -42,6 +50,7 @@ function reviewProjection(row) {
     evidence,
     suggested_changes: suggested,
     candidates: ranked,
+    candidate_count: ranked.length,
     source_event_id: row.source_event_id,
     status: row.status,
     resolution: safeJsonParse(row.resolution_json, null),
@@ -49,6 +58,8 @@ function reviewProjection(row) {
     created_at: row.created_at,
     resolved_at: row.resolved_at,
     mail_received_at: row.mail_received_at || null,
+    mail_company_name: evidence.company_name || null,
+    mail_job_title: evidence.job_title || null,
     classification_confidence: classification,
     match_confidence: matchConfidence,
     total_confidence: totalConfidence,

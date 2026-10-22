@@ -148,6 +148,8 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .tn-table td { padding: 11px 12px; border-bottom: 1px solid #eef1ec; vertical-align: top; font-size: 13px; }
 .tn-table tr.tn-row-click { cursor: pointer; }
 .tn-table tr.tn-row-click:hover { background: #f8faf7; }
+.tn-table tr.is-changed { background: #eef7ee; box-shadow: inset 3px 0 0 var(--brand); }
+.tn-table tr.is-changed:hover { background: #e5f2e5; }
 .tn-table tr:last-child td { border-bottom: none; }
 .tn-company { font-weight: 600; }
 .tn-job-sub { color: var(--muted); font-size: 12px; margin-top: 2px; }

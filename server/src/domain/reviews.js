@@ -387,6 +387,11 @@ export function undoReviewResolution({ ownerId, reviewId, actor = 'user' }) {
 
 function applyReviewChangesToApplication({ app, review, event, mergedChanges, reason, ownerId, actor }) {
   const updates = {};
+  // P2：邮件复核确认时，如果记录还没投递时间，用收到这封邮件的时间做上限推断；
+  // 这是「不晚于该日投递」的保守值，精度标记 inferred_before，不会伪装成精确时间。
+  const sourceMail = review.source_mail_id
+    ? one('SELECT received_at FROM mail_messages WHERE id = ? AND owner_id = ?', [review.source_mail_id, ownerId])
+    : null;
   if (mergedChanges.company_name) updates.company_name = normalizeWhitespace(mergedChanges.company_name, 200);
   if (mergedChanges.job_title) updates.job_title = normalizeWhitespace(mergedChanges.job_title, 200);
   if (mergedChanges.jd_summary) updates.jd_summary = clipText(mergedChanges.jd_summary, 80);
@@ -405,7 +410,12 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
   if (shouldConfirmApplied && !app.has_applied) {
     updates.has_applied = 1;
     if (!app.applied_at && !updates.applied_at) {
-      if (!config.d12AllowMissingAppliedAt) throw new AppError(422, 'D12_NOT_FROZEN', '缺少可信投递时间，D12 未冻结');
+      if (config.d12AllowMailInferredAppliedAt && sourceMail?.received_at) {
+        updates.applied_at = sourceMail.received_at;
+        updates.applied_at_precision = 'inferred_before';
+      } else if (!config.d12AllowMissingAppliedAt) {
+        throw new AppError(422, 'D12_NOT_FROZEN', '缺少可信投递时间，D12 未冻结');
+      }
     }
     if (!targetStatus && app.status === 'pending') {
       updates.status = 'applied';

@@ -2,7 +2,8 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from './helpers.js';
 import {
-  classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
+  canonicalCompany, classifyRecruitmentMail, companyFromSender, companyFromSubject, extractMailFields,
+  isRecruitmentHeader, jobTitleFromSubject, normalizeTitleForMatch, publicEvidence, stripHtml, titleSimilarity
 } from '../src/domain/mailParser.js';
 
 describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败可见、不假装成功）', () => {
@@ -124,6 +125,37 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     const fromSubject = extractMailFields({ subject: '【银河网络】前端开发实习生 面试邀请', fromAddress: 'campus@hr.example.com', bodyText: '' });
     assert.equal(fromSubject.company_name, '银河网络');
     assert.ok(fromSubject.job_title.includes('前端开发实习生'), fromSubject.job_title);
+  });
+
+  it('P2 匹配辅助：公司别名、发件域名、主题公司/岗位、岗位相似度', () => {
+    assert.equal(canonicalCompany('ByteDance'), '字节跳动');
+    assert.equal(canonicalCompany('抖音'), '字节跳动');
+    assert.equal(canonicalCompany('腾讯音乐'), '腾讯');
+    assert.equal(canonicalCompany('中国电子云'), '中国电子云');
+    assert.equal(companyFromSender('message.cmbchina.com'), '招商银行');
+    assert.equal(companyFromSender('batchmail.nowcoder.net'), null, '招聘平台域名不能映射到具体公司');
+    assert.equal(companyFromSubject('中国电信天翼云邀请你参加在线笔试'), '中国电信');
+    assert.equal(companyFromSubject('【面试通知】您已成功预约招商银行面试'), '招商银行');
+    assert.equal(companyFromSubject('【前端开发实习生】面试邀请'), null, '岗位词不能当公司');
+    assert.equal(jobTitleFromSubject('【银河网络】前端开发实习生 面试邀请'), '前端开发实习生');
+    assert.equal(jobTitleFromSubject('【面试通知】您已成功预约招商银行面试'), null);
+    assert.equal(normalizeTitleForMatch('2027届管理培训生-北京'), '管理培训生');
+    assert.equal(titleSimilarity('前端开发实习生', '前端开发'), 1);
+    assert.equal(titleSimilarity('管培生', '管理培训生'), 1);
+    assert.ok(titleSimilarity('产品经理', '产品运营') < 0.72);
+
+    // 发件域名是强信号：主题里的「香港中文大学」是候选人学校，不是招聘公司
+    const cmb = extractMailFields({
+      subject: 'Re: 香港中文大学-林铭恩-关于笔试时间安排的询问',
+      fromAddress: 'hr@cmbchina.com', bodyText: ''
+    });
+    assert.equal(cmb.company_name, '招商银行');
+    // 主题里的分类词不能当公司
+    const notice = extractMailFields({
+      subject: '【面试通知】您已成功预约招商银行面试',
+      fromAddress: 'hr@nowcoder.net', bodyText: ''
+    });
+    assert.equal(notice.company_name, '招商银行');
   });
 
   it('证据留存：headers_only 不保留正文，recruitment_body 只留摘要', () => {

@@ -20,6 +20,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import { startTestServer, strongViewEvent } from '../../server/test/helpers.js';
 import { resolveChromiumExecutable } from './browser.mjs';
@@ -40,6 +41,19 @@ function check(name, ok, detail = '') {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/* P2 Web E2E 的邮件夹具：真实后端 + 真实 SQLite。这里只在测试库里模拟
+   「邮件链路已经写入的历史/复核」，不绕过任何 HTTP 行为；生产代码不包含测试入口。 */
+function dbExec(dir, sql) {
+  execFileSync('sqlite3', [path.join(dir, 'tounar.sqlite'), sql], { encoding: 'utf8' });
+}
+function dbQuery(dir, sql) {
+  const out = execFileSync('sqlite3', ['-json', path.join(dir, 'tounar.sqlite'), sql], { encoding: 'utf8' }).trim();
+  return out ? JSON.parse(out) : [];
+}
+function sqlQuote(value) {
+  return value == null ? 'NULL' : `'${String(value).replace(/'/g, "''")}'`;
+}
 
 async function waitFor(fn, { timeout = 20000, interval = 150, label = '条件' } = {}) {
   const deadline = Date.now() + timeout;
@@ -326,8 +340,8 @@ try {
     !!review1Id && !!review2Id, `review1=${review1Id} review2=${review2Id}`);
   const confText = (await page.locator(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-confidence]`).textContent()).trim();
   const cardText = await page.locator(`[data-test=review-card][data-review-id="${review1Id}"]`).textContent();
-  check('W-13a 卡片一句话结论 + 把握度（低于 90% 明示需要确认）',
-    /系统把握度 \d+%/.test(confText) && cardText.includes('低于 90% 不会自动改台账')
+  check('W-13a 卡片一句话结论 + 把握度（说明自动更新门槛）',
+    /系统把握度 \d+%/.test(confText) && /需要 (80|90)%/.test(cardText)
       && cardText.includes('对，更新台账'),
     confText.slice(0, 90));
   await shot(page, '05-reviews');
@@ -470,6 +484,128 @@ try {
   check('W-16g 批量确认 ≥80%：两条逐条成功，队列清空',
     batchReviewIds.length === 2 && reviewsAfterBatch.json?.data?.length === 0,
     `batch=${batchReviewIds.length} open=${reviewsAfterBatch.json?.data?.length}`);
+
+  /* ================= 5d. P2 邮件线索：按邮件新建 + 台账静默刷新 / 撤回 ================= */
+  const ownerRows = dbQuery(server.dir, "SELECT id FROM users WHERE email_normalized='ui@tounar.local'");
+  const uiOwnerId = ownerRows[0]?.id;
+  if (!uiOwnerId) throw new Error('P2 邮件夹具需要 UI 用户 id');
+  const stamp = Date.now();
+  const fixtureConn = `conn_web_mail_${stamp}`;
+  const fixtureMail = `mail_web_mail_${stamp}`;
+  const fixtureReview = `rev_web_mail_${stamp}`;
+  const fixtureCompany = '邮件新公司';
+  const fixtureTitle = '邮件新建岗位';
+  const fixtureReceived = new Date(Date.now() - 2 * 86400000).toISOString();
+  const fixtureCreated = new Date().toISOString();
+  dbExec(server.dir, `INSERT INTO mail_connections
+    (id, owner_id, email, mode, scan_since, status, consent_version, created_at, updated_at)
+    VALUES (${sqlQuote(fixtureConn)}, ${sqlQuote(uiOwnerId)}, 'fixture@qq.com', 'headers_only',
+      ${sqlQuote(fixtureReceived)}, 'disconnected', 'QQ_MAIL_READ_CONSENT_V1', ${sqlQuote(fixtureCreated)}, ${sqlQuote(fixtureCreated)})`);
+  dbExec(server.dir, `INSERT INTO mail_messages
+    (id, owner_id, connection_id, mailbox, uidvalidity, uid, message_id, subject_excerpt, from_domain,
+     received_at, category, processing_state, review_item_id, created_at)
+    VALUES (${sqlQuote(fixtureMail)}, ${sqlQuote(uiOwnerId)}, ${sqlQuote(fixtureConn)}, 'INBOX', '1', ${sqlQuote(String(stamp))},
+      ${sqlQuote(`<fixture-${stamp}@example.com>`)}, ${sqlQuote(`${fixtureCompany} 面试邀请`)}, 'mail.example.com',
+      ${sqlQuote(fixtureReceived)}, 'interview', 'pending', ${sqlQuote(fixtureReview)}, ${sqlQuote(fixtureCreated)})`);
+  const fixtureEvidence = JSON.stringify({
+    subject_excerpt: `${fixtureCompany} 面试邀请`,
+    from_domain: 'mail.example.com',
+    category: 'interview',
+    confidence: 0.92,
+    company_name: fixtureCompany,
+    job_title: fixtureTitle,
+    mail_received_at: fixtureReceived
+  });
+  dbExec(server.dir, `INSERT INTO review_items
+    (id, owner_id, kind, reason_code, summary, evidence_json, suggested_changes_json, candidates_json,
+     source_mail_id, status, version, created_at)
+    VALUES (${sqlQuote(fixtureReview)}, ${sqlQuote(uiOwnerId)}, 'mail_progress', 'MAIL_MATCH_UNCONFIRMED',
+      ${sqlQuote(`邮件「${fixtureCompany} 面试邀请」看起来是「${fixtureCompany} · ${fixtureTitle}」的面试邀请，但没对上台账记录`)},
+      ${sqlQuote(fixtureEvidence)}, '{"status":"interview"}', '[]', ${sqlQuote(fixtureMail)}, 'open', 1, ${sqlQuote(fixtureCreated)})`);
+
+  await page.goto('/?panel=reviews');
+  const fixtureCard = page.locator(`[data-test=review-card][data-review-id="${fixtureReview}"]`);
+  await fixtureCard.waitFor({ state: 'visible' });
+  const fixtureCardText = await fixtureCard.textContent();
+  check('W-16h 邮件线索卡片：一句话结论 + 邮件里的公司/岗位 + 新建入口',
+    fixtureCardText.includes(fixtureCompany) && fixtureCardText.includes(fixtureTitle)
+      && fixtureCardText.includes('面试邀请')
+      && await fixtureCard.locator('[data-test=review-create-from-mail]').isVisible(),
+    fixtureCardText.replace(/\s+/g, ' ').slice(0, 120));
+
+  await fixtureCard.locator('[data-test=review-create-from-mail]').click();
+  await fixtureCard.locator('[data-test=review-edit-form]').waitFor();
+  const createCompany = await fixtureCard.locator('[data-test=review-create-company]').inputValue();
+  const createTitle = await fixtureCard.locator('[data-test=review-create-title]').inputValue();
+  const createTarget = await fixtureCard.locator('[data-test=review-target-select]').inputValue();
+  const createAppliedVisible = await fixtureCard.locator('[data-test=review-applied-at]').isVisible();
+  const createApplied = await fixtureCard.locator('[data-test=review-applied-at]').inputValue();
+  check('W-16i 按邮件新建：公司/岗位/收信时间预填，投递时间可见',
+    createCompany === fixtureCompany && createTitle === fixtureTitle && createTarget === '__create__'
+      && createAppliedVisible && createApplied.length >= 10,
+    `target=${createTarget} company=${createCompany} title=${createTitle} applied=${createApplied}`);
+
+  await fixtureCard.locator('[data-test=review-edit-submit]').click();
+  await waitToast(page, '已按这封邮件新建记录');
+  const createdList = await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie });
+  const createdMailApp = (createdList.json?.data?.items || [])
+    .find((x) => x.company_name === fixtureCompany && x.job_title === fixtureTitle);
+  const createdMailDetail = createdMailApp
+    ? await server.request(`/api/v1/applications/${createdMailApp.id}`, { cookie: apiCookie }) : null;
+  check('W-16j 按邮件新建落库：状态=面试，投递时间标记为据邮件推断',
+    !!createdMailDetail?.json?.data && createdMailDetail.json.data.status === 'interview'
+      && createdMailDetail.json.data.has_applied === 1
+      && createdMailDetail.json.data.applied_at_precision === 'inferred_before'
+      && createdMailDetail.json.data.applied_at <= fixtureReceived,
+    `status=${createdMailDetail?.json?.data?.status} precision=${createdMailDetail?.json?.data?.applied_at_precision}`);
+  // 夹具连接用完后删掉，避免影响后面「只允许一个 QQ 邮箱连接」的设置页测试。
+  dbExec(server.dir, `DELETE FROM mail_messages WHERE id = ${sqlQuote(fixtureMail)}`);
+  dbExec(server.dir, `DELETE FROM mail_connections WHERE id = ${sqlQuote(fixtureConn)}`);
+
+  /* 台账静默刷新：模拟邮件链路写入一条「自动更新」历史并推进 revision，焦点回来时应高亮 + 顶部提示。 */
+  await page.goto('/');
+  await page.waitForSelector('[data-test=stat-total]');
+  const refreshLedger = await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie });
+  const refreshTarget = (refreshLedger.json?.data?.items || []).find((x) => x.company_name === '云杉数据');
+  if (!refreshTarget) throw new Error('P2 台账刷新测试需要云杉数据记录');
+  const refreshBefore = await server.request(`/api/v1/applications/${refreshTarget.id}`, { cookie: apiCookie });
+  const refreshApp = refreshBefore.json.data;
+  const refreshAt = new Date().toISOString();
+  const refreshChanged = JSON.stringify({
+    status: { from: refreshApp.status, to: 'interview' },
+    last_status_changed_at: { from: refreshApp.last_status_changed_at, to: refreshAt },
+    last_progress_at: { from: refreshApp.last_progress_at, to: refreshAt }
+  });
+  dbExec(server.dir, `UPDATE applications SET status = 'interview', last_status_changed_at = ${sqlQuote(refreshAt)},
+    last_progress_at = ${sqlQuote(refreshAt)}, updated_at = ${sqlQuote(refreshAt)} WHERE id = ${sqlQuote(refreshTarget.id)}`);
+  dbExec(server.dir, `INSERT INTO application_history
+    (id, owner_id, application_id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason)
+    VALUES (${sqlQuote(`hist_web_mail_${stamp}`)}, ${sqlQuote(uiOwnerId)}, ${sqlQuote(refreshTarget.id)}, NULL,
+      ${sqlQuote(refreshApp.status)}, 'interview', ${sqlQuote(refreshChanged)}, ${sqlQuote(refreshAt)}, 'mail',
+      '邮件自动判定：E2E 模拟邮件更新')`);
+  dbExec(server.dir, "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'data_revision'");
+
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForSelector('[data-test=mail-update-notice]', { timeout: 15000 });
+  const noticeText = (await page.textContent('[data-test=mail-update-notice]')).trim();
+  const highlighted = await page.locator(`[data-test=ledger-row][data-app-id="${refreshTarget.id}"].is-changed`).count();
+  check('W-16k 台账焦点静默刷新：顶部提示 + 变化行高亮',
+    noticeText.includes('刚刚根据邮件更新了 1 条记录') && highlighted === 1,
+    `notice=${noticeText.slice(0, 60)} highlight=${highlighted}`);
+
+  await page.click(`[data-test=ledger-row][data-app-id="${refreshTarget.id}"]`);
+  await page.waitForSelector('[data-test=detail-undo-auto-mail]');
+  await page.click('[data-test=detail-undo-auto-mail]');
+  await page.waitForSelector('[data-test=confirm-ok]');
+  await page.click('[data-test=confirm-ok]');
+  await waitToast(page, '已撤回这次自动更新');
+  const refreshAfterUndo = await server.request(`/api/v1/applications/${refreshTarget.id}`, { cookie: apiCookie });
+  check('W-16l 详情时间线可撤回邮件自动更新：状态恢复且留痕',
+    refreshAfterUndo.json?.data?.status === refreshApp.status,
+    `status=${refreshAfterUndo.json?.data?.status} expected=${refreshApp.status}`);
+  if (await page.locator('[data-test=detail-drawer]').count()) {
+    await page.click('[data-test=detail-drawer] .tn-drawer-close');
+  }
 
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
   await page.click('[data-test=open-settings-reminder]');
@@ -636,8 +772,8 @@ try {
   await page.fill('[data-test=login-code]', otp3);
   await page.click('[data-test=login-submit]');
   await page.waitForSelector('[data-test=header-email]');
-  await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
-  check('W-31 重新登录成功（新会话；数据仍在）', true, 'total=3');
+  await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '4');
+  check('W-31 重新登录成功（新会话；数据仍在）', true, 'total=4（含 P2 按邮件新建的记录）');
   const uiCookie = await sessionCookie(ctx1, server.base);
 
   /* ================= 10. 删除全部数据：重验证 → 设备回执 → completed ================= */

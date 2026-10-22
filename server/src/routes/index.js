@@ -16,7 +16,7 @@ import {
 import {
   archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReviewResolution
 } from '../domain/reviews.js';
-import { manualCreate, getPreferences } from '../domain/applications.js';
+import { manualCreate, getPreferences, undoAutoMailUpdate } from '../domain/applications.js';
 import {
   authenticateDevice, cleanupAck, createPairing, approvePairing, deviceSelf, exchangePairing, heartbeat,
   ingestBatch, revokeDevice
@@ -155,6 +155,10 @@ export function registerRoutes() {
   });
 
   // ---------- ledger ----------
+  route('GET', '/api/v1/revision', (req) => {
+    requireAuth(req);
+    return { data: { data_revision: dataRevision(), as_of: nowIso() } };
+  });
   route('GET', '/api/v1/ledger', (req) => {
     const auth = requireAuth(req);
     return ledgerResponse(auth.ownerId, Object.fromEntries(req.query.entries()));
@@ -223,6 +227,21 @@ export function registerRoutes() {
           expectedVersion: req.body.expected_version,
           archive: req.body.archive !== false,
           reason: req.body.reason
+        });
+        return { data: { ...applicationDetail(auth.ownerId, req.params.id).data, changed: result.changed } };
+      }
+    });
+  });
+  route('POST', '/api/v1/applications/:id/undo-auto-mail', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId, scope: `application.undo_auto_mail:${req.params.id}`, req,
+      handler: () => {
+        const result = undoAutoMailUpdate({
+          ownerId: auth.ownerId,
+          applicationId: req.params.id,
+          historyId: req.body.history_id,
+          expectedVersion: req.body.expected_version
         });
         return { data: { ...applicationDetail(auth.ownerId, req.params.id).data, changed: result.changed } };
       }

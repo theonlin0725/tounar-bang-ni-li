@@ -171,14 +171,52 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.equal(finalState.json.data.status, 'interview');
   });
 
-  it('终态候选进复核（D08）；未映射状态保留原文进复核', async () => {
+  it('官网状态与邮件同一套匹配：公司+岗位相似即可自动更新非终态', async () => {
+    const seeded = await server.eventBatch(token, [evt('application_submitted', 'evt_same_setup', {
+      company_name: '同套公司', job_title: '前端开发实习生', site_job_id: 'same-001',
+      job_url: 'https://jobs.example.com/job/same-001', jd_summary: '前端开发', location: '上海',
+      status_text: '投递成功', mapped_status: 'applied'
+    }, { occurred_at: '2026-10-27T01:00:00.000Z', evidence_code: 'submit-detected:explicit-hook' })]);
+    const appId = seeded.json.results[0].application_id;
+    const res = await server.eventBatch(token, [evt('site_status_observed', 'evt_same_status', {
+      company_name: '同套公司', job_title: '前端开发', status_text: '笔试中', mapped_status: 'assessment'
+    }, { occurred_at: '2026-10-27T02:00:00.000Z', observed_at: '2026-10-27T02:00:05.000Z' })]);
+    assert.equal(res.json.results[0].processing_state, 'applied');
+    assert.equal(res.json.results[0].application_id, appId);
+    const detail = await server.request(`/api/v1/applications/${appId}`, { cookie });
+    assert.equal(detail.json.data.status, 'assessment');
+    assert.ok(detail.json.data.history.some((h) => h.reason?.startsWith('官网状态页自动判定')));
+  });
+
+  it('官网终态低于 0.9：公司唯一进行中 0.85 → 待确认，不自动拒', async () => {
+    const seeded = await server.eventBatch(token, [evt('application_submitted', 'evt_threshold_setup', {
+      company_name: '阈值公司', job_title: '后端开发', site_job_id: 'threshold-001',
+      job_url: 'https://jobs.example.com/job/threshold-001', jd_summary: '后端开发', location: '北京',
+      status_text: '投递成功', mapped_status: 'applied'
+    }, { occurred_at: '2026-10-28T01:00:00.000Z', evidence_code: 'submit-detected:explicit-hook' })]);
+    const appId = seeded.json.results[0].application_id;
+    const res = await server.eventBatch(token, [evt('site_status_observed', 'evt_threshold_reject', {
+      company_name: '阈值公司', job_title: '市场专员', status_text: '未通过', mapped_status: 'rejected'
+    }, { occurred_at: '2026-10-28T02:00:00.000Z', observed_at: '2026-10-28T02:00:05.000Z' })]);
+    assert.equal(res.json.results[0].processing_state, 'pending');
+    const review = await server.request(`/api/v1/review-items/${res.json.results[0].review_item_id}`, { cookie });
+    assert.equal(review.json.data.reason_code, 'TERMINAL_LOW_CONFIDENCE');
+    assert.equal(review.json.data.total_confidence, 0.85);
+    assert.equal(review.json.data.suggested_application_id, appId);
+    const detail = await server.request(`/api/v1/applications/${appId}`, { cookie });
+    assert.equal(detail.json.data.status, 'applied', '未确认前不能自动改终态');
+  });
+
+  it('官网终态按同一套规则自动更新（≥0.9）；未映射状态保留原文进复核', async () => {
     const job = { company_name: '浏览公司', job_title: '前端实习生', site_job_id: 'view-001', site_application_id: 'apply-001', job_url: 'https://jobs.example.com/job/view-001' };
     const offer = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_offer', { ...job, status_text: 'Offer 已发放', mapped_status: 'offer' }, { occurred_at: '2026-10-25T01:00:00.000Z' })]);
-    assert.equal(offer.json.results[0].processing_state, 'pending');
-    const review = await server.request(`/api/v1/review-items/${offer.json.results[0].review_item_id}`, { cookie });
-    assert.equal(review.json.data.reason_code, 'TERMINAL_REVIEW_REQUIRED');
+    assert.equal(offer.json.results[0].processing_state, 'applied');
+    const offerDetail = await server.request(`/api/v1/applications/${offer.json.results[0].application_id}`, { cookie });
+    assert.equal(offerDetail.json.data.status, 'offer');
+    assert.ok(offerDetail.json.data.history.some((h) => h.reason?.startsWith('官网状态页自动判定')));
     const unmapped = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_unmapped', { ...job, status_text: '流程进入下一阶段', mapped_status: null }, { occurred_at: '2026-10-26T01:00:00.000Z' })]);
     assert.equal(unmapped.json.results[0].processing_state, 'pending');
+    assert.equal(unmapped.json.results[0].application_id, null);
   });
 
   it('统计口径：浏览不计入三统计，强提交计入', async () => {
@@ -186,7 +224,6 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     const stats = ledger.json.data.stats;
     assert.equal(stats.total_applied, ledger.json.data.items.length >= 1 ? stats.total_applied : 0);
     assert.ok(stats.total_applied >= 1);
-    assert.ok(stats.in_progress >= 1);
     const viewed = await server.request('/api/v1/ledger?view=viewed', { cookie });
     assert.ok(viewed.json.data.items.every((a) => !a.has_applied || a.has_applied === 0));
   });

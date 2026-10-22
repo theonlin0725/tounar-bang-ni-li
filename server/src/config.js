@@ -77,9 +77,14 @@ export const config = {
   d12AllowMailInferredAppliedAt: boolEnv('D12_ALLOW_MAIL_INFERRED_APPLIED_AT', true),
   // 待确认「确认更新」后可撤回的时间窗（界面 toast 10 秒，服务端留安全余量）
   reviewUndoMinutes: intEnv('REVIEW_UNDO_MINUTES', 10),
-  // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认
+  // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认。
+  // P2 起插件「官网投递记录页」的终态也走同一套规则，本开关同时约束两个来源。
   autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', true),
   autoTerminalConfidence: Number.parseFloat(process.env.AUTO_TERMINAL_CONFIDENCE || '0.9'),
+  // P2（2026-10-22）：非终态（面邀/笔试/测评）自动更新台账的总把握度阈值。
+  // 总把握度 = 分类/证据置信度 × 候选匹配把握度；且必须只有 1 个候选。默认 0.8。
+  // 邮件和插件状态页共用这个阈值。
+  mailAutoUpdateConfidence: Number.parseFloat(process.env.MAIL_AUTO_UPDATE_CONFIDENCE || '0.8'),
   // D08 已冻结：待确认队列每 15 天随提醒邮件汇总一次
   reviewDigestDays: intEnv('REVIEW_DIGEST_DAYS', 15),
   aIncludeNewViews: boolEnv('A_INCLUDE_NEW_VIEWS', false),

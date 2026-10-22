@@ -27,6 +27,7 @@ const KIND_LABELS = {
 
 const REASON_LABELS = {
   MAIL_MATCH_UNCONFIRMED: '邮件没对上具体记录',
+  MAIL_SUGGESTED_NEEDS_CONFIRM: '邮件建议需你确认',
   MULTIPLE_APPLICATION_CANDIDATES: '有多个候选记录',
   COMPANY_TITLE_ONLY: '只对上公司 + 岗位',
   TERMINAL_REVIEW_REQUIRED: '终态变化需人工确认',
@@ -193,6 +194,10 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     const suggestedStatus = review.suggested_status || null;
     const suggestedTarget = review.suggested_application || null;
     const candidates = review.candidates || [];
+    const evidence = review.evidence || {};
+    const mailCompany = suggested.company_name || evidence.company_name || null;
+    const mailTitle = suggested.job_title || evidence.job_title || null;
+    const candidateCount = review.candidate_count ?? candidates.length;
     const receivedAt = review.mail_received_at || null;
     const dateLabel = receivedAt ? monthDay(receivedAt) : null;
     const state = {
@@ -217,13 +222,22 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     /* 一句话结论 */
     const subjectTarget = suggestedTarget
       ? targetText(suggestedTarget.company_name, suggestedTarget.job_title)
-      : targetText(suggested.company_name, suggested.job_title);
+      : targetText(mailCompany, mailTitle);
+    const multipleCandidates = candidateCount > 1 && !suggestedTarget;
+    const terminal = ['offer', 'rejected', 'closed'].includes(suggestedStatus);
     const conclusion = h('div', { class: 'tn-review-conclusion', 'data-test': 'review-conclusion' });
-    if (subjectTarget) {
+    if (multipleCandidates) {
       conclusion.append(h('div', { class: 'tn-review-title' },
-        h('span', { text: dateLabel ? `${dateLabel}收到的这封邮件，系统判断是 ` : '系统判断这条线索是 ' }),
+        h('span', { text: dateLabel ? `${dateLabel}收到的这封邮件` : '这条线索' }),
+        h('span', { text: `可能对应你台账里的 ${candidateCount} 条记录，系统没有自动选。请在下方面板选一条，再确认进展。` }),
+        suggestedStatus ? h('span', { text: ` 建议状态：${progressLabel(suggestedStatus)}。` }) : null
+      ));
+    } else if (subjectTarget) {
+      conclusion.append(h('div', { class: 'tn-review-title' },
+        h('span', { text: dateLabel ? `${dateLabel}收到的这封邮件，${suggestedTarget ? '系统判断是 ' : '看起来是 '}` : `${suggestedTarget ? '系统判断这条线索是 ' : '这条线索看起来是 '}` }),
         h('strong', { text: `「${subjectTarget}」` }),
-        h('span', { text: suggestedStatus ? `的「${progressLabel(suggestedStatus)}」。` : '的招聘进展。' })
+        h('span', { text: suggestedStatus ? `的「${progressLabel(suggestedStatus)}」。` : '的招聘进展。' }),
+        suggestedTarget ? null : h('span', { text: '但没对上台账里的记录，需要你指定或新建。' })
       ));
     } else {
       conclusion.append(h('div', { class: 'tn-review-title' },
@@ -239,7 +253,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     if (matchPct != null) explain.push(`匹配 ${matchPct}%`);
     if (total != null) {
       conclusion.append(h('div', { class: 'tn-small tn-muted', 'data-test': 'review-confidence',
-        text: `系统把握度 ${total}%${explain.length ? `（${explain.join(' × ')}）` : ''}。低于 90% 不会自动改台账，所以请你确认一下。` }));
+        text: `系统把握度 ${total}%${explain.length ? `（${explain.join(' × ')}）` : ''}。${terminal ? '拒信 / Offer 这类终态需要 90%' : '面邀 / 笔试这类进展需要 80%'}，并且只能对上 1 条记录才会自动更新。这条还没到门槛，所以请你确认。` }));
     } else {
       conclusion.append(h('div', { class: 'tn-small tn-muted', 'data-test': 'review-confidence',
         text: '系统把握度不足：需要你确认它对应哪条记录、是哪种进展。' }));
@@ -257,19 +271,20 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     }
 
     /* 证据折叠区 */
-    const ev = review.evidence || {};
     const evRows = [];
     const addEv = (label, value) => {
       if (value == null || value === '') return;
       evRows.push(h('div', {}, h('span', { class: 'tn-muted', text: `${label}：` }), h('span', { text: String(value).slice(0, 300) })));
     };
-    addEv('邮件主题', ev.subject_excerpt || review.summary);
-    addEv('发件域名', ev.from_domain);
-    addEv('正文片段', ev.body_excerpt);
+    addEv('邮件主题', evidence.subject_excerpt || review.summary);
+    addEv('邮件里的公司', evidence.company_name);
+    addEv('邮件里的岗位', evidence.job_title);
+    addEv('发件域名', evidence.from_domain);
+    addEv('正文片段', evidence.body_excerpt);
     addEv('收到日期', receivedAt ? fmtDateTime(receivedAt) : null);
-    addEv('来源站点', ev.site_key);
-    addEv('页面状态文本', ev.status_text);
-    addEv('证据强度', ev.evidence_level === 'strong' ? '强' : ev.evidence_level === 'weak' ? '弱' : ev.evidence_level);
+    addEv('来源站点', evidence.site_key);
+    addEv('页面状态文本', evidence.status_text);
+    addEv('证据强度', evidence.evidence_level === 'strong' ? '强' : evidence.evidence_level === 'weak' ? '弱' : evidence.evidence_level);
     if (evRows.length) {
       card.append(h('details', { class: 'tn-review-section', 'data-test': 'review-evidence' },
         h('summary', { class: 'tn-small tn-muted', style: { cursor: 'pointer' }, text: '证据（点开看邮件主题 / 发件人 / 片段）' }),
@@ -362,19 +377,26 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     });
     card.append(h('div', { class: 'tn-review-section' },
       h('div', { class: 'tn-action-row' }, confirmBtn, editBtn, dismissBtn),
+      !suggestedTarget ? h('div', { class: 'tn-action-row', style: { marginTop: '6px' } },
+        h('button', {
+          class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'review-create-from-mail',
+          text: '按邮件新建一条',
+          onclick: () => toggleEdit(true)
+        })
+      ) : null,
       h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' },
         text: '提交前会重新读取这条线索和记录的最新版本；如果刚被别处改过，会提示你重新确认，不会静默覆盖。' }),
       errBox
     ));
 
-    function toggleEdit() {
-      state.editOpen = !state.editOpen;
+    function toggleEdit(createMode = false) {
+      state.editOpen = createMode ? true : !state.editOpen;
       editBtn.textContent = state.editOpen ? '收起「我来改」' : '不对，我来改';
-      if (state.editOpen) renderEditForm();
+      if (state.editOpen) renderEditForm(createMode);
       else clear(editHost);
     }
 
-    function renderEditForm() {
+    function renderEditForm(createMode = false) {
       clear(editHost);
       const form = buildEditForm(review, {
         candidates,
@@ -383,6 +405,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
         suggestedTarget,
         receivedAt,
         initialTargetId: state.selected,
+        initialCreate: createMode,
         onBusy: (v) => { state.busy = v; confirmBtn.disabled = v; dismissBtn.disabled = v; },
         onResolved: () => refreshAfterChange(),
         onCancel: () => toggleEdit(),
@@ -397,6 +420,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
   /* ---------- 「不对，我来改」表单 ---------- */
   function buildEditForm(review, opts) {
     const { candidates, suggested, suggestedStatus, suggestedTarget, receivedAt } = opts;
+    const evidence = review.evidence || {};
     const known = new Map();
     for (const c of candidates) {
       known.set(c.application_id, {
@@ -443,8 +467,8 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
       h('div', { class: 'tn-hint', text: '只搜索你自己的记录；包含「看过没投」和已归档。' }));
 
     const createWrap = h('div', { style: { display: 'none' } });
-    const cCompany = h('input', { class: 'tn-input', value: suggested.company_name || '', 'data-test': 'review-create-company' });
-    const cTitle = h('input', { class: 'tn-input', value: suggested.job_title || '', 'data-test': 'review-create-title' });
+    const cCompany = h('input', { class: 'tn-input', value: suggested.company_name || evidence.company_name || '', 'data-test': 'review-create-company' });
+    const cTitle = h('input', { class: 'tn-input', value: suggested.job_title || evidence.job_title || '', 'data-test': 'review-create-title' });
     const cJd = h('textarea', { class: 'tn-textarea' });
     cJd.value = suggested.jd_summary || '';
     const cUrl = h('input', { class: 'tn-input', type: 'url', value: suggested.job_url || '', placeholder: 'https://…' });
@@ -475,6 +499,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
 
     let mode = 'existing';
     let currentInfo = null;
+    let appliedPrefilled = false;
 
     async function loadTargetInfo(id) {
       currentInfo = known.get(id) || null;
@@ -496,7 +521,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
         appliedHint.textContent = receivedAt
           ? '这条记录原来没有投递时间。默认填收信日期，标记为「据邮件推断（≤ 收信日）」；你可以改成实际日期。'
           : '这条记录没有投递时间。请填一个你确认过的日期；不会用今天代替。';
-        if (receivedAt && !appliedInput.value) appliedInput.value = toShanghaiInput(new Date(receivedAt));
+        if (receivedAt && !appliedInput.value) { appliedInput.value = toShanghaiInput(new Date(receivedAt)); appliedPrefilled = true; }
       } else {
         appliedField.style.display = 'none';
         appliedInput.value = '';
@@ -505,16 +530,33 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
 
     function syncTimeField() {
       const needsTime = NEEDS_APPLIED_AT.has(statusSel.value);
+      if (mode === 'create') {
+        appliedField.style.display = needsTime ? '' : 'none';
+        appliedHint.textContent = receivedAt
+          ? '这条记录还没有投递时间。默认按收信日期记为「据邮件推断（≤ 收信日）」；你也可以改成实际投递日期。'
+          : '这条记录还没有投递时间。请填一个你确认过的日期；不会用今天代替。';
+        if (needsTime && receivedAt && !appliedInput.value) {
+          appliedInput.value = toShanghaiInput(new Date(receivedAt));
+          appliedPrefilled = true;
+        }
+        if (!needsTime) { appliedInput.value = ''; appliedPrefilled = false; }
+        return;
+      }
       const missingTime = !currentInfo?.applied_at;
-      if (mode !== 'existing') { appliedField.style.display = 'none'; return; }
       if (needsTime && missingTime) {
         appliedField.style.display = '';
-        if (receivedAt && !appliedInput.value) appliedInput.value = toShanghaiInput(new Date(receivedAt));
+        if (receivedAt && !appliedInput.value) {
+          appliedInput.value = toShanghaiInput(new Date(receivedAt));
+          appliedPrefilled = true;
+        }
       } else {
         appliedField.style.display = 'none';
         appliedInput.value = '';
+        appliedPrefilled = false;
       }
     }
+
+    appliedInput.addEventListener('input', () => { appliedPrefilled = false; });
 
     targetSel.addEventListener('change', async () => {
       const value = targetSel.value;
@@ -578,7 +620,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
           changes.has_applied = true;
           if (appliedInput.value) {
             changes.applied_at = new Date(`${appliedInput.value}:00+08:00`).toISOString();
-            changes.applied_at_precision = 'date';
+            changes.applied_at_precision = appliedPrefilled ? 'inferred_before' : 'date';
           } else if (receivedAt) {
             changes.applied_at = receivedAt;
             changes.applied_at_precision = 'inferred_before';
@@ -598,7 +640,9 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
         changes.applied_at = appliedInput.value
           ? new Date(`${appliedInput.value}:00+08:00`).toISOString()
           : receivedAt;
-        changes.applied_at_precision = appliedInput.value ? 'date' : 'inferred_before';
+        changes.applied_at_precision = appliedInput.value
+          ? (appliedPrefilled ? 'inferred_before' : 'date')
+          : 'inferred_before';
       }
       if (!Object.keys(changes).length) { showErr(errBox, '没有要修改的内容：请选择目标状态，或改用「对，更新台账」直接确认'); return; }
       if (statusSel.value && currentInfo && !currentInfo.has_applied && NEEDS_APPLIED_AT.has(statusSel.value)) {
@@ -611,7 +655,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
       });
     });
 
-    appliedField.append(h('label', { text: '投递时间（缺失时才需要填）' }), appliedInput, appliedHint);
+    appliedField.append(h('label', { text: '投递时间' }), appliedInput, appliedHint);
 
     const form = h('div', { class: 'tn-inline-form', 'data-test': 'review-edit-form', style: { marginTop: '12px' } },
       h('h4', { style: { margin: '0 0 8px' }, text: '我来改：选择记录 / 状态' }),
@@ -631,7 +675,14 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
       )
     );
 
-    if (opts.initialTargetId && known.has(opts.initialTargetId)) {
+    if (opts.initialCreate) {
+      mode = 'create';
+      targetSel.value = '__create__';
+      createWrap.style.display = '';
+      submitBtn.textContent = '创建并处理';
+      syncTimeField();
+      cCompany.focus();
+    } else if (opts.initialTargetId && known.has(opts.initialTargetId)) {
       loadTargetInfo(opts.initialTargetId);
     } else if (!candidates.length) {
       /* 没有候选时直接把「搜索本人台账」展开，少点一次。 */

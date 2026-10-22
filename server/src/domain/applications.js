@@ -5,6 +5,7 @@ import {
   clipText, daysBetweenShanghai, isDueForReview, isSafeHttpUrl, maxIso, newId, normalizeCompanyKey,
   normalizeWhitespace, nowIso, parseIso, safeJsonParse, sanitizeUrl, shanghaiDateKey, sourceMethods
 } from '../util.js';
+import { canonicalCompany, companyFromSender, titleSimilarity } from './mailParser.js';
 
 export const PUBLIC_APPLICATION_FIELDS = [
   'id', 'company_name', 'job_title', 'recruitment_batch', 'location', 'jd_summary', 'channel',
@@ -121,14 +122,81 @@ export function findCandidates(ownerId, fields) {
   return candidates;
 }
 
-export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {}, sourceMailId = null }) {
+/* P2（2026-10-22）：邮件专用候选匹配，不改插件去重逻辑。
+   把握度分档（与任务书一致）：
+   - 申请编号命中 = 1.0
+   - 公司命中 + 岗位高度相似 = 0.9
+   - 该公司只有 1 条进行中的申请 = 0.85
+   - 只命中公司且有多条进行中 = 0.5
+   公司名先经过别名表归一（字节跳动 / ByteDance / 抖音），发件域名只在主题/正文都没有公司时兜底。
+   只匹配未归档记录；终态记录不参与「进行中」计数。 */
+export function findMailCandidates(ownerId, fields) {
+  const apps = all('SELECT * FROM applications WHERE owner_id = ? AND archived_at IS NULL ORDER BY updated_at DESC',
+    [ownerId]);
+  const seen = new Map();
+  const add = (app, reason, matchConfidence) => {
+    if (!app) return;
+    const existing = seen.get(app.id);
+    if (existing && existing.match_confidence >= matchConfidence) return;
+    seen.set(app.id, { application: app, reason, match_confidence: matchConfidence });
+  };
+  if (fields.site_application_id) {
+    const rows = fields.site_key
+      ? apps.filter((a) => a.site_key === fields.site_key && a.site_application_id === fields.site_application_id)
+      : apps.filter((a) => a.site_application_id === fields.site_application_id);
+    for (const app of rows) add(app, 'site_application_id', 1);
+  }
+  if (fields.site_job_id) {
+    const rows = fields.site_key
+      ? apps.filter((a) => a.site_key === fields.site_key && a.site_job_id === fields.site_job_id)
+      : apps.filter((a) => a.site_job_id === fields.site_job_id);
+    for (const app of rows) add(app, 'site_job_id', 0.9);
+  }
+  if (fields.canonical_job_url) {
+    for (const app of apps) {
+      if (app.canonical_job_url === fields.canonical_job_url) add(app, 'canonical_job_url', 0.9);
+    }
+  }
+  const incomingCompany = canonicalCompany(fields.company_name) || companyFromSender(fields.from_domain);
+  const companyKey = normalizeCompanyKey(incomingCompany);
+  if (companyKey) {
+    const sameCompany = apps.filter((a) => normalizeCompanyKey(canonicalCompany(a.company_name) || a.company_name) === companyKey);
+    if (fields.job_title) {
+      for (const app of sameCompany) {
+        // 0.72 是包含/二元组相似度的保守下限：允许「前端开发」≈「前端开发实习生」，
+        // 但「产品经理」和「产品运营」只有 0.33，不会误配。
+        if (titleSimilarity(app.job_title, fields.job_title) >= 0.72) {
+          add(app, 'company_title_similar', 0.9);
+        }
+      }
+    }
+    const active = sameCompany.filter((a) => !TERMINAL.has(a.status));
+    if (active.length === 1) add(active[0], 'company_single_active', 0.85);
+    else if (active.length > 1) {
+      for (const app of active) add(app, 'company_multi', 0.5);
+    }
+  }
+  const ranked = [...seen.values()];
+  // 申请编号 / 岗位 id / 岗位链接是「身份键」：命中后，同公司的其它记录只是噪声，
+  // 不应把唯一命中拖成「多候选」。两个身份键同时指向不同记录时仍然算多候选。
+  const exact = ranked.filter((c) => c.match_confidence === 1);
+  if (exact.length) return exact;
+  const identity = ranked.filter((c) => ['site_job_id', 'canonical_job_url'].includes(c.reason));
+  return identity.length ? identity : ranked;
+}
+
+export function createReviewForEvent(event, {
+  kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {}, sourceMailId = null,
+  candidates: providedCandidates = null
+}) {
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
-  const candidates = findCandidates(event.owner_id, {
+  const matched = providedCandidates || findCandidates(event.owner_id, {
     ...fields,
     canonical_job_url: fields.canonical_job_url || canonicalJobUrl(fields.job_url)
-  }).map(({ application, reason }) => ({
+  });
+  const candidates = matched.map(({ application, reason, match_confidence: matchConfidence }) => ({
     application_id: application.id,
     application_version: application.version,
     company_name: application.company_name,
@@ -137,7 +205,8 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
     recruitment_batch: application.recruitment_batch,
     status: application.status,
     has_applied: !!application.has_applied,
-    match_reason: reason
+    match_reason: reason,
+    ...(Number.isFinite(Number(matchConfidence)) ? { match_confidence: Number(matchConfidence) } : {})
   }));
   const id = newId('rev');
   // P0（2026-10-22）：source_mail_id 必须一路带下来。缺了它，待确认列表与提醒邮件
@@ -289,7 +358,12 @@ function maybeSetRound(app, fields, eventId, sourceMethod) {
   return markApplicationChanged(app.owner_id, app.id, eventId, sourceMethod, updates, { reason: '面试属性更新' });
 }
 
-export function applyStatusTransition(app, targetStatus, event, { sourceMethod, reviewTerminal = true } = {}) {
+export function applyStatusTransition(app, targetStatus, event, {
+  sourceMethod, reviewTerminal = true,
+  allowInferredAppliedAt = false,
+  inferredAppliedAt = null,
+  reason = '统一状态处理器'
+} = {}) {
   if (!STATUSES.includes(targetStatus)) {
     return { ok: false, review: { kind: 'status_conflict', reasonCode: 'UNKNOWN_STATUS', summary: '无法识别目标状态' } };
   }
@@ -306,7 +380,9 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
   if (TERMINAL.has(targetStatus) && reviewTerminal) {
     return { ok: false, review: { kind: 'terminal_candidate', reasonCode: 'TERMINAL_REVIEW_REQUIRED', summary: '终态候选需要用户确认' } };
   }
-  if (APPLIED_STATUSES.has(targetStatus) && !app.has_applied) {
+  // P2：邮件自动/确认更新允许把「已浏览但未确证投递」的记录推进到已投状态，
+  // 投递时间用收到邮件的时间做上限推断（inferred_before），不再要求用户先手工补日期。
+  if (APPLIED_STATUSES.has(targetStatus) && !app.has_applied && !allowInferredAppliedAt) {
     return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'HAS_APPLIED_UNCONFIRMED', summary: '状态需要正式申请确证' } };
   }
   const oldRank = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 }[app.status];
@@ -314,7 +390,7 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
   if (newRank < oldRank && !TERMINAL.has(targetStatus)) {
     return { ok: false, review: { kind: 'status_conflict', reasonCode: 'STATUS_REGRESSION', summary: '后到事件试图回退状态' } };
   }
-  const changedAt = event.occurred_at || nowIso();
+  const changedAt = event.occurred_at || inferredAppliedAt || nowIso();
   const updates = {
     status: targetStatus,
     has_applied: 1,
@@ -322,15 +398,26 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
     last_progress_at: changedAt
   };
   if (!app.applied_at) {
-    const appliedAt = eventAppliedAt(event);
-    if (appliedAt) {
-      updates.applied_at = appliedAt;
+    const exactAppliedAt = parseIso(event.payload?.applied_at) || parseIso(event.payload?.applied_date);
+    if (exactAppliedAt) {
+      updates.applied_at = exactAppliedAt;
       updates.applied_at_precision = 'exact';
+    } else if (allowInferredAppliedAt && inferredAppliedAt) {
+      updates.applied_at = inferredAppliedAt;
+      updates.applied_at_precision = 'inferred_before';
+    } else if (sourceMethod !== 'mail') {
+      const fallback = eventAppliedAt(event);
+      if (fallback) {
+        updates.applied_at = fallback;
+        updates.applied_at_precision = 'exact';
+      } else if (!config.d12AllowMissingAppliedAt) {
+        return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT', summary: '缺少可信投递时间，D12 未冻结' } };
+      }
     } else if (!config.d12AllowMissingAppliedAt) {
       return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT', summary: '缺少可信投递时间，D12 未冻结' } };
     }
   }
-  let updated = markApplicationChanged(app.owner_id, app.id, event.id, sourceMethod, updates, { reason: '统一状态处理器' });
+  let updated = markApplicationChanged(app.owner_id, app.id, event.id, sourceMethod, updates, { reason });
   updated = maybeSetRound(updated, event.payload || {}, event.id, sourceMethod);
   updated = ensureSource(updated, sourceMethod, event.id);
   outboxStatusChange(updated, event, app.status, targetStatus);
@@ -344,6 +431,7 @@ function reviewForEvent(event, details) {
     summary: details.summary,
     suggested: details.suggested || {},
     fields: details.fields || {},
+    candidates: details.candidates || null,
     evidence: {
       evidence_level: event.evidence_level,
       evidence_code: event.evidence_code,
@@ -353,7 +441,8 @@ function reviewForEvent(event, details) {
       status_text: event.payload?.status_text || null,
       url_origin: (() => {
         try { return event.payload?.job_url ? new URL(event.payload.job_url).origin : null; } catch { return null; }
-      })()
+      })(),
+      ...(details.evidence || {})
     }
   });
 }
@@ -552,23 +641,17 @@ function processSiteStatus(event) {
     recruitment_batch: p.recruitment_batch, status_url: p.status_url, status_url_scope: p.status_url_scope,
     applied_at: eventAppliedAt(event)
   };
-  const candidates = findCandidates(event.owner_id, { ...fields, canonical_job_url: canonicalJobUrl(p.job_url) });
-  const strong = candidates.filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason));
-  if (strong.length !== 1) {
-    const review = reviewForEvent(event, {
-      kind: strong.length > 1 ? 'ambiguous_match' : 'status_conflict',
-      reasonCode: strong.length > 1 ? 'MULTIPLE_APPLICATION_CANDIDATES' : 'STATUS_PAGE_UNMATCHED',
-      summary: strong.length > 1 ? '状态页命中多条申请，不能按公司批量修改' : '未能把官网状态唯一归属到申请',
-      suggested: { status: p.mapped_status || 'pending' }, fields
-    });
-    return { state: 'pending', review };
-  }
-  let app = strong[0].application;
+  // P2：官网投递记录页和邮件共用同一套匹配（身份键 → 公司+岗位相似 → 公司唯一进行中），
+  // 不再要求必须有 site_application_id 才能对上记录。
+  const candidates = findMailCandidates(event.owner_id, {
+    ...fields,
+    canonical_job_url: canonicalJobUrl(p.job_url)
+  });
   if (!p.mapped_status) {
     const review = reviewForEvent(event, {
       kind: 'status_conflict', reasonCode: 'STATUS_UNMAPPED',
       summary: `官网状态“${clipText(p.status_text || '', 60)}”未映射，保留原文待确认`,
-      suggested: {}, fields
+      suggested: {}, fields, candidates
     });
     return { state: 'pending', review };
   }
@@ -576,10 +659,24 @@ function processSiteStatus(event) {
     const review = reviewForEvent(event, {
       kind: 'status_conflict', reasonCode: 'WEAK_STATUS_EVIDENCE',
       summary: '官网状态证据不足，只进入待确认',
-      suggested: { status: p.mapped_status }, fields
+      suggested: { status: p.mapped_status }, fields, candidates,
+      evidence: { confidence: 0.5 }
     });
     return { state: 'pending', review };
   }
+  if (candidates.length !== 1) {
+    const review = reviewForEvent(event, {
+      kind: candidates.length > 1 ? 'ambiguous_match' : 'status_conflict',
+      reasonCode: candidates.length > 1 ? 'MULTIPLE_APPLICATION_CANDIDATES' : 'STATUS_PAGE_UNMATCHED',
+      summary: candidates.length > 1
+        ? '状态页命中多条申请，不能按公司批量修改'
+        : '未能把官网状态唯一归属到申请',
+      suggested: { status: p.mapped_status }, fields, candidates,
+      evidence: { confidence: 1 }
+    });
+    return { state: 'pending', review };
+  }
+  let app = candidates[0].application;
   app = fillMissingFields(app, fields, event.id, 'plugin');
   const observedAt = event.observed_at || nowIso();
   if (!app.last_site_observed_at || Date.parse(observedAt) > Date.parse(app.last_site_observed_at)) {
@@ -589,24 +686,31 @@ function processSiteStatus(event) {
     app = ensureSource(app, 'plugin', event.id);
     return { state: 'applied', application: app };
   }
-  if (p.mapped_status === 'applied' && !app.has_applied) {
-    if (!config.d12AllowMissingAppliedAt && !fields.applied_at) {
-      const review = reviewForEvent(event, {
-        kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT',
-        summary: '官网证明申请存在，但缺少可信投递时间；D12 未冻结',
-        suggested: { has_applied: true, status: 'applied' }, fields
-      });
-      return { state: 'pending', review };
-    }
+  const confidence = Number.isFinite(Number(p.confidence)) ? Number(p.confidence) : 1;
+  const terminal = TERMINAL.has(p.mapped_status);
+  const totalConfidence = Number((confidence * candidates[0].match_confidence).toFixed(3));
+  const threshold = terminal ? config.autoTerminalConfidence : config.mailAutoUpdateConfidence;
+  const autoAllowed = totalConfidence >= threshold && (!terminal || config.autoTerminalFromMail);
+  if (!autoAllowed) {
+    const review = reviewForEvent(event, {
+      kind: terminal ? 'terminal_candidate' : 'status_conflict',
+      reasonCode: terminal ? 'TERMINAL_LOW_CONFIDENCE' : 'STATUS_SUGGESTED_NEEDS_CONFIRM',
+      summary: `官网状态「${clipText(p.status_text || STATUS_LABELS[p.mapped_status] || '', 40)}」总把握度 ${Math.round(totalConfidence * 100)}%，需要你确认`,
+      suggested: { status: p.mapped_status }, fields, candidates,
+      evidence: { confidence, match_confidence: candidates[0].match_confidence, total_confidence: totalConfidence }
+    });
+    return { state: 'pending', review };
   }
   const transition = applyStatusTransition(app, p.mapped_status, event, {
-    // D08 已冻结：只有邮件解析带置信度评分（>=0.9 自动判）；插件状态页证据无置信度，
-    // 且多数站点适配器尚未真实验证，终态一律进待确认由用户裁决。
-    sourceMethod: 'plugin', reviewTerminal: true
+    sourceMethod: 'plugin',
+    reviewTerminal: false,
+    allowInferredAppliedAt: false,
+    reason: `官网状态页自动判定：${clipText(p.status_text || STATUS_LABELS[p.mapped_status] || '', 60)}`
   });
   if (!transition.ok) {
     const review = reviewForEvent(event, {
-      ...transition.review, fields, suggested: { status: p.mapped_status }
+      ...transition.review, fields, suggested: { status: p.mapped_status }, candidates,
+      evidence: { confidence, match_confidence: candidates[0].match_confidence, total_confidence: totalConfidence }
     });
     return { state: 'pending', review };
   }
@@ -717,9 +821,44 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
   return result;
 }
 
+function mailDateLabel(iso) {
+  const parsed = parseIso(iso);
+  if (!parsed) return '';
+  try {
+    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric' })
+      .format(new Date(parsed));
+  } catch {
+    return '';
+  }
+}
+
+function mailSubjectLabel(payload) {
+  return clipText(payload.subject_excerpt || payload.subject || '招聘邮件', 60);
+}
+
+function mailAutoReason(payload, receivedAt) {
+  const date = mailDateLabel(receivedAt);
+  return `邮件自动判定：${date ? `${date} ` : ''}《${mailSubjectLabel(payload)}》`.slice(0, 200);
+}
+
+function mailReviewSummary({ payload, fields, candidates, status }) {
+  const subject = mailSubjectLabel(payload);
+  const statusLabel = STATUS_LABELS[status] || status;
+  if (candidates.length > 1) return `邮件「${subject}」命中 ${candidates.length} 条记录，需要你选择`;
+  if (candidates.length === 1) {
+    const target = candidates[0].application;
+    return `邮件「${subject}」看起来是「${target.company_name} · ${target.job_title}」的${statusLabel}，请确认`;
+  }
+  const extracted = [fields.company_name, fields.job_title].filter(Boolean).join(' · ');
+  return extracted
+    ? `邮件「${subject}」看起来是「${extracted}」的${statusLabel}，但没对上台账记录`
+    : `邮件「${subject}」没对上台账记录，可新建或手动关联`;
+}
+
 /**
  * Mail progress enters the same application/history/notification pipeline as plugin events.
- * Company + title alone stays a review candidate (D04). A unique site_application_id match may apply.
+ * P2（2026-10-22）：公司别名 + 岗位相似度 + 公司唯一进行中 负责「猜是哪条」；
+ * 总把握度（分类置信度 × 匹配把握度）达标且只有 1 个候选时直接改台账，其余进待确认。
  */
 export function processMailEvent(event, { sourceMailId = null } = {}) {
   const p = event.payload || {};
@@ -735,99 +874,140 @@ export function processMailEvent(event, { sourceMailId = null } = {}) {
     recruitment_batch: p.recruitment_batch,
     status_url: p.status_url,
     status_url_scope: p.status_url_scope,
-    applied_at: p.applied_at
+    applied_at: p.applied_at,
+    from_domain: p.from_domain
   };
-  const candidates = findCandidates(event.owner_id, {
-    ...fields,
-    canonical_job_url: canonicalJobUrl(p.job_url)
-  });
-  const strong = candidates.filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason));
   const status = p.mapped_status || mapStatusText(p.status_text);
   if (!status) {
     run(`UPDATE events SET processing_state = 'ignored', processed_at = ? WHERE id = ? AND owner_id = ?`,
       [nowIso(), event.id, event.owner_id]);
     return { state: 'ignored' };
   }
-  if (strong.length !== 1) {
-    const review = createReviewForEvent(event, {
-      kind: strong.length > 1 ? 'ambiguous_match' : 'mail_progress',
-      reasonCode: strong.length > 1 ? 'MULTIPLE_APPLICATION_CANDIDATES' : 'MAIL_MATCH_UNCONFIRMED',
-      summary: strong.length > 1
-        ? '邮件命中多条申请，不能按公司名批量更新'
-        : `招聘邮件更新候选：${clipText(p.subject_excerpt || p.subject || '', 80)}`,
-      suggested: { status, ...(p.applied_at ? { applied_at: p.applied_at } : {}) },
-      fields,
-      sourceMailId,
-      evidence: {
-        subject_excerpt: p.subject_excerpt,
-        body_excerpt: p.body_excerpt,
-        from_domain: p.from_domain,
-        read_mode: p.read_mode,
-        category: p.category,
-        confidence: p.confidence
-      }
-    });
-    return { state: 'pending', review };
-  }
-  let app = strong[0].application;
-  app = fillMissingFields(app, fields, event.id, 'mail');
-  if (status === 'offer' || status === 'rejected' || status === 'closed') {
-    // D08 已冻结（2026-10-22）：置信度 ≥ AUTO_TERMINAL_CONFIDENCE（默认 0.9）直接判定；
-    // 低于阈值的一律进待确认，由用户裁决。误判「你挂了」的代价远高于多确认一次。
-    const confidence = Number(p.confidence) || 0;
-    if (!config.autoTerminalFromMail || confidence < config.autoTerminalConfidence) {
-      const review = createReviewForEvent(event, {
-        kind: 'terminal_candidate',
-        reasonCode: confidence > 0 && confidence < config.autoTerminalConfidence
-          ? 'TERMINAL_LOW_CONFIDENCE'
-          : 'TERMINAL_REVIEW_REQUIRED',
-        summary: `邮件提示终态「${STATUS_LABELS[status]}」（置信度 ${confidence}），需用户确认`,
-        suggested: { status },
-        fields,
-        sourceMailId,
-        evidence: { subject_excerpt: p.subject_excerpt, category: p.category, confidence }
-      });
-      return { state: 'pending', review };
-    }
-  }
-  if (!app.has_applied) {
-    if (!p.applied_at && !config.d12AllowMissingAppliedAt) {
-      const review = createReviewForEvent(event, {
-        kind: 'application_confirmation',
-        reasonCode: 'D12_MISSING_APPLIED_AT',
-        summary: '邮件证明申请存在，但缺少可信投递时间；D12 未冻结',
-        suggested: { status, has_applied: true },
-        fields,
-        sourceMailId,
-        evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
-      });
-      return { state: 'pending', review };
-    }
-    app = markApplicationChanged(app.owner_id, app.id, event.id, 'mail', {
-      has_applied: 1,
-      applied_at: p.applied_at || app.applied_at,
-      applied_at_precision: p.applied_at ? 'exact' : app.applied_at_precision,
-      status: 'applied',
-      last_status_changed_at: event.occurred_at,
-      last_progress_at: event.occurred_at
-    }, { reason: '招聘邮件确证申请' });
-  }
-  const transition = applyStatusTransition(app, status, event, {
-    sourceMethod: 'mail',
-    reviewTerminal: !config.autoTerminalFromMail
+  const sourceMail = sourceMailId
+    ? one('SELECT received_at FROM mail_messages WHERE id = ? AND owner_id = ?', [sourceMailId, event.owner_id])
+    : null;
+  const receivedAt = parseIso(sourceMail?.received_at) || parseIso(event.received_at)
+    || parseIso(event.occurred_at) || nowIso();
+  const candidates = findMailCandidates(event.owner_id, {
+    ...fields,
+    canonical_job_url: canonicalJobUrl(p.job_url)
   });
-  if (!transition.ok) {
-    const review = createReviewForEvent(event, {
-      ...transition.review,
-      summary: transition.review.summary || '邮件状态需确认',
-      suggested: { status },
-      fields,
-      sourceMailId,
-      evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
+  const classification = Number.isFinite(Number(p.confidence)) ? Number(p.confidence) : 0;
+  const terminal = TERMINAL.has(status);
+  const unique = candidates.length === 1 ? candidates[0] : null;
+  const totalConfidence = unique ? classification * unique.match_confidence : null;
+  const threshold = terminal ? config.autoTerminalConfidence : config.mailAutoUpdateConfidence;
+  // 自动更新：只有 1 个候选，且总把握度过阈值；终态还受 AUTO_TERMINAL_FROM_MAIL 开关控制。
+  const autoAllowed = !!unique && classification > 0 && totalConfidence >= threshold
+    && (!terminal || config.autoTerminalFromMail);
+  let hint = null;
+  if (autoAllowed) {
+    const app = fillMissingFields(unique.application, fields, event.id, 'mail');
+    const transition = applyStatusTransition(app, status, event, {
+      sourceMethod: 'mail',
+      reviewTerminal: false,
+      allowInferredAppliedAt: config.d12AllowMailInferredAppliedAt,
+      inferredAppliedAt: receivedAt,
+      reason: mailAutoReason(p, receivedAt)
     });
-    return { state: 'pending', review };
+    if (transition.ok) {
+      run(`UPDATE events SET application_id = ?, processing_state = 'applied', review_reason = NULL, processed_at = ?
+           WHERE id = ? AND owner_id = ?`,
+      [transition.app.id, nowIso(), event.id, event.owner_id]);
+      return {
+        state: 'applied',
+        application: transition.app,
+        auto_updated: transition.changed,
+        match_confidence: unique.match_confidence,
+        total_confidence: Number(totalConfidence.toFixed(3))
+      };
+    }
+    hint = transition.review;
   }
-  run(`UPDATE events SET application_id = ?, processing_state = 'applied', processed_at = ? WHERE id = ? AND owner_id = ?`,
-    [transition.app.id, nowIso(), event.id, event.owner_id]);
-  return { state: 'applied', application: transition.app };
+  const multiple = candidates.length > 1;
+  const kind = hint?.kind || (multiple ? 'ambiguous_match' : terminal ? 'terminal_candidate' : 'mail_progress');
+  const reasonCode = hint?.reasonCode || (multiple
+    ? 'MULTIPLE_APPLICATION_CANDIDATES'
+    : terminal
+      ? (totalConfidence != null && totalConfidence < threshold ? 'TERMINAL_LOW_CONFIDENCE' : 'TERMINAL_REVIEW_REQUIRED')
+      : unique ? 'MAIL_SUGGESTED_NEEDS_CONFIRM' : 'MAIL_MATCH_UNCONFIRMED');
+  const baseSummary = mailReviewSummary({ payload: p, fields, candidates, status });
+  const summary = hint ? `${baseSummary}。${hint.summary}` : baseSummary;
+  const suggested = { status };
+  if (p.applied_at) suggested.applied_at = p.applied_at;
+  if (unique && !unique.application.has_applied) suggested.has_applied = true;
+  const review = createReviewForEvent(event, {
+    kind,
+    reasonCode,
+    summary,
+    suggested,
+    fields,
+    candidates,
+    sourceMailId,
+    evidence: {
+      subject_excerpt: p.subject_excerpt,
+      body_excerpt: p.body_excerpt,
+      from_domain: p.from_domain,
+      read_mode: p.read_mode,
+      category: p.category,
+      confidence: classification,
+      company_name: fields.company_name,
+      job_title: fields.job_title,
+      mail_received_at: receivedAt,
+      match_confidence: unique ? unique.match_confidence : null,
+      total_confidence: totalConfidence == null ? null : Number(totalConfidence.toFixed(3)),
+      auto_threshold: threshold
+    }
+  });
+  return { state: 'pending', review };
+}
+
+/* P2（2026-10-22）：邮件自动判定改错了，详情页可以一键撤回。
+   - 只接受 source_method='mail' 且 reason 以「邮件自动判定」开头的历史；
+   - 逐字段做「当前值 === 当时写入值」的陈旧校验，任何字段被后续修改过就拒绝整条撤回，
+     不做「猜用户想撤哪一半」的危险操作；
+   - 恢复的同时删掉尚未被提醒批次消费的 status_change outbox，避免刚撤回又发提醒。 */
+const AUTO_MAIL_UNDO_FIELDS = new Set([
+  'status', 'has_applied', 'applied_at', 'applied_at_precision', 'last_status_changed_at', 'last_progress_at',
+  'last_reviewed_at', 'interview_round', 'round_label', 'interview_scheduled_at', 'last_interview_completed_at'
+]);
+
+export function undoAutoMailUpdate({ ownerId, applicationId, historyId, expectedVersion, actor = 'user' }) {
+  return transaction(() => {
+    const app = getApplication(ownerId, applicationId);
+    if (!app) throw new AppError(404, 'NOT_FOUND', '记录不存在或无权访问');
+    if (expectedVersion == null) throw new AppError(400, 'VALIDATION_ERROR', '缺少 expected_version');
+    if (Number(expectedVersion) !== app.version) {
+      throw new AppError(409, 'VERSION_CONFLICT', '记录已更新，请刷新后重试', { details: { current_version: app.version } });
+    }
+    const hist = one('SELECT * FROM application_history WHERE id = ? AND owner_id = ? AND application_id = ?',
+      [historyId, ownerId, applicationId]);
+    if (!hist) throw new AppError(404, 'NOT_FOUND', '找不到这次自动更新记录');
+    if (hist.source_method !== 'mail' || !String(hist.reason || '').startsWith('邮件自动判定')) {
+      throw new AppError(400, 'UNDO_NOT_AVAILABLE', '这条历史不是邮件自动判定产生的，不能这样撤回');
+    }
+    const changed = safeJsonParse(hist.changed_fields_json, {});
+    const updates = {};
+    for (const [field, pair] of Object.entries(changed)) {
+      if (!AUTO_MAIL_UNDO_FIELDS.has(field)) continue;
+      const current = app[field] == null ? null : app[field];
+      const written = pair?.to == null ? null : pair.to;
+      if (written !== current) {
+        throw new AppError(409, 'VERSION_CONFLICT', '这条记录在自动更新后又被改过，不能整条撤回；请在「纠错」里逐项修改');
+      }
+      updates[field] = pair?.from == null ? null : pair.from;
+    }
+    if (!Object.keys(updates).length) return { application: app, changed: false };
+    // 恢复成 pending 必须同时恢复「未投递」事实，否则会违反状态与 has_applied 的约束。
+    if (updates.status === 'pending' && updates.has_applied !== 0) delete updates.status;
+    const updated = markApplicationChanged(ownerId, app.id, null, 'manual', updates,
+      { reason: '邮件自动判定有误（用户撤回）' });
+    if (hist.event_id) {
+      run('DELETE FROM notification_outbox WHERE event_id = ? AND consumed_batch_id IS NULL', [hist.event_id]);
+    }
+    run(`INSERT INTO audit_log (id, owner_id, actor, action, target_type, target_id, meta_json, created_at)
+         VALUES (?, ?, ?, 'application.undo_auto_mail', 'application', ?, ?, ?)`,
+    [newId('aud'), ownerId, actor, app.id, JSON.stringify({ history_id: historyId, fields: Object.keys(updates) }), nowIso()]);
+    return { application: updated, changed: true };
+  });
 }

@@ -203,7 +203,7 @@ function ingestMessage(connection, message, parsed, bodyText, receivedAt) {
          processing_state, connection_id, mailbox, uidvalidity, uid)
         VALUES (?, ?, ?, 'mail', 'mail_progress_detected', ?, ?, ?, ?, ?, 'C1', 'mail-rules-1', ?, ?, ?, ?, 'pending', ?, 'INBOX', ?, ?)`,
       [eventId, connection.owner_id, `mail:${sourceKey}`, payload.site_key || null, fields.site_application_id || null,
-        receivedAt, nowIso(), nowIso(), classification.confidence >= 0.85 ? 'strong' : 'weak',
+        receivedAt, nowIso(), receivedAt, classification.confidence >= 0.85 ? 'strong' : 'weak',
         `mail-${classification.category}`, JSON.stringify(payload), sha256(`${sourceKey}:${classification.category}`),
         connection.id, parsed.uidvalidity, String(message.uid)]);
       run('UPDATE mail_messages SET processing_state = ?, category = ? WHERE id = ?',
