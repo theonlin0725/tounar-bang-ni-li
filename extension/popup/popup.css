@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --line: #e5e7eb;
+  --brand: #0f766e;
+  --brand-dark: #115e59;
+  --danger: #b91c1c;
+  --warn-bg: #fef3c7;
+  --warn-ink: #92400e;
+}
+* { box-sizing: border-box; }
+body {
+  width: 360px;
+  margin: 0;
+  padding: 12px 14px 16px;
+  font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--ink);
+  background: #fafaf9;
+}
+header { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+header h1 { font-size: 14px; margin: 0; }
+header .sub { margin: 0; color: var(--muted); font-size: 11px; }
+section { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+section h2 { font-size: 12px; margin: 0 0 8px; color: var(--brand-dark); }
+p { margin: 6px 0; }
+input[type="url"] {
+  flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; font-size: 12px;
+}
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+button {
+  border: 0; border-radius: 6px; padding: 7px 10px; font-size: 12px;
+  background: var(--brand); color: #fff; cursor: pointer;
+}
+button:hover { background: var(--brand-dark); }
+button.secondary { background: #fff; color: var(--brand-dark); border: 1px solid var(--brand); }
+button.secondary:hover { background: #f0fdfa; }
+button.link { background: none; color: var(--muted); text-decoration: underline; padding: 4px; }
+button.danger { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+button.danger:hover { background: #fef2f2; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.code {
+  font: 700 22px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .18em; background: #0f172a; color: #fff;
+  border-radius: 8px; padding: 10px 12px; text-align: center; margin: 8px 0;
+}
+.hint { color: var(--muted); font-size: 11px; }
+.error { color: var(--danger); font-size: 11px; }
+.warn { background: var(--warn-bg); color: var(--warn-ink); font-size: 11px; padding: 6px 8px; border-radius: 6px; }
+.hidden { display: none !important; }
+#site-list { max-height: 150px; overflow: auto; font-size: 11px; }
+#site-list label { display: flex; gap: 6px; align-items: center; padding: 3px 0; }
+footer { margin-top: 12px; color: var(--muted); font-size: 10px; border-top: 1px solid var(--line); padding-top: 8px; }

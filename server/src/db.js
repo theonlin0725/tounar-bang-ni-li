@@ -1,0 +1,116 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { config } from './config.js';
+import { newId, nowIso } from './util.js';
+
+let db = null;
+let txDepth = 0;
+
+export function getDb() {
+  if (!db) db = openDatabase(config.dbPath);
+  return db;
+}
+
+export function openDatabase(dbPath) {
+  if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true, mode: 0o700 });
+  const instance = new DatabaseSync(dbPath);
+  instance.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  const schema = fs.readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
+  instance.exec(schema);
+  return instance;
+}
+
+export function closeDb() {
+  if (db) {
+    try { db.close(); } catch { /* ignore */ }
+    db = null;
+  }
+}
+
+export function transaction(fn) {
+  const database = getDb();
+  if (txDepth > 0) return fn(database);
+  database.exec('BEGIN IMMEDIATE');
+  txDepth++;
+  try {
+    const result = fn(database);
+    database.exec('COMMIT');
+    return result;
+  } catch (err) {
+    try { database.exec('ROLLBACK'); } catch { /* ignore */ }
+    throw err;
+  } finally {
+    txDepth--;
+  }
+}
+
+export function one(sql, params = []) {
+  return getDb().prepare(sql).get(...params) || null;
+}
+
+export function all(sql, params = []) {
+  return getDb().prepare(sql).all(...params);
+}
+
+export function run(sql, params = []) {
+  return getDb().prepare(sql).run(...params);
+}
+
+export function bumpRevision() {
+  getDb().prepare("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'data_revision'").run();
+}
+
+export function dataRevision() {
+  return one("SELECT value FROM meta WHERE key = 'data_revision'")?.value || '1';
+}
+
+export function ensurePreferences(ownerId) {
+  getDb().prepare(`INSERT OR IGNORE INTO notification_preferences
+    (owner_id, mode, review_frequency, review_threshold_days, version, updated_at)
+    VALUES (?, 'all', 'weekly_monday', 14, 1, ?)`).run(ownerId, nowIso());
+}
+
+export function getUserByEmail(email) {
+  return one('SELECT * FROM users WHERE email_normalized = ?', [email]);
+}
+
+export function getApplication(ownerId, applicationId) {
+  return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
+}
+
+export function markApplicationChanged(ownerId, applicationId, eventId, sourceMethod, fields, options = {}) {
+  const app = one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
+  if (!app) return null;
+  const changed = Object.keys(fields);
+  if (!changed.length) return app;
+  const sets = changed.map((f) => `${f} = ?`).join(', ');
+  const values = changed.map((f) => fields[f]);
+  getDb().prepare(`UPDATE applications SET ${sets}, updated_at = ?, version = version + 1 WHERE id = ? AND owner_id = ?`)
+    .run(...values, nowIso(), applicationId, ownerId);
+  getDb().prepare(`INSERT INTO application_history
+    (id, owner_id, application_id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      newId('hist'),
+      ownerId,
+      applicationId,
+      eventId || null,
+      app.status,
+      fields.status || app.status,
+      JSON.stringify(Object.fromEntries(changed.map((k) => [k, { from: app[k], to: fields[k] }]))),
+      nowIso(),
+      sourceMethod,
+      options.reason || null
+    );
+  for (const field of changed) {
+    getDb().prepare(`INSERT INTO application_field_sources
+      (application_id, owner_id, field, source_method, event_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(application_id, field) DO UPDATE SET source_method=excluded.source_method,
+        event_id=excluded.event_id, updated_at=excluded.updated_at`)
+      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso());
+  }
+  bumpRevision();
+  return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
+}

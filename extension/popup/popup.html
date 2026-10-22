@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Tounar 帮你理</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="../icons/icon48.png" alt="" width="28" height="28">
+    <div>
+      <h1>帮你理 · 投递线索采集</h1>
+      <p class="sub">只在你授权的页面识别岗位与投递状态</p>
+    </div>
+  </header>
+
+  <section id="server-section">
+    <h2>1. 后台连接</h2>
+    <div class="row">
+      <input id="server-url" type="url" placeholder="https://你的帮你理域名" spellcheck="false">
+      <button id="save-server" class="secondary">保存</button>
+    </div>
+    <p id="health" class="hint">未检测</p>
+  </section>
+
+  <section id="pair-section">
+    <h2>2. 设备配对</h2>
+    <div id="unpaired">
+      <p>在已登录的帮你理网页「设置 → 浏览器插件」中输入下面的配对码：</p>
+      <div id="pairing-box" class="hidden">
+        <div id="pairing-code" class="code" data-testid="pairing-code">--------</div>
+        <p id="pairing-expire" class="hint"></p>
+        <button id="poll-pairing" class="secondary">我已确认，检查绑定</button>
+        <button id="cancel-pairing" class="link">取消配对</button>
+      </div>
+      <button id="start-pairing" data-testid="start-pairing">开始配对（显示配对码）</button>
+    </div>
+    <div id="paired" class="hidden">
+      <p>已绑定：<strong id="owner-hint">—</strong></p>
+      <p class="hint" id="binding-status" data-testid="binding-status">已绑定</p>
+      <p class="hint">设备 ID：<span id="device-id">—</span> · 绑定版本：<span id="binding-version">—</span></p>
+      <p class="hint">最近上传：<span id="last-upload">尚无</span></p>
+      <div class="row">
+        <button id="flush-now" class="secondary">立即同步</button>
+        <button id="heartbeat" class="secondary">检查状态</button>
+      </div>
+      <button id="unpair" class="danger">解除本设备绑定</button>
+    </div>
+    <p id="pair-error" class="error hidden"></p>
+  </section>
+
+  <section id="queue-section">
+    <h2>3. 本地队列</h2>
+    <p>待上传事件：<strong id="queue-count">0</strong> 条</p>
+    <p id="last-error" class="error hidden"></p>
+    <p class="hint">后台不可达时事件会留在本地；相同事件重复上传会被服务端幂等去重。</p>
+  </section>
+
+  <section id="sites-section">
+    <h2>4. 采集范围（授权站点）</h2>
+    <p class="hint">只有你明确授权后才会注入采集脚本；未授权站点不采集。</p>
+    <div class="row">
+      <button id="grant-current" class="secondary">授权当前标签页站点</button>
+      <button id="revoke-all" class="link">全部撤销</button>
+    </div>
+    <details>
+      <summary>支持的招聘站点（草案选择器，待真实验证）</summary>
+      <div id="site-list"></div>
+    </details>
+    <div class="row">
+      <button id="grant-selected">授权选中站点</button>
+    </div>
+    <p id="sites-status" class="hint"></p>
+    <p class="warn">站点适配规则尚未用真实登录态逐一验证（G04）；通用页面仅依赖 JSON-LD 结构化岗位信息。</p>
+  </section>
+
+  <footer>
+    <p>不上传页面正文、表单填写内容、Cookie 或账号密码。</p>
+  </footer>
+  <script src="../lib/common.js"></script>
+  <script src="../content/adapters.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

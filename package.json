@@ -1,0 +1,27 @@
+{
+  "name": "tounar-bang-ni-li",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tounar 帮你理：投递线索整理与进度追踪",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "APP_ENV=development node --watch server/src/index.js",
+    "test": "node --test --test-concurrency=1 server/test/*.test.js",
+    "test:e2e": "node tests/e2e/run-e2e.mjs",
+    "test:web": "node tests/e2e/run-web-e2e.mjs",
+    "otp:latest": "node server/scripts/latest-otp.js",
+    "remind": "node server/scripts/run-reminders.js",
+    "mail:sync": "node server/scripts/run-mail-sync.js"
+  },
+  "dependencies": {
+    "imapflow": "^2.5.9",
+    "nodemailer": "^10.1.7"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}

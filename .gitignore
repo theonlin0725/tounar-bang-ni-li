@@ -1,0 +1,14 @@
+node_modules/
+.tmp/
+.DS_Store
+
+# 本地运行产生的密钥、令牌与数据库，绝不入库
+data/*.key
+data/*.token
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+data/outbox/
+
+# 本地日志与临时脚本
+*.log
