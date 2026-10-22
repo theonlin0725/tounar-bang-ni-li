@@ -2,6 +2,9 @@ node_modules/
 .tmp/
 .DS_Store
 
+# 本地智能体工作笔记（含邮箱、凭据线索等），不进仓库
+.workbuddy/
+
 # 本地运行产生的密钥、令牌与数据库，绝不入库
 data/*.key
 data/*.token
