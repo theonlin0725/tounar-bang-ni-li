@@ -495,7 +495,8 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
         showErr(box, '缺少可信投递时间：D12 未冻结，不会用今天/收信时间代替。请填写投递时间或改用补录。');
         break;
       case 'D05_NOT_FROZEN':
-        showErr(box, '该记录处于终态：终态纠错 D05 未冻结，不能静默恢复或撤销终态。');
+      case 'D05_DISABLED':
+        showErr(box, '该记录处于终态：终态人工纠错当前被关闭，请联系管理员开启。');
         break;
       case 'APPLIED_FACT_REMOVAL':
         showErr(box, '不能通过复核撤销已投事实；如确需，请走终态纠错评审（D05）。');

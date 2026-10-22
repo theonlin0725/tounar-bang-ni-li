@@ -294,7 +294,7 @@ export function registerRoutes() {
   // ---------- notifications ----------
   route('GET', '/api/v1/notification-preferences', (req) => {
     const auth = requireAuth(req);
-    return { data: getPreferences(auth.ownerId), decision: 'D06 not frozen; current values are provisional' };
+    return { data: getPreferences(auth.ownerId), decision: 'D06 frozen 2026-10-22: daily digest, B-class 7-day per-record throttle' };
   });
   route('PUT', '/api/v1/notification-preferences', (req) => {
     const auth = requireAuth(req);
@@ -313,11 +313,11 @@ export function registerRoutes() {
     run(`UPDATE notification_preferences SET mode = ?, review_frequency = ?, review_threshold_days = ?,
          version = version + 1, updated_at = ? WHERE owner_id = ?`,
     [mode, frequency, Number(threshold), nowIso(), auth.ownerId]);
-    return { data: getPreferences(auth.ownerId), decision: 'D06 not frozen; current values are provisional' };
+    return { data: getPreferences(auth.ownerId), decision: 'D06 frozen 2026-10-22: daily digest, B-class 7-day per-record throttle' };
   });
   route('GET', '/api/v1/notification-preferences/preview', (req) => {
     const auth = requireAuth(req);
-    return { data: batchPreview(auth.ownerId), decision: 'D06 not frozen; preview does not send or mark anything' };
+    return { data: batchPreview(auth.ownerId), decision: 'D06/D08 frozen 2026-10-22; preview does not send or mark anything' };
   });
 
   // ---------- reminder links ----------

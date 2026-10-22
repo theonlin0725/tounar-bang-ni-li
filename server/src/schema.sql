@@ -289,8 +289,9 @@ CREATE TABLE IF NOT EXISTS mail_messages (
 CREATE TABLE IF NOT EXISTS notification_preferences (
   owner_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   mode TEXT NOT NULL DEFAULT 'all',
-  review_frequency TEXT NOT NULL DEFAULT 'weekly_monday',
+  review_frequency TEXT NOT NULL DEFAULT 'daily',
   review_threshold_days INTEGER NOT NULL DEFAULT 14,
+  last_review_digest_at TEXT,
   version INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL,
   CHECK (mode IN ('all','changes_only','review_only','off')),

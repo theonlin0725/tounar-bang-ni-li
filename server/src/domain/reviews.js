@@ -81,7 +81,7 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
     }
     if (TERMINAL.has(app.status) && (updates.status && updates.status !== app.status || updates.has_applied === 0)) {
       if (!config.d05AllowTerminalCorrection) {
-        throw new AppError(409, 'D05_NOT_FROZEN', '终态纠错规则 D05 尚未冻结；当前不会静默恢复终态或撤销终态已投事实', {
+        throw new AppError(409, 'D05_DISABLED', '终态纠错已被环境变量关闭（D05_ALLOW_TERMINAL_CORRECTION=false）', {
           details: { current_status: app.status, requested_status: updates.status || app.status }
         });
       }
@@ -344,7 +344,11 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
   }
   if (targetStatus) {
     if (TERMINAL.has(app.status) && targetStatus !== app.status && !config.d05AllowTerminalCorrection && review.kind !== 'terminal_candidate') {
-      throw new AppError(409, 'D05_NOT_FROZEN', '终态纠错 D05 未冻结');
+      throw new AppError(409, 'D05_DISABLED', '终态纠错已被环境变量关闭（D05_ALLOW_TERMINAL_CORRECTION=false）');
+    }
+    // D05 已冻结：从终态改走是人工纠错，历史与审计里要留清晰痕迹
+    if (TERMINAL.has(app.status) && targetStatus !== app.status && (!reason || reason === '复核确认')) {
+      reason = `终态人工纠错：${app.status} → ${targetStatus}`;
     }
     if (targetStatus === 'pending' && app.has_applied) {
       throw new AppError(403, 'APPLIED_FACT_REMOVAL', '不能通过复核撤销已投事实');

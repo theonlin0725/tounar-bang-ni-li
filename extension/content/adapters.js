@@ -1,11 +1,15 @@
 /*
  * Site adapter registry (classic script; used by content scripts and popup).
  *
- * Honest scope: selector rules below are best-effort drafts. Only the generic
- * JSON-LD path and the explicitly documented `data-tounar-*` structured status
- * block can be verified locally; per-site accuracy awaits real logged-in
- * fixtures (G04 blocked). Every adapter carries a version that is attached to
- * each event so the server and reviews can reason about parsing provenance.
+ * D02 已冻结（2026-10-22）：优先支持白名单 =
+ *   腾讯 / 字节跳动 / 阿里巴巴 / 美团 / 京东 / 小米 / 百度 / 网易（priority: 1）。
+ * BOSS直聘/牛客/实习僧 为扩展期草案（priority: 2），待「全招聘站点」迭代再验证启用。
+ * 聊天/沟通页面一律不采集；只认 Web 岗位详情页 + 确证的成功提交。
+ *
+ * Honest scope: selector rules below are best-effort drafts unless site_verified
+ * is true (see docs/SITE-ADAPTER-EVIDENCE.md). Every adapter carries a version
+ * that is attached to each event so the server and reviews can reason about
+ * parsing provenance.
  */
 (function () {
   const GENERIC = {
@@ -31,6 +35,7 @@
   const ADAPTERS = [
     {
       key: 'tencent',
+      priority: 1,
       label: '腾讯招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -56,6 +61,7 @@
     },
     {
       key: 'bytedance',
+      priority: 1,
       label: '字节跳动招聘',
       version: '1.0.0-verified-campus',
       channel: '企业官网',
@@ -104,6 +110,7 @@
     },
     {
       key: 'alibaba',
+      priority: 1,
       label: '阿里巴巴校园招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -129,6 +136,7 @@
     },
     {
       key: 'meituan',
+      priority: 1,
       label: '美团招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -154,6 +162,7 @@
     },
     {
       key: 'jd',
+      priority: 1,
       label: '京东招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -179,6 +188,7 @@
     },
     {
       key: 'xiaomi',
+      priority: 1,
       label: '小米招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -204,6 +214,7 @@
     },
     {
       key: 'baidu',
+      priority: 1,
       label: '百度招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -229,6 +240,7 @@
     },
     {
       key: 'netease',
+      priority: 1,
       label: '网易招聘',
       version: '0.1.0-draft',
       channel: '企业官网',
@@ -254,6 +266,7 @@
     },
     {
       key: 'boss',
+      priority: 2,
       label: 'BOSS直聘（仅岗位详情）',
       version: '0.1.0-draft',
       channel: 'BOSS直聘',
@@ -273,6 +286,7 @@
     },
     {
       key: 'nowcoder',
+      priority: 2,
       label: '牛客网',
       version: '0.1.0-draft',
       channel: '牛客',
@@ -298,6 +312,7 @@
     },
     {
       key: 'shixiseng',
+      priority: 2,
       label: '实习僧',
       version: '0.1.0-draft',
       channel: '实习僧',
@@ -358,11 +373,17 @@
     return Array.from(new Set(hosts));
   }
 
+  // D02 冻结的白名单（priority 1）；其余为扩展期草案（priority 2）
+  function whitelist() {
+    return ADAPTERS.filter((a) => a.priority === 1).map((a) => ({ key: a.key, label: a.label, site_verified: !!a.site_verified }));
+  }
+
   globalThis.TounarAdapters = {
     GENERIC,
     ADAPTERS,
     resolveAdapter,
     supportedHosts,
+    whitelist,
     statusTextToCanonical,
     SOURCE_NOTE: 'adapter rules are drafts until per-site real-session verification (G04)'
   };

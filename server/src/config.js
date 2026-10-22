@@ -63,13 +63,19 @@ export const config = {
   reminderMinute: intEnv('REMINDER_MINUTE', 0),
   reminderTickSeconds: intEnv('REMINDER_TICK_SECONDS', 30),
   enableScheduler: boolEnv('ENABLE_SCHEDULER', true),
-  browseArchiveDays: intEnv('BROWSE_ARCHIVE_DAYS', 0),
+  // D03 已冻结（2026-10-22）：看过未投的线索 30 天自动归档，保留可查、不计入累计投递
+  browseArchiveDays: intEnv('BROWSE_ARCHIVE_DAYS', 30),
   browseArchiveSetClosed: boolEnv('BROWSE_ARCHIVE_SET_CLOSED', false),
-  d05AllowTerminalCorrection: boolEnv('D05_ALLOW_TERMINAL_CORRECTION', false),
+  // D05 已冻结（2026-10-22）：终态允许人工纠错（强制填原因 + 全程留痕），机器不写死
+  d05AllowTerminalCorrection: boolEnv('D05_ALLOW_TERMINAL_CORRECTION', true),
   d12AllowMissingJd: boolEnv('D12_ALLOW_MISSING_JD', false),
   d12AllowMissingLink: boolEnv('D12_ALLOW_MISSING_LINK', false),
   d12AllowMissingAppliedAt: boolEnv('D12_ALLOW_MISSING_APPLIED_AT', false),
-  autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', false),
+  // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认
+  autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', true),
+  autoTerminalConfidence: Number.parseFloat(process.env.AUTO_TERMINAL_CONFIDENCE || '0.9'),
+  // D08 已冻结：待确认队列每 15 天随提醒邮件汇总一次
+  reviewDigestDays: intEnv('REVIEW_DIGEST_DAYS', 15),
   aIncludeNewViews: boolEnv('A_INCLUDE_NEW_VIEWS', false),
   aDeadlineHours: intEnv('A_DEADLINE_HOURS', 0),
   imapClientId: process.env.IMAP_CLIENT_ID || 'Tounar-BangNiLi/0.1',
@@ -82,17 +88,17 @@ export const config = {
 };
 
 export const featureFlags = {
-  D01: 'provisional: visible cumulative >=3s; exact semantics pending',
-  D02: 'pending: supported Web details + confirmed submission only; chat not collected',
-  D03: config.browseArchiveDays > 0 ? `enabled: ${config.browseArchiveDays} days` : 'disabled pending decision',
-  D04: 'provisional: stable IDs/canonical URL only; company+title is review candidate',
-  D05: config.d05AllowTerminalCorrection ? 'enabled by env' : 'disabled pending decision',
-  D06: 'provisional: weekly_monday, threshold 14, 7-day B frequency; parameterized',
-  D07: 'no inferred interview completion; explicit confirmation only',
-  D08: 'provisional: terminal transitions require review unless configured',
-  D09: 'no OCR; headers-only or matched body; body not retained; 30-day first scan',
+  D01: 'frozen 2026-10-22: visible cumulative >=3s; background pause; per-job re-count',
+  D02: 'frozen 2026-10-22: whitelist = tencent/bytedance/alibaba/meituan/jd/xiaomi/baidu/netease; chat not collected; expand-all-sites planned',
+  D03: config.browseArchiveDays > 0 ? `frozen: ${config.browseArchiveDays} days auto-archive, kept queryable` : 'disabled',
+  D04: 'frozen 2026-10-22: repeat submissions on different days = separate records; company+title only => review candidate; company filter planned',
+  D05: config.d05AllowTerminalCorrection ? 'frozen: manual correction allowed, reason required, fully audited' : 'disabled by env',
+  D06: 'frozen 2026-10-22: daily digest; status-updated records silenced next day (consumed outbox); B-class 7-day per-record throttle',
+  D07: 'frozen: no inferred interview completion; 已面 N 天 as email tag only',
+  D08: `frozen: auto terminal when confidence >= ${config.autoTerminalConfidence}; else review; review digest every ${config.reviewDigestDays} days`,
+  D09: 'frozen direction 2026-10-22: LLM for plugin scanning (site recognition / user behavior / lead capture); implementation planned',
   D10: 'custom local pairing/whitelist; external platform verification blocked (G01/G03)',
-  D11: '08:00 Asia/Shanghai trigger; delivery not guaranteed',
-  D12: 'formal entry requires complete core fields unless env override',
-  D13: 'keep +归档线索 label; no note field'
+  D11: 'frozen: 08:00 Asia/Shanghai trigger; same-day retry; no second-precision guarantee',
+  D12: 'frozen: auto-capture default; manual entry fallback with lead autofill',
+  D13: 'pending user decision (note field)'
 };

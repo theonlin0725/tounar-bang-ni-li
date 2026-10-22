@@ -481,6 +481,18 @@ function processSubmitted(event) {
   }
   if (strong.length === 1) {
     let app = strong[0].application;
+    // D04 已冻结（2026-10-22）：同公司同岗位在不同日期再次投递 = 独立的新记录；
+    // 同一天的重复提交事件仍合并到原记录（避免同一动作被重复计数）。
+    const sameShanghaiDay = app.has_applied && app.applied_at && fields.applied_at
+      && shanghaiDateKey(app.applied_at) === shanghaiDateKey(fields.applied_at);
+    if (app.has_applied && !sameShanghaiDay) {
+      const app2 = createApplication({
+        ownerId: event.owner_id, fields, eventId: event.id, sourceMethod: 'plugin',
+        status: 'applied', at: event.occurred_at
+      });
+      outboxStatusChange(app2, event, 'pending', 'applied');
+      return { state: 'applied', application: app2, note: 'D04: 不同日期的重复投递已记为新记录' };
+    }
     const updates = { has_applied: 1 };
     if (app.status === 'pending') {
       updates.status = 'applied';
@@ -583,7 +595,9 @@ function processSiteStatus(event) {
     }
   }
   const transition = applyStatusTransition(app, p.mapped_status, event, {
-    sourceMethod: 'plugin', reviewTerminal: !config.autoTerminalFromMail
+    // D08 已冻结：只有邮件解析带置信度评分（>=0.9 自动判）；插件状态页证据无置信度，
+    // 且多数站点适配器尚未真实验证，终态一律进待确认由用户裁决。
+    sourceMethod: 'plugin', reviewTerminal: true
   });
   if (!transition.ok) {
     const review = reviewForEvent(event, {
@@ -752,14 +766,19 @@ export function processMailEvent(event) {
   let app = strong[0].application;
   app = fillMissingFields(app, fields, event.id, 'mail');
   if (status === 'offer' || status === 'rejected' || status === 'closed') {
-    if (!config.autoTerminalFromMail) {
+    // D08 已冻结（2026-10-22）：置信度 ≥ AUTO_TERMINAL_CONFIDENCE（默认 0.9）直接判定；
+    // 低于阈值的一律进待确认，由用户裁决。误判「你挂了」的代价远高于多确认一次。
+    const confidence = Number(p.confidence) || 0;
+    if (!config.autoTerminalFromMail || confidence < config.autoTerminalConfidence) {
       const review = createReviewForEvent(event, {
         kind: 'terminal_candidate',
-        reasonCode: 'TERMINAL_REVIEW_REQUIRED',
-        summary: `邮件提示终态「${STATUS_LABELS[status]}」，需用户确认`,
+        reasonCode: confidence > 0 && confidence < config.autoTerminalConfidence
+          ? 'TERMINAL_LOW_CONFIDENCE'
+          : 'TERMINAL_REVIEW_REQUIRED',
+        summary: `邮件提示终态「${STATUS_LABELS[status]}」（置信度 ${confidence}），需用户确认`,
         suggested: { status },
         fields,
-        evidence: { subject_excerpt: p.subject_excerpt, category: p.category, confidence: p.confidence }
+        evidence: { subject_excerpt: p.subject_excerpt, category: p.category, confidence }
       });
       return { state: 'pending', review };
     }

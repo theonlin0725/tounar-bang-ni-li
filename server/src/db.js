@@ -18,7 +18,21 @@ export function openDatabase(dbPath) {
   instance.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   const schema = fs.readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
   instance.exec(schema);
+  migrate(instance);
   return instance;
+}
+
+/* 轻量迁移：D06 冻结（2026-10-22）后新装库默认 daily；
+   老库一次性把 weekly_monday 迁到 daily，并补 D08 的待确认摘要时间列。 */
+function migrate(instance) {
+  try {
+    instance.exec('ALTER TABLE notification_preferences ADD COLUMN last_review_digest_at TEXT');
+  } catch { /* 列已存在（schema.sql 新版本已建） */ }
+  const done = instance.prepare("SELECT value FROM meta WHERE key = 'migration_d06_daily'").get();
+  if (!done) {
+    instance.exec("UPDATE notification_preferences SET review_frequency = 'daily' WHERE review_frequency = 'weekly_monday'");
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_d06_daily', '1')").run();
+  }
 }
 
 export function closeDb() {
@@ -68,7 +82,7 @@ export function dataRevision() {
 export function ensurePreferences(ownerId) {
   getDb().prepare(`INSERT OR IGNORE INTO notification_preferences
     (owner_id, mode, review_frequency, review_threshold_days, version, updated_at)
-    VALUES (?, 'all', 'weekly_monday', 14, 1, ?)`).run(ownerId, nowIso());
+    VALUES (?, 'all', 'daily', 14, 1, ?)`).run(ownerId, nowIso());
 }
 
 export function getUserByEmail(email) {

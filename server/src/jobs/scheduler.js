@@ -45,7 +45,7 @@ export function archiveStaleBrowsed(now = new Date()) {
     }
     bumpRevision();
   });
-  return { enabled: true, archived: rows.length, days: config.browseArchiveDays, d03_provisional: true };
+  return { enabled: true, archived: rows.length, days: config.browseArchiveDays, d03_frozen: '2026-10-22' };
 }
 
 export async function recoverDeletionJobs() {

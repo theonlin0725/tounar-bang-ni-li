@@ -200,7 +200,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
       }));
     }
     if (actions.has('terminal_locked')) {
-      row.append(h('span', { class: 'tn-faint tn-small', style: { alignSelf: 'center' }, text: '终态记录默认锁定；终态纠错规则 D05 未冻结。' }));
+      row.append(h('span', { class: 'tn-faint tn-small', style: { alignSelf: 'center' }, text: '终态记录机器不再自动改动；可通过「纠错」人工修改（必填原因，全程留痕）。' }));
     }
     footEl.append(row, h('div', { class: 'tn-faint tn-tiny', style: { width: '100%' }, text: `记录版本 v${app.version} · 台账更新 ≠ 官网实时同步` }));
   }
@@ -349,7 +349,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
               { idempotencyKey: idemKey('correct') }),
             '纠错已提交',
             (err) => {
-              if (err instanceof ApiError && err.code === 'D05_NOT_FROZEN') errBox.append(h('div', { class: 'tn-inline-msg err', text: '该记录处于终态：终态纠错 D05 未冻结，不会静默恢复或撤销。' }));
+              if (err instanceof ApiError && (err.code === 'D05_DISABLED' || err.code === 'D05_NOT_FROZEN')) errBox.append(h('div', { class: 'tn-inline-msg err', text: '该记录处于终态：终态人工纠错当前被关闭，请联系管理员开启（D05_ALLOW_TERMINAL_CORRECTION）。' }));
               else if (err instanceof ApiError && err.code === 'D12_NOT_FROZEN') errBox.append(h('div', { class: 'tn-inline-msg err', text: '缺少可信投递时间：D12 未冻结，不会用今天/入库时间代替。' }));
               else if (err instanceof ApiError && err.code === 'APPLIED_FACT_REMOVAL') errBox.append(h('div', { class: 'tn-inline-msg err', text: '不能直接撤销已投事实；如确需，请走终态纠错评审（D05）。' }));
               else if (err instanceof ApiError && err.code === 'VERSION_CONFLICT') errBox.append(h('div', { class: 'tn-inline-msg err', text: '记录已被更新：已重新加载最新版本，请重新决定（不会自动覆盖）。' }));
