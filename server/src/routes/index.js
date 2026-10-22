@@ -346,15 +346,19 @@ export function registerRoutes() {
     const mode = req.body.mode ?? current.mode;
     const frequency = req.body.review_frequency ?? current.review_frequency;
     const threshold = req.body.review_threshold_days ?? current.review_threshold_days;
+    const stageFollowupDays = req.body.stage_followup_days ?? current.stage_followup_days;
     if (!['all', 'changes_only', 'review_only', 'off'].includes(mode)) throw new AppError(400, 'VALIDATION_ERROR', 'mode 无效');
     if (!['weekly_monday', 'daily'].includes(frequency)) throw new AppError(400, 'VALIDATION_ERROR', 'review_frequency 无效');
     if (!Number.isInteger(Number(threshold)) || Number(threshold) < 7 || Number(threshold) > 30) {
       throw new AppError(400, 'VALIDATION_ERROR', 'review_threshold_days 只能是 7–30');
     }
+    if (![0, 7, 14].includes(Number(stageFollowupDays))) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'stage_followup_days 只能是 0（关闭）/ 7 / 14');
+    }
     run(`UPDATE notification_preferences SET mode = ?, review_frequency = ?, review_threshold_days = ?,
-         version = version + 1, updated_at = ? WHERE owner_id = ?`,
-    [mode, frequency, Number(threshold), nowIso(), auth.ownerId]);
-    return { data: getPreferences(auth.ownerId), decision: 'D06 frozen 2026-10-22: daily digest, B-class 7-day per-record throttle' };
+         stage_followup_days = ?, version = version + 1, updated_at = ? WHERE owner_id = ?`,
+    [mode, frequency, Number(threshold), Number(stageFollowupDays), nowIso(), auth.ownerId]);
+    return { data: getPreferences(auth.ownerId), decision: 'D06 frozen 2026-10-22: daily digest, B/C-class 7-day per-record throttle' };
   });
   route('GET', '/api/v1/notification-preferences/preview', (req) => {
     const auth = requireAuth(req);

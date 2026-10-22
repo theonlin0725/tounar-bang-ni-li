@@ -163,6 +163,7 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     let mode = prefs.mode || 'all';
     let frequency = prefs.review_frequency || 'weekly_monday';
     let threshold = Number(prefs.review_threshold_days || 14);
+    let stageDays = [0, 7, 14].includes(Number(prefs.stage_followup_days)) ? Number(prefs.stage_followup_days) : 7;
     let version = prefs.version;
     let saving = false;
 
@@ -172,6 +173,13 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     const freqSel = h('select', { class: 'tn-select', 'data-test': 'pref-frequency' });
     freqSel.append(h('option', { value: 'weekly_monday', text: '每周一' }), h('option', { value: 'daily', text: '每天' }));
     freqSel.value = frequency;
+    const stageSel = h('select', { class: 'tn-select', 'data-test': 'pref-stage-followup' });
+    stageSel.append(
+      h('option', { value: '7', text: '7 天后提醒回看' }),
+      h('option', { value: '14', text: '14 天后提醒回看' }),
+      h('option', { value: '0', text: '关闭阶段回看' })
+    );
+    stageSel.value = String(stageDays);
     const thresholdRange = h('input', { type: 'range', min: '7', max: '30', step: '1', value: String(threshold), 'data-test': 'pref-threshold' });
     const thresholdVal = h('span', { class: 'tn-range-val', text: `${threshold} 天` });
     const statusLine = h('div', { class: 'tn-faint tn-small', text: `设置版本 v${version ?? '—'} · 最近更新 ${fmtDateTime(prefs.updated_at)}` });
@@ -182,9 +190,11 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
       const reviewRelevant = mode === 'all' || mode === 'review_only';
       freqSel.disabled = !reviewRelevant;
       thresholdRange.disabled = !reviewRelevant;
+      stageSel.disabled = !reviewRelevant;
     };
     modeSel.addEventListener('change', () => { mode = modeSel.value; syncDisabled(); });
     freqSel.addEventListener('change', () => { frequency = freqSel.value; });
+    stageSel.addEventListener('change', () => { stageDays = Number(stageSel.value); });
     thresholdRange.addEventListener('input', () => {
       threshold = Number(thresholdRange.value);
       thresholdVal.textContent = `${threshold} 天`;
@@ -202,7 +212,8 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
           expected_version: version,
           mode,
           review_frequency: frequency,
-          review_threshold_days: Number(threshold)
+          review_threshold_days: Number(threshold),
+          stage_followup_days: Number(stageDays)
         });
         state.me.notification_preferences = res.data;
         toast('提醒设置已保存', 'ok');
@@ -236,11 +247,13 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
           const p = res.data;
           clear(previewHost);
           previewHost.append(
-            h('div', { class: 'tn-small tn-muted', text: `${MODE_LABEL[p.mode] || p.mode} · ${p.frequency === 'daily' ? '每天' : '每周一'} · 阈值 ${p.threshold_days} 天` }),
+            h('div', { class: 'tn-small tn-muted', text: `${MODE_LABEL[p.mode] || p.mode} · ${p.frequency === 'daily' ? '每天' : '每周一'} · 阈值 ${p.threshold_days} 天 · 阶段回看 ${p.stage_followup_days ? `${p.stage_followup_days} 天` : '关闭'}` }),
             h('div', { class: 'tn-small', style: { marginTop: '6px' }, text: `A 有进展：${p.a.length} 条` }),
-            ...p.a.slice(0, 5).map((x) => h('div', { class: 'tn-small tn-muted', text: `· ${x.company_name} · ${x.job_title}：${x.summary}` })),
+            ...p.a.slice(0, 5).map((x) => h('div', { class: 'tn-small tn-muted', text: `· ${x.company_name} · ${x.job_title}：${x.summary}${x.received_at_label ? `（${x.received_at_label}收到）` : ''}` })),
             h('div', { class: 'tn-small', style: { marginTop: '6px' }, text: `B 等待回看：${p.b.length} 条` }),
             ...p.b.slice(0, 5).map((x) => h('div', { class: 'tn-small tn-muted', text: `· ${x.company_name} · ${x.job_title}：已投 ${x.days_since_applied} 天${x.has_safe_link ? '，有安全链接' : '，无安全链接'}` })),
+            h('div', { class: 'tn-small', style: { marginTop: '6px' }, text: `C 该回看了：${(p.c || []).length} 条` }),
+            ...(p.c || []).slice(0, 5).map((x) => h('div', { class: 'tn-small tn-muted', text: `· ${x.company_name} · ${x.job_title}：${x.stage_label} ${x.anchor_label}收到，已过 ${x.days_since_stage} 天${x.has_safe_link ? '，有安全链接' : '，无安全链接'}` })),
             h('div', { class: 'tn-small', style: { marginTop: '6px' } }, h('strong', { text: p.would_send ? '当前条件下会发送' : '当前条件下不会发送' })),
             h('div', { class: 'tn-tiny tn-faint', text: p.note })
           );
@@ -263,6 +276,8 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
         h('div', { class: 'tn-field', style: { marginBottom: '10px' } }, h('label', { text: '接收哪些提醒' }), modeSel,
           h('div', { class: 'tn-hint', text: '“仅状态变化”不包含定期回看；全部关闭后仍可在台账里手动回看。' })),
         h('div', { class: 'tn-field', style: { marginBottom: '10px' } }, h('label', { text: '回看频率' }), freqSel),
+        h('div', { class: 'tn-field', style: { marginBottom: '10px' } }, h('label', { text: '笔试/面试后提醒回看' }), stageSel,
+          h('div', { class: 'tn-hint', text: '从邀请邮件收到日（有面试时间则从面试日）起算；同一条 7 天内最多提醒一次，确认“状态无变化”后重新计时。' })),
         h('div', { class: 'tn-field', style: { marginBottom: '0' } },
           h('label', { text: '回看阈值（7–30 天）' }),
           h('div', { class: 'tn-range-row' }, thresholdRange, thresholdVal),

@@ -31,11 +31,14 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
     assert.equal(tooLow.status, 400);
     const badFreq = await server.request('/api/v1/notification-preferences', { method: 'PUT', cookie, body: { review_frequency: 'hourly' } });
     assert.equal(badFreq.status, 400);
+    const badStage = await server.request('/api/v1/notification-preferences', { method: 'PUT', cookie, body: { stage_followup_days: 5 } });
+    assert.equal(badStage.status, 400);
     const ok = await server.request('/api/v1/notification-preferences', {
-      method: 'PUT', cookie, body: { mode: 'all', review_frequency: 'daily', review_threshold_days: 7, expected_version: prefs.json.data.version }
+      method: 'PUT', cookie, body: { mode: 'all', review_frequency: 'daily', review_threshold_days: 7, stage_followup_days: 7, expected_version: prefs.json.data.version }
     });
     assert.equal(ok.status, 200);
     assert.equal(ok.json.data.review_threshold_days, 7);
+    assert.equal(ok.json.data.stage_followup_days, 7);
     const stale = await server.request('/api/v1/notification-preferences', {
       method: 'PUT', cookie, body: { review_threshold_days: 10, expected_version: prefs.json.data.version }
     });

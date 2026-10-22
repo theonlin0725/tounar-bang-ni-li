@@ -13,7 +13,7 @@ export const PUBLIC_APPLICATION_FIELDS = [
   'applied_at', 'applied_at_precision', 'first_viewed_at', 'last_viewed_at', 'form_started_at',
   'last_status_changed_at', 'last_progress_at', 'last_site_observed_at', 'last_reviewed_at',
   'deadline_at', 'deadline_precision', 'interview_round', 'round_label', 'interview_scheduled_at',
-  'last_interview_completed_at', 'source_methods', 'latest_event_id', 'version', 'created_at',
+  'last_interview_completed_at', 'stage_followup_anchor', 'source_methods', 'latest_event_id', 'version', 'created_at',
   'updated_at', 'archived_at', 'archive_reason'
 ];
 
@@ -278,6 +278,9 @@ export function createApplication({ ownerId, fields, eventId, sourceMethod, stat
     round_label: fields.round_label ? clipText(fields.round_label, 40) : null,
     interview_scheduled_at: parseIso(fields.interview_scheduled_at),
     last_interview_completed_at: parseIso(fields.last_interview_completed_at),
+    stage_followup_anchor: ['assessment', 'interview'].includes(status)
+      ? (maxIso(now, parseIso(fields.interview_scheduled_at)) || now)
+      : null,
     source_methods_json: JSON.stringify(methods),
     latest_event_id: eventId || null,
     version: 1,
@@ -336,11 +339,11 @@ function outboxStatusChange(app, event, fromStatus, toStatus) {
   const existing = one(`SELECT id FROM notification_outbox WHERE event_id = ? AND kind = 'status_change'`, [event.id]);
   if (existing) return;
   run(`INSERT INTO notification_outbox
-    (id, owner_id, application_id, event_id, kind, summary, occurred_at, created_at)
-    VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
+    (id, owner_id, application_id, event_id, kind, summary, occurred_at, source_received_at, created_at)
+    VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?, ?)`,
   [newId('out'), app.owner_id, app.id, event.id,
     `${app.company_name} · ${app.job_title}：${STATUS_LABELS[fromStatus] || fromStatus} → ${STATUS_LABELS[toStatus] || toStatus}`,
-    event.occurred_at || nowIso(), nowIso()]);
+    event.occurred_at || nowIso(), event.occurred_at || nowIso(), nowIso()]);
 }
 
 function maybeSetRound(app, fields, eventId, sourceMethod) {
@@ -352,7 +355,13 @@ function maybeSetRound(app, fields, eventId, sourceMethod) {
   if (incomingRound && (!app.interview_round || incomingRound > app.interview_round)) updates.interview_round = incomingRound;
   if (fields.interview_scheduled_at) {
     const scheduled = parseIso(fields.interview_scheduled_at);
-    if (scheduled && scheduled !== app.interview_scheduled_at) updates.interview_scheduled_at = scheduled;
+    if (scheduled && scheduled !== app.interview_scheduled_at) {
+      updates.interview_scheduled_at = scheduled;
+      /* P3：面试时间晚于阶段锚点时，以面试时间为新的回看锚点。 */
+      if (app.status === 'interview' && (!app.stage_followup_anchor || Date.parse(scheduled) > Date.parse(app.stage_followup_anchor))) {
+        updates.stage_followup_anchor = scheduled;
+      }
+    }
   }
   if (!Object.keys(updates).length) return app;
   return markApplicationChanged(app.owner_id, app.id, eventId, sourceMethod, updates, { reason: '面试属性更新' });
@@ -809,10 +818,10 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
     });
     run('UPDATE events SET application_id = ?, processed_at = ? WHERE id = ?', [app.id, nowIso(), eventId]);
     run(`INSERT INTO notification_outbox
-      (id, owner_id, application_id, event_id, kind, summary, occurred_at, created_at)
-      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
+      (id, owner_id, application_id, event_id, kind, summary, occurred_at, source_received_at, created_at)
+      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?, ?)`,
     [newId('out'), ownerId, app.id, eventId, `${app.company_name} · ${app.job_title}：手动补录`,
-      appliedAt || nowIso(), nowIso()]);
+      appliedAt || nowIso(), nowIso(), nowIso()]);
     run(`INSERT INTO audit_log (id, owner_id, actor, action, target_type, target_id, meta_json, created_at)
          VALUES (?, ?, ?, 'application.manual_create', 'application', ?, '{}', ?)`,
     [newId('aud'), ownerId, actor, app.id, nowIso()]);

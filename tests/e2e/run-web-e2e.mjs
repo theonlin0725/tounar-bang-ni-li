@@ -608,20 +608,32 @@ try {
   }
 
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
+  // P3 夹具：让云杉数据处于「面试中」且锚点在 8 天前，验证 C 类阶段回看。
+  const stageAnchor = new Date(Date.now() - 8 * 86400000).toISOString();
+  dbExec(server.dir, `UPDATE applications SET status = 'interview', stage_followup_anchor = ${sqlQuote(stageAnchor)},
+    last_status_changed_at = ${sqlQuote(stageAnchor)}, last_progress_at = ${sqlQuote(stageAnchor)},
+    last_b_notified_at = NULL, updated_at = ${sqlQuote(new Date().toISOString())}
+    WHERE id = ${sqlQuote(refreshTarget.id)}`);
   await page.click('[data-test=open-settings-reminder]');
   await page.waitForSelector('[data-test=pref-mode]');
   await page.selectOption('[data-test=pref-frequency]', 'daily');
+  await page.selectOption('[data-test=pref-stage-followup]', '7');
   await page.click('[data-test=pref-save]');
   await waitToast(page, '提醒设置已保存');
   await page.waitForSelector('[data-test=pref-mode]');
-  check('W-17 提醒设置保存（回看频率=每天，D06 暂定参数）', true, 'frequency=daily');
+  const savedPrefs = await server.request('/api/v1/notification-preferences', { cookie: apiCookie });
+  check('W-17 提醒设置保存（回看频率=每天，阶段回看=7 天）',
+    savedPrefs.json?.data?.review_frequency === 'daily' && savedPrefs.json?.data?.stage_followup_days === 7,
+    `frequency=${savedPrefs.json?.data?.review_frequency} stage=${savedPrefs.json?.data?.stage_followup_days}`);
 
   await page.click('[data-test=pref-preview-btn]');
   await waitForText(page, '[data-test=pref-preview]', 'B 等待回看：1 条');
+  await waitForText(page, '[data-test=pref-preview]', 'C 该回看了：1 条');
   const previewText = await page.textContent('[data-test=pref-preview]');
-  check('W-18 提醒预览反映真实候选（B=1：星河科技已投 20 天）',
-    previewText.includes('当前条件下会发送') && previewText.includes('星河科技'),
-    previewText.replace(/\s+/g, ' ').slice(0, 120));
+  check('W-18 提醒预览反映真实候选（B=1：星河科技；C=1：云杉数据阶段回看）',
+    previewText.includes('当前条件下会发送') && previewText.includes('星河科技')
+      && previewText.includes('C 该回看了：1 条') && previewText.includes('云杉数据'),
+    previewText.replace(/\s+/g, ' ').slice(0, 160));
   await shot(page, '07-settings-reminder');
   await page.click('[data-test=settings-modal] .tn-modal-close');
 
@@ -629,11 +641,20 @@ try {
   const tickRes = await server.tick({ reminders: true });
   const reminderMail = await waitFor(() => server.latestOutbox('reminder', EMAIL), { label: '提醒邮件写入 outbox' });
   const mailText = String(reminderMail.text || '');
-  const linkMatch = mailText.match(/\/r\/(rl_[A-Za-z0-9_-]+)/);
-  const reminderToken = linkMatch ? linkMatch[1] : null;
+  // 邮件正文先出现 C 类（云杉数据），再出现 B 类（星河科技）；落地页测试必须取星河科技自己的链接。
+  const starLinkMatch = mailText.match(/等待回看[\s\S]*?星河科技[\s\S]*?\/r\/(rl_[A-Za-z0-9_-]+)/);
+  const anyLinkMatch = mailText.match(/\/r\/(rl_[A-Za-z0-9_-]+)/);
+  const reminderToken = starLinkMatch ? starLinkMatch[1] : (anyLinkMatch ? anyLinkMatch[1] : null);
   check('W-19 内部 tick 真实生成提醒邮件（outbox；含 B 回看链接）',
     tickRes.status === 200 && !!reminderMail && !!reminderToken && mailText.includes('星河科技'),
     `subject=${reminderMail?.subject || ''} token=${reminderToken ? reminderToken.slice(0, 10) + '…' : 'missing'}`);
+  check('W-19a 邮件落款用收信日期；「该回看了」含状态页/确认/详情三个链接',
+    reminderMail.subject.includes('收到') && mailText.includes('该回看了')
+      && /—— \d{4}年\d{2}月\d{2}日 收到/.test(mailText)
+      && mailText.includes('https://jobs.example.com/yunshan/dp-intern')
+      && mailText.includes(`/?app=${refreshTarget.id}`)
+      && /\/r\/rl_[A-Za-z0-9_-]+/.test(mailText),
+    `subject=${reminderMail.subject} c_detail=/?app=${refreshTarget.id}`);
 
   ctx2 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: server.base });
   const page2 = await ctx2.newPage();
@@ -764,6 +785,9 @@ try {
       && overlayState.drawerHidden && overlayState.drawerChildren === 0,
     JSON.stringify(overlayState));
 
+  // 登录态失效/未登录时打开深链，登录成功后必须回到原记录详情，而不是只回台账首页。
+  await page.goto(`/?app=${appA.id}`);
+  await page.waitForSelector('[data-test=login-email]');
   const prevOtp2 = server.latestOutbox('otp', EMAIL)?.__file || null;
   await page.fill('[data-test=login-email]', EMAIL);
   await page.click('[data-test=login-send]');
@@ -772,8 +796,13 @@ try {
   await page.fill('[data-test=login-code]', otp3);
   await page.click('[data-test=login-submit]');
   await page.waitForSelector('[data-test=header-email]');
+  await page.waitForSelector('[data-test=detail-drawer]');
+  const deepLinkText = await page.textContent('[data-test=detail-drawer]');
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '4');
-  check('W-31 重新登录成功（新会话；数据仍在）', true, 'total=4（含 P2 按邮件新建的记录）');
+  check('W-31 登录后回到原深链（/?app=...）：详情抽屉打开且数据仍在',
+    deepLinkText.includes('星河科技') && deepLinkText.includes('前端开发实习生'),
+    `deep_link=/?app=${appA.id} total=4`);
+  await page.click('[data-test=detail-drawer] .tn-drawer-close');
   const uiCookie = await sessionCookie(ctx1, server.base);
 
   /* ================= 10. 删除全部数据：重验证 → 设备回执 → completed ================= */

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { config } from '../config.js';
 import { bumpRevision, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
-  APPLIED_STATUSES, AppError, TERMINAL, canonicalJobUrl, clipText, isSafeHttpUrl, newId,
+  APPLIED_STATUSES, AppError, TERMINAL, canonicalJobUrl, clipText, isSafeHttpUrl, maxIso, newId,
   normalizeWhitespace, nowIso, parseIso, safeJsonParse, shanghaiDateKey
 } from '../util.js';
 import { createApplication, findCandidates, mapStatusText, normalizeStatus } from './applications.js';
@@ -96,6 +96,9 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
     if (updates.last_interview_completed_at && updates.last_interview_completed_at !== app.last_interview_completed_at) {
       updates.last_progress_at = nowIso();
     }
+    if (!updates.status && updates.interview_scheduled_at && ['assessment', 'interview'].includes(app.status)) {
+      updates.stage_followup_anchor = maxIso(app.stage_followup_anchor, app.last_status_changed_at, updates.interview_scheduled_at);
+    }
     if (updates.company_name) {
       updates.company_key = normalizeWhitespace(updates.company_name, 200).toLowerCase().replace(/[\s·•,，.。有限公司股份集团]+/g, '');
     }
@@ -188,14 +191,18 @@ export function markApplicationReviewed({ ownerId, applicationId, expectedVersio
       return { application: app, reviewed_at: app.last_reviewed_at, changed: false, completed: !!confirmation };
     }
     const reviewedAt = nowIso();
-    run('UPDATE applications SET last_reviewed_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND owner_id = ?',
-      [reviewedAt, reviewedAt, applicationId, ownerId]);
+    const resetStageAnchor = ['assessment', 'interview'].includes(app.status);
+    run(`UPDATE applications SET last_reviewed_at = ?, stage_followup_anchor = ?, updated_at = ?, version = version + 1
+         WHERE id = ? AND owner_id = ?`,
+    [reviewedAt, resetStageAnchor ? reviewedAt : app.stage_followup_anchor, reviewedAt, applicationId, ownerId]);
     bumpRevision();
+    const reviewChanges = { last_reviewed_at: { from: app.last_reviewed_at, to: reviewedAt } };
+    if (resetStageAnchor) reviewChanges.stage_followup_anchor = { from: app.stage_followup_anchor, to: reviewedAt };
     run(`INSERT INTO application_history
       (id, owner_id, application_id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason)
       VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 'manual', '用户确认状态无变化')`,
     [newId('hist'), ownerId, applicationId, app.status, app.status,
-      JSON.stringify({ last_reviewed_at: { from: app.last_reviewed_at, to: reviewedAt } }), reviewedAt]);
+      JSON.stringify(reviewChanges), reviewedAt]);
     if (confirmation) {
       run("UPDATE reminder_confirmations SET state = 'consumed', consumed_at = ? WHERE id = ?", [nowIso(), confirmation.id]);
       const result = { reviewed_at: reviewedAt, application_version: app.version + 1, same_day: false };
@@ -441,6 +448,9 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
       updates.last_progress_at = nowIso();
     }
   }
+  if (!updates.status && updates.interview_scheduled_at && ['assessment', 'interview'].includes(app.status)) {
+    updates.stage_followup_anchor = maxIso(app.stage_followup_anchor, app.last_status_changed_at, updates.interview_scheduled_at);
+  }
   if (!Object.keys(updates).length) {
     return { application: app, event_id: event?.id || null };
   }
@@ -448,10 +458,10 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
   const updated = markApplicationChanged(ownerId, app.id, eventId, 'manual', updates, { reason });
   if (updates.status && updates.status !== app.status) {
     run(`INSERT INTO notification_outbox
-      (id, owner_id, application_id, event_id, kind, summary, occurred_at, created_at)
-      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
+      (id, owner_id, application_id, event_id, kind, summary, occurred_at, source_received_at, created_at)
+      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?, ?)`,
     [newId('out'), ownerId, app.id, eventId, `${updated.company_name} · ${updated.job_title}：${app.status} → ${updated.status}`,
-      nowIso(), nowIso()]);
+      sourceMail?.received_at || nowIso(), sourceMail?.received_at || nowIso(), nowIso()]);
   }
   return { application: updated, event_id: eventId };
 }

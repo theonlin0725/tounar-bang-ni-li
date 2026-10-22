@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { all, bumpRevision, dataRevision, getApplication, one, run, transaction } from '../db.js';
 import {
   AppError, STATUS_LABELS, daysBetweenShanghai, decryptSecret, encryptSecret, escapeHtml, isDueForReview,
-  newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods
+  maxIso, newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods
 } from '../util.js';
 import { getPreferences } from './applications.js';
 import { sendMail } from '../mailer.js';
@@ -149,7 +149,7 @@ export function reviewDigestState(ownerId, now = new Date()) {
 
 export function buildReminderCandidates(ownerId, now = new Date()) {
   const prefs = getPreferences(ownerId);
-  if (prefs.mode === 'off') return { prefs, a: [], b: [] };
+  if (prefs.mode === 'off') return { prefs, a: [], b: [], c: [] };
   const apps = all('SELECT * FROM applications WHERE owner_id = ? AND archived_at IS NULL ORDER BY updated_at DESC', [ownerId]);
   const byId = new Map(apps.map((a) => [a.id, a]));
   const a = [];
@@ -165,10 +165,31 @@ export function buildReminderCandidates(ownerId, now = new Date()) {
       a.push({ app, outbox: row });
     }
   }
+  /* P3：笔试/面试后的阶段回看。锚点优先用 stage_followup_anchor（状态进入时写入，
+     邮件来源就是邀请邮件收到日期），面试时间更晚时在写入侧已取面试时间。 */
+  const c = [];
+  if ((prefs.mode === 'all' || prefs.mode === 'review_only')
+    && Number(prefs.stage_followup_days) > 0
+    && (prefs.review_frequency === 'daily' || isMondayShanghai(now))) {
+    const followupDays = Number(prefs.stage_followup_days);
+    for (const app of apps) {
+      if (!['assessment', 'interview'].includes(app.status)) continue;
+      const anchor = app.stage_followup_anchor
+        || (app.status === 'interview' ? maxIso(app.interview_scheduled_at, app.last_status_changed_at) : app.last_status_changed_at);
+      if (!anchor) continue;
+      const days = daysBetweenShanghai(anchor, now);
+      if (days == null || days < followupDays) continue;
+      if (!(app.status_url || app.job_url)) continue;
+      if (app.last_b_notified_at && daysBetweenShanghai(app.last_b_notified_at, now) < 7) continue;
+      c.push({ app, anchor, days });
+    }
+  }
+  const cIds = new Set(c.map((x) => x.app.id));
   const b = [];
   if (prefs.mode === 'all' || prefs.mode === 'review_only') {
     if (prefs.review_frequency === 'daily' || isMondayShanghai(now)) {
       for (const app of apps) {
+        if (cIds.has(app.id)) continue;
         if (!isDueForReview(app, prefs.review_threshold_days, now)) continue;
         if (!(app.status_url || app.job_url)) continue;
         if (app.last_b_notified_at && daysBetweenShanghai(app.last_b_notified_at, now) < 7) continue;
@@ -176,7 +197,7 @@ export function buildReminderCandidates(ownerId, now = new Date()) {
       }
     }
   }
-  return { prefs, a, b, owner: one('SELECT * FROM users WHERE id = ?', [ownerId]) };
+  return { prefs, a, b, c, owner: one('SELECT * FROM users WHERE id = ?', [ownerId]) };
 }
 
 /* 回看标签：面试中显示「已面 N 天」，其余显示「已投 N 天」。
@@ -192,26 +213,97 @@ function progressTag(app, asOf) {
   return '投递时间未知';
 }
 
-function reminderBatchText({ owner, a, b, links, digest }) {
-  const today = shanghaiDateKey(new Date());
+/* ---------- P3：推送邮件的日期口径 ---------- */
+const STAGE_LABELS = { assessment: '笔试/测评邀请', interview: '面试邀请' };
+const SUBJECT_STATUS_LABELS = {
+  applied: '已投递', assessment: '笔试/测评邀请', interview: '面试邀请',
+  rejected: '拒绝通知', offer: 'Offer', closed: '流程关闭'
+};
+
+function receivedAtOf(outbox) {
+  return outbox?.source_received_at || outbox?.occurred_at || null;
+}
+
+function dateParts(iso) {
+  const key = iso ? shanghaiDateKey(new Date(iso)) : null;
+  if (!key) return null;
+  const [year, month, day] = key.split('-');
+  return { year, month, day, key };
+}
+
+function dateLabel(iso) {
+  const p = dateParts(iso);
+  return p ? `${p.month}月${p.day}日` : '';
+}
+
+function fullDateLabel(iso) {
+  const p = dateParts(iso);
+  return p ? `${p.year}年${p.month}月${p.day}日` : '';
+}
+
+function dateRangeLabel(isoList) {
+  const keys = isoList.map((x) => dateParts(x)?.key).filter(Boolean).sort();
+  if (!keys.length) return '';
+  if (keys[0] === keys[keys.length - 1]) return dateLabel(keys[0]);
+  const a = dateParts(keys[0]);
+  const b = dateParts(keys[keys.length - 1]);
+  return `${a.month}月${a.day}日–${b.month}月${b.day}日`;
+}
+
+function progressKind(outbox) {
+  const parts = String(outbox?.summary || '').split('→');
+  if (parts.length < 2) return '有新进展';
+  const to = parts[parts.length - 1].trim();
+  const key = Object.keys(SUBJECT_STATUS_LABELS).find((k) => STATUS_LABELS[k] === to);
+  return SUBJECT_STATUS_LABELS[key] || to || '有新进展';
+}
+
+function stageAnchorLine(item) {
+  const stage = STAGE_LABELS[item.app.status] || STATUS_LABELS[item.app.status] || '阶段进展';
+  return `${stage} ${dateLabel(item.anchor)}收到，已过 ${item.days} 天，还没有新进展`;
+}
+
+function pushTimeLine(asOf) {
+  return `推送时间：${shanghaiDateKey(asOf)} 08:00（北京时间）`;
+}
+
+function reminderBatchText({ owner, a, b, c, links, digest, asOf = new Date() }) {
   const lines = [];
-  lines.push(`Tounar 帮你理 · ${today} 08:00（北京时间）`);
+  const ordinals = ['一', '二', '三', '四', '五'];
+  let section = 0;
+  const sectionTitle = (label, count) => `${ordinals[section++]}、${label}（${count}）`;
+  const aDates = a.map((x) => receivedAtOf(x.outbox)).filter(Boolean).sort();
+  const headerDate = a.length === 1
+    ? `${fullDateLabel(aDates[0])} 收到`
+    : a.length > 1 ? `收信日期 ${dateRangeLabel(aDates)}` : `${shanghaiDateKey(asOf)} 回看`;
+  lines.push(`Tounar 帮你理 · ${headerDate}`);
   if (a.length) {
-    lines.push(`一、有进展（${a.length}）`);
+    lines.push(sectionTitle('有进展', a.length));
     for (const x of a) {
-      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app)}]`);
+      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app, asOf)}]`);
       lines.push(`  ${x.outbox.summary}`);
+      lines.push(`  —— ${fullDateLabel(receivedAtOf(x.outbox))} 收到`);
+    }
+  }
+  if (c.length) {
+    lines.push(sectionTitle('该回看了', c.length));
+    for (const x of c) {
+      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${STATUS_LABELS[x.app.status] || x.app.status}]`);
+      lines.push(`  ${stageAnchorLine(x)}`);
+      lines.push(`  直接打开申请状态页：${x.app.status_url || x.app.job_url}`);
+      lines.push(`  我看过了，没变化：${appUrl('/r/' + links.get(x.app.id))}`);
+      lines.push(`  结果出来了，去更新：${appUrl('/?app=' + x.app.id)}`);
     }
   }
   if (b.length) {
-    lines.push(`二、等待回看（${b.length}）`);
+    lines.push(sectionTitle('等待回看', b.length));
     for (const x of b) {
-      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app)}]`);
-      lines.push(`  ${appUrl('/r/' + links.get(x.app.id))}`);
+      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app, asOf)}]`);
+      lines.push(`  状态没有变化：${appUrl('/r/' + links.get(x.app.id))}`);
     }
   }
   if (digest && digest.due) {
-    lines.push(`三、待你确认（${digest.total}）`);
+    lines.push(sectionTitle('待你确认', digest.total));
     for (const item of digest.items.slice(0, 8)) {
       const date = String(item.dated_at || '').slice(0, 10);
       lines.push(`· ${item.summary}`);
@@ -221,11 +313,11 @@ function reminderBatchText({ owner, a, b, links, digest }) {
     lines.push(`  处理入口：${appUrl('/?panel=reviews')}`);
   }
   lines.push('没有进展、也没到回看节点的岗位，不会出现在这封邮件里。');
-  lines.push(`提醒设置：${appUrl('/?panel=settings')}  打开台账：${appUrl('/')}`);
+  lines.push(`${pushTimeLine(asOf)} · 提醒设置：${appUrl('/?panel=settings')}  打开台账：${appUrl('/')}`);
   return lines.join('\n');
 }
 
-function reminderBatchHtml({ owner, a, b, links, asOf, digest }) {
+function reminderBatchHtml({ owner, a, b, c, links, asOf, digest }) {
   const tagHtml = (app) => {
     const tag = progressTag(app, asOf);
     const isInterview = String(tag).startsWith('已面');
@@ -235,7 +327,22 @@ function reminderBatchHtml({ owner, a, b, links, asOf, digest }) {
     <tr><td style="padding:14px 0;border-bottom:1px solid #e2e7e1">
       <div style="font-size:15px;color:#151a19"><strong>${escapeHtml(x.app.company_name)}</strong> · ${escapeHtml(x.app.job_title)}${tagHtml(x.app)}</div>
       <div style="margin-top:5px;color:#66716d;font-size:13px">${escapeHtml(x.outbox.summary)}</div>
+      <div style="margin-top:5px;color:#8a938f;font-size:12px">—— ${escapeHtml(fullDateLabel(receivedAtOf(x.outbox)))} 收到</div>
     </td></tr>`).join('');
+  const rowsC = c.map((x) => {
+    const statusLink = x.app.status_url || x.app.job_url;
+    return `
+    <tr><td style="padding:14px 0;border-bottom:1px solid #e2e7e1">
+      <div style="font-size:15px;color:#151a19"><strong>${escapeHtml(x.app.company_name)}</strong> · ${escapeHtml(x.app.job_title)}
+        <span style="display:inline-block;margin-left:8px;background:#f1efe8;color:#5f5e5a;border:1px solid #e2e7e1;border-radius:999px;padding:2px 10px;font-size:12px;vertical-align:2px">${escapeHtml(STATUS_LABELS[x.app.status] || x.app.status)}</span></div>
+      <div style="margin-top:5px;color:#66716d;font-size:13px">${escapeHtml(stageAnchorLine(x))}</div>
+      <div style="margin-top:9px">
+        <a href="${escapeHtml(statusLink)}" style="display:inline-block;background:#17594c;color:#fff;text-decoration:none;padding:8px 14px;border-radius:4px;font-size:13px;margin:0 6px 6px 0">直接打开申请状态页</a>
+        <a href="${appUrl('/r/' + links.get(x.app.id))}" style="display:inline-block;background:#fff;color:#17594c;border:1px solid #17594c;text-decoration:none;padding:7px 13px;border-radius:4px;font-size:13px;margin:0 6px 6px 0">我看过了，没变化</a>
+        <a href="${appUrl('/?app=' + x.app.id)}" style="display:inline-block;background:#fff;color:#17594c;border:1px solid #cfd8d2;text-decoration:none;padding:7px 13px;border-radius:4px;font-size:13px;margin:0 6px 6px 0">结果出来了，去更新</a>
+      </div>
+    </td></tr>`;
+  }).join('');
   const rowsB = b.map((x) => `
     <tr><td style="padding:14px 0;border-bottom:1px solid #e2e7e1">
       <div style="font-size:15px;color:#151a19"><strong>${escapeHtml(x.app.company_name)}</strong> · ${escapeHtml(x.app.job_title)}${tagHtml(x.app)}</div>
@@ -251,15 +358,29 @@ function reminderBatchHtml({ owner, a, b, links, asOf, digest }) {
       (digest.total > digest.items.length
         ? `<tr><td style="padding:10px 0;color:#66716d;font-size:13px">…及其余 ${digest.total - digest.items.length} 条</td></tr>` : '')
     : '';
+  const ordinals = ['一', '二', '三', '四', '五'];
+  let section = 0;
+  const heading = (label, count) => `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">${ordinals[section++]}、${label}（${count}）</h2>`;
+  const aDates = a.map((x) => receivedAtOf(x.outbox)).filter(Boolean).sort();
+  const topDate = a.length === 1
+    ? `${fullDateLabel(aDates[0])} 收到`
+    : a.length > 1 ? `收信日期 ${dateRangeLabel(aDates)}` : `${shanghaiDateKey(asOf)} 回看`;
+  const titleParts = [];
+  if (a.length) titleParts.push(`${a.length} 个岗位有进展`);
+  if (c.length) titleParts.push(`${c.length} 个岗位该回看了`);
+  if (b.length) titleParts.push(`${b.length} 个岗位等待回看`);
+  if (digest && digest.due) titleParts.push(`${digest.total} 条待确认`);
   return `<!doctype html><html lang="zh-CN"><body style="margin:0;background:#f4f6f2;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#151a19">
   <div style="max-width:620px;margin:0 auto;padding:32px 22px">
     <div style="font-size:13px;letter-spacing:.16em;color:#17594c;text-transform:uppercase">Tounar · 帮你理</div>
-    <h1 style="font-family:Georgia,'Songti SC',serif;font-size:26px;font-weight:600;margin:12px 0 4px">${a.length ? `${a.length} 个岗位有进展` : ''}${a.length && b.length ? ' · ' : ''}${b.length ? `${b.length} 个岗位等待回看` : ''}${(a.length || b.length) && digest && digest.due ? ' · ' : ''}${digest && digest.due ? `${digest.total} 条待确认` : ''}</h1>
-    <p style="color:#66716d;font-size:13px;line-height:1.7">${escapeHtml(shanghaiDateKey(asOf))} 08:00 批次 · 没有进展、也没到回看节点的岗位不会出现在这里。</p>
-    ${a.length ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">一、有进展（${a.length}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsA}</table>` : ''}
-    ${b.length ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">二、等待回看（${b.length}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsB}</table>` : ''}
-    ${digest && digest.due ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">三、待你确认（${digest.total}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsD}</table><p style="margin:8px 0 0;font-size:12px;color:#66716d">这些是系统拿不准、等你裁决的线索（每 ${config.reviewDigestDays} 天汇总一次）。</p>` : ''}
+    <h1 style="font-family:Georgia,'Songti SC',serif;font-size:26px;font-weight:600;margin:12px 0 4px">${escapeHtml(titleParts.join(' · '))}</h1>
+    <p style="color:#66716d;font-size:13px;line-height:1.7">${escapeHtml(topDate)} · 没有进展、也没到回看节点的岗位不会出现在这里。</p>
+    ${a.length ? `${heading('有进展', a.length)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsA}</table>` : ''}
+    ${c.length ? `${heading('该回看了', c.length)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsC}</table>` : ''}
+    ${b.length ? `${heading('等待回看', b.length)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsB}</table>` : ''}
+    ${digest && digest.due ? `${heading('待你确认', digest.total)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsD}</table><p style="margin:8px 0 0;font-size:12px;color:#66716d">这些是系统拿不准、等你裁决的线索（每 ${config.reviewDigestDays} 天汇总一次）。</p>` : ''}
     <p style="margin:28px 0 0;font-size:12px;line-height:1.8;color:#66716d">只有你明确点击“已确认，状态无变化”后，才会刷新回看时间。打开邮件里的链接不会自动标记。<br>
+    ${escapeHtml(pushTimeLine(asOf))}<br>
     <a href="${appUrl('/?panel=settings')}" style="color:#17594c">提醒设置</a> · <a href="${appUrl('/?panel=reviews')}" style="color:#17594c">待确认队列</a> · <a href="${appUrl('/')}" style="color:#17594c">打开台账</a></p>
   </div></body></html>`;
 }
@@ -288,43 +409,66 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
       return { owner_id: ownerId, business_date: businessDate, skipped: 'outside_batch_window' };
     }
   }
-  const { prefs, a, b } = buildReminderCandidates(ownerId, now);
+  const { prefs, a, b, c } = buildReminderCandidates(ownerId, now);
   const digest = reviewDigestState(ownerId, now);
-  if (!a.length && !b.length && !digest.due) {
+  if (!a.length && !b.length && !c.length && !digest.due) {
     const batchId = existing?.id || newId('batch');
     transaction(() => {
       if (!existing) {
         run(`INSERT INTO notification_batches
-          (id, owner_id, business_date, channel, status, item_count_a, item_count_b, created_at, updated_at)
-          VALUES (?, ?, ?, 'email', 'skipped_empty', 0, 0, ?, ?)`, [batchId, ownerId, businessDate, nowIso(), nowIso()]);
+          (id, owner_id, business_date, channel, status, item_count_a, item_count_b, item_count_c, created_at, updated_at)
+          VALUES (?, ?, ?, 'email', 'skipped_empty', 0, 0, 0, ?, ?)`, [batchId, ownerId, businessDate, nowIso(), nowIso()]);
       } else {
-        run(`UPDATE notification_batches SET status = 'skipped_empty', item_count_a = 0, item_count_b = 0, updated_at = ?
-             WHERE id = ?`, [nowIso(), existing.id]);
+        run(`UPDATE notification_batches SET status = 'skipped_empty', item_count_a = 0, item_count_b = 0,
+             item_count_c = 0, updated_at = ? WHERE id = ?`, [nowIso(), existing.id]);
       }
     });
     return { owner_id: ownerId, business_date: businessDate, batch_id: batchId, status: 'skipped_empty', sent: 0 };
   }
   const links = new Map();
-  for (const x of b) links.set(x.app.id, createReminderLink(ownerId, x.app.id).token);
+  for (const x of [...b, ...c]) links.set(x.app.id, createReminderLink(ownerId, x.app.id).token);
   const batchId = existing?.id || newId('batch');
   const subjectParts = [];
-  if (a.length) subjectParts.push(`${a.length} 个岗位有进展`);
+  if (a.length === 1) {
+    const x = a[0];
+    subjectParts.push(`${x.app.company_name}·${x.app.job_title} ${progressKind(x.outbox)}（${dateLabel(receivedAtOf(x.outbox))}收到）`);
+  } else if (a.length > 1) {
+    const dates = a.map((x) => receivedAtOf(x.outbox)).filter(Boolean).sort();
+    subjectParts.push(`${a.length} 条进展（${dateRangeLabel(dates)}收到）`);
+  }
+  if (c.length) subjectParts.push(`${c.length} 个岗位该回看了`);
   if (b.length) subjectParts.push(`${b.length} 个岗位已投 ${prefs.review_threshold_days} 天以上`);
   if (digest.due) subjectParts.push(`${digest.total} 条待确认`);
   const subject = `【Tounar】${subjectParts.join(' · ')}`;
   transaction(() => {
     if (!existing) {
       run(`INSERT INTO notification_batches
-        (id, owner_id, business_date, channel, status, subject, item_count_a, item_count_b, created_at, updated_at)
-        VALUES (?, ?, ?, 'email', 'pending', ?, ?, ?, ?, ?)`,
-      [batchId, ownerId, businessDate, subject, a.length, b.length, nowIso(), nowIso()]);
+        (id, owner_id, business_date, channel, status, subject, item_count_a, item_count_b, item_count_c, created_at, updated_at)
+        VALUES (?, ?, ?, 'email', 'pending', ?, ?, ?, ?, ?, ?)`,
+      [batchId, ownerId, businessDate, subject, a.length, b.length, c.length, nowIso(), nowIso()]);
     } else {
-      run(`UPDATE notification_batches SET status = 'pending', subject = ?, item_count_a = ?, item_count_b = ?, updated_at = ?
-           WHERE id = ?`, [subject, a.length, b.length, nowIso(), batchId]);
+      run(`UPDATE notification_batches SET status = 'pending', subject = ?, item_count_a = ?, item_count_b = ?,
+           item_count_c = ?, updated_at = ? WHERE id = ?`,
+      [subject, a.length, b.length, c.length, nowIso(), batchId]);
     }
     for (const x of a) {
       run(`INSERT OR IGNORE INTO notification_batch_items (batch_id, owner_id, application_id, kind, snapshot_json)
-           VALUES (?, ?, ?, 'status_change', ?)`, [batchId, ownerId, x.app.id, JSON.stringify({ summary: x.outbox.summary })]);
+           VALUES (?, ?, ?, 'status_change', ?)`, [batchId, ownerId, x.app.id, JSON.stringify({
+        summary: x.outbox.summary,
+        source_received_at: receivedAtOf(x.outbox)
+      })]);
+    }
+    for (const x of c) {
+      run(`INSERT OR IGNORE INTO notification_batch_items (batch_id, owner_id, application_id, kind, snapshot_json)
+           VALUES (?, ?, ?, 'followup', ?)`, [batchId, ownerId, x.app.id, JSON.stringify({
+        anchor: x.anchor,
+        days_since_stage: x.days,
+        stage: x.app.status,
+        stage_label: STAGE_LABELS[x.app.status] || STATUS_LABELS[x.app.status] || x.app.status,
+        status_url: x.app.status_url || null,
+        job_url: x.app.job_url || null,
+        stage_followup_days: prefs.stage_followup_days
+      })]);
     }
     for (const x of b) {
       run(`INSERT OR IGNORE INTO notification_batch_items (batch_id, owner_id, application_id, kind, snapshot_json)
@@ -339,8 +483,8 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
     }
     run(`UPDATE notification_batches SET status = 'sending', updated_at = ? WHERE id = ?`, [nowIso(), batchId]);
   });
-  const text = reminderBatchText({ owner: user, a, b, links, asOf: now, digest });
-  const html = reminderBatchHtml({ owner: user, a, b, links, asOf: now, digest });
+  const text = reminderBatchText({ owner: user, a, b, c, links, asOf: now, digest });
+  const html = reminderBatchHtml({ owner: user, a, b, c, links, asOf: now, digest });
   try {
     const sent = await sendMail({
       to: user.email_display,
@@ -354,7 +498,7 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
         run(`UPDATE notification_outbox SET consumed_batch_id = ? WHERE id = ?`, [batchId, x.outbox.id]);
         run('UPDATE applications SET last_a_notified_at = ? WHERE id = ? AND owner_id = ?', [nowIso(), x.app.id, ownerId]);
       }
-      for (const x of b) {
+      for (const x of [...b, ...c]) {
         run('UPDATE applications SET last_b_notified_at = ? WHERE id = ? AND owner_id = ?', [nowIso(), x.app.id, ownerId]);
       }
       if (digest.due) {
@@ -365,7 +509,8 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
     });
     return {
       owner_id: ownerId, business_date: businessDate, batch_id: batchId, status: 'sent',
-      items_a: a.length, items_b: b.length, review_digest: digest.due ? digest.total : 0,
+      items_a: a.length, items_b: b.length, items_c: c.length,
+      review_digest: digest.due ? digest.total : 0,
       provider_message_id: sent.messageId, transport: sent.transport
     };
   } catch (err) {
@@ -395,23 +540,32 @@ export async function runReminders(now = new Date(), { force = false, ownerId = 
 }
 
 export function batchPreview(ownerId, now = new Date()) {
-  const { prefs, a, b } = buildReminderCandidates(ownerId, now);
+  const { prefs, a, b, c } = buildReminderCandidates(ownerId, now);
   const digest = reviewDigestState(ownerId, now);
   return {
     mode: prefs.mode,
     frequency: prefs.review_frequency,
     threshold_days: prefs.review_threshold_days,
+    stage_followup_days: prefs.stage_followup_days,
     a: a.map((x) => ({
       application_id: x.app.id, company_name: x.app.company_name, job_title: x.app.job_title,
-      summary: x.outbox.summary, occurred_at: x.outbox.occurred_at
+      summary: x.outbox.summary, occurred_at: x.outbox.occurred_at,
+      source_received_at: receivedAtOf(x.outbox), received_at_label: fullDateLabel(receivedAtOf(x.outbox))
     })),
     b: b.map((x) => ({
       application_id: x.app.id, company_name: x.app.company_name, job_title: x.app.job_title,
       applied_at: x.app.applied_at, days_since_applied: daysBetweenShanghai(x.app.applied_at, now),
       has_safe_link: !!(x.app.status_url || x.app.job_url)
     })),
+    c: c.map((x) => ({
+      application_id: x.app.id, company_name: x.app.company_name, job_title: x.app.job_title,
+      status: x.app.status, stage_label: STAGE_LABELS[x.app.status] || x.app.status,
+      anchor: x.anchor, anchor_label: dateLabel(x.anchor), days_since_stage: x.days,
+      status_url: x.app.status_url || x.app.job_url,
+      has_safe_link: !!(x.app.status_url || x.app.job_url)
+    })),
     review_digest: digest,
-    would_send: a.length + b.length > 0 || digest.due,
+    would_send: a.length + b.length + c.length > 0 || digest.due,
     note: '预览只读；是否实际发送还受批次窗口、频控和发信配置影响'
   };
 }

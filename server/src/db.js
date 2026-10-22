@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
-import { newId, nowIso } from './util.js';
+import { maxIso, newId, nowIso } from './util.js';
 
 let db = null;
 let txDepth = 0;
@@ -46,6 +46,36 @@ function migrate(instance) {
       LIMIT 1)
       WHERE source_mail_id IS NULL AND source_event_id IS NOT NULL`);
     instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_p0_review_source_mail', '1')").run();
+  }
+  /* P3（2026-10-22）：阶段回看锚点、推送邮件原始收信日期、C 类批次计数。
+     只做增量列与一次性回填，不删表、不改旧值。 */
+  for (const sql of [
+    'ALTER TABLE applications ADD COLUMN stage_followup_anchor TEXT',
+    'ALTER TABLE notification_preferences ADD COLUMN stage_followup_days INTEGER NOT NULL DEFAULT 7 CHECK (stage_followup_days IN (0,7,14))',
+    'ALTER TABLE notification_outbox ADD COLUMN source_received_at TEXT',
+    'ALTER TABLE notification_batches ADD COLUMN item_count_c INTEGER NOT NULL DEFAULT 0'
+  ]) {
+    try { instance.exec(sql); } catch { /* 列已存在（schema.sql 新版本已建） */ }
+  }
+  const stageAnchorBackfill = instance.prepare("SELECT value FROM meta WHERE key = 'migration_p3_stage_followup_anchor'").get();
+  if (!stageAnchorBackfill) {
+    instance.exec(`UPDATE applications SET stage_followup_anchor = CASE
+      WHEN status = 'interview' AND interview_scheduled_at IS NOT NULL
+        AND (last_status_changed_at IS NULL OR interview_scheduled_at > last_status_changed_at)
+        THEN interview_scheduled_at
+      WHEN status IN ('assessment','interview')
+        THEN COALESCE(last_status_changed_at, updated_at, created_at)
+      ELSE NULL END
+      WHERE stage_followup_anchor IS NULL`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_p3_stage_followup_anchor', '1')").run();
+  }
+  const outboxBackfill = instance.prepare("SELECT value FROM meta WHERE key = 'migration_p3_outbox_source_received_at'").get();
+  if (!outboxBackfill) {
+    instance.exec(`UPDATE notification_outbox SET source_received_at = COALESCE(
+      (SELECT e.occurred_at FROM events e WHERE e.id = notification_outbox.event_id),
+      occurred_at, created_at)
+      WHERE source_received_at IS NULL`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_p3_outbox_source_received_at', '1')").run();
   }
 }
 
@@ -110,10 +140,22 @@ export function getApplication(ownerId, applicationId) {
 export function markApplicationChanged(ownerId, applicationId, eventId, sourceMethod, fields, options = {}) {
   const app = one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
   if (!app) return null;
-  const changed = Object.keys(fields);
+  /* P3：状态进入笔试/面试时自动维护阶段回看锚点；进入其它状态则作废旧锚点。
+     邮件/插件来源已在 fields.last_status_changed_at 带入原始事件时间，因此锚点不会漂移。 */
+  const data = { ...fields };
+  if (data.status !== undefined) {
+    if (data.status === 'assessment' || data.status === 'interview') {
+      if (data.stage_followup_anchor == null) {
+        data.stage_followup_anchor = maxIso(data.interview_scheduled_at, data.last_status_changed_at) || nowIso();
+      }
+    } else if (data.stage_followup_anchor === undefined && app.stage_followup_anchor) {
+      data.stage_followup_anchor = null;
+    }
+  }
+  const changed = Object.keys(data);
   if (!changed.length) return app;
   const sets = changed.map((f) => `${f} = ?`).join(', ');
-  const values = changed.map((f) => fields[f]);
+  const values = changed.map((f) => data[f]);
   getDb().prepare(`UPDATE applications SET ${sets}, updated_at = ?, version = version + 1 WHERE id = ? AND owner_id = ?`)
     .run(...values, nowIso(), applicationId, ownerId);
   getDb().prepare(`INSERT INTO application_history
@@ -125,8 +167,8 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
       applicationId,
       eventId || null,
       app.status,
-      fields.status || app.status,
-      JSON.stringify(Object.fromEntries(changed.map((k) => [k, { from: app[k], to: fields[k] }]))),
+      data.status || app.status,
+      JSON.stringify(Object.fromEntries(changed.map((k) => [k, { from: app[k], to: data[k] }]))),
       nowIso(),
       sourceMethod,
       options.reason || null

@@ -33,7 +33,7 @@ function resetOverlays() {
   }
 }
 
-export function showLogin(message) {
+export function showLogin(message, returnTo = null) {
   App.loggedIn = false;
   App.gen += 1;
   App.view = 'login';
@@ -44,7 +44,12 @@ export function showLogin(message) {
     notice: message || null,
     onSuccess: (data) => {
       if (data?.user) App.user = data.user;
-      return enterApp();
+      if (returnTo?.name === 'landing') {
+        App.loggedIn = true;
+        App.view = 'landing';
+        return renderLanding(rootEl(), returnTo.token);
+      }
+      return enterApp(returnTo?.panel ?? null, returnTo?.appId ?? null);
     }
   });
 }
@@ -113,7 +118,7 @@ async function boot() {
     await enterApp(r.panel, r.appId);
   } catch (err) {
     if (err.status === 401) {
-      showLogin();
+      showLogin(null, r);
     } else {
       // 网络/503：保留会话判断，显示错误登录页（不塞演示数据）
       const root = rootEl();
@@ -132,7 +137,7 @@ async function boot() {
 /* 401 全局处理：只在已登录且仍是当前代际时回落一次 */
 onUnauthorized(() => {
   if (App.loggedIn) {
-    showLogin('登录状态已失效，请重新登录');
+    showLogin('登录状态已失效，请重新登录', route());
     toast('登录状态已失效，请重新登录', 'err');
   }
 });

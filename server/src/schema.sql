@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS applications (
   round_label TEXT,
   interview_scheduled_at TEXT,
   last_interview_completed_at TEXT,
+  stage_followup_anchor TEXT,
   source_methods_json TEXT NOT NULL DEFAULT '[]',
   latest_event_id TEXT,
   version INTEGER NOT NULL DEFAULT 1,
@@ -291,12 +292,14 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   mode TEXT NOT NULL DEFAULT 'all',
   review_frequency TEXT NOT NULL DEFAULT 'daily',
   review_threshold_days INTEGER NOT NULL DEFAULT 14,
+  stage_followup_days INTEGER NOT NULL DEFAULT 7,
   last_review_digest_at TEXT,
   version INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL,
   CHECK (mode IN ('all','changes_only','review_only','off')),
   CHECK (review_frequency IN ('weekly_monday','daily')),
-  CHECK (review_threshold_days BETWEEN 7 AND 30)
+  CHECK (review_threshold_days BETWEEN 7 AND 30),
+  CHECK (stage_followup_days IN (0,7,14))
 );
 
 CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -307,6 +310,7 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
   kind TEXT NOT NULL,
   summary TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
+  source_received_at TEXT,
   consumed_batch_id TEXT,
   created_at TEXT NOT NULL
 );
@@ -321,6 +325,7 @@ CREATE TABLE IF NOT EXISTS notification_batches (
   subject TEXT,
   item_count_a INTEGER NOT NULL DEFAULT 0,
   item_count_b INTEGER NOT NULL DEFAULT 0,
+  item_count_c INTEGER NOT NULL DEFAULT 0,
   provider_message_id TEXT,
   error_code TEXT,
   created_at TEXT NOT NULL,
