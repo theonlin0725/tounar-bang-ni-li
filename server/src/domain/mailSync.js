@@ -134,7 +134,7 @@ function getLease(connectionId) {
   return leaseId;
 }
 
-function decodeCredential(connection) {
+function decryptCredential(connection) {
   if (!connection.credential_ciphertext) throw new AppError(409, 'REAUTH_REQUIRED', '邮箱授权已失效，请重新授权');
   return decryptSecret(connection.credential_ciphertext, connection.credential_iv, connection.credential_tag);
 }

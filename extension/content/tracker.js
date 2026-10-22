@@ -191,7 +191,19 @@
     return best;
   }
 
+  /* 站点专属精修：把页面上「一整行」的信息拆成结构化字段。
+     只读取可见文本，不读取表单内容、不上传正文。 */
+  function applyAdapterRefine(job) {
+    if (typeof adapter.refine !== 'function') return job;
+    try {
+      const refined = adapter.refine(job);
+      if (refined && typeof refined === 'object') return refined;
+    } catch { /* 精修失败不影响主链路 */ }
+    return job;
+  }
+
   function fillJobFallbacks(job) {
+    if (typeof adapter.refine === 'function') applyAdapterRefine(job);
     if (!job.company_name) {
       job.company_name = firstText(adapter.selectors.company) || metaContent(['og:site_name', 'application-name', 'twitter:site']) || hostAsCompany();
     }

@@ -57,17 +57,23 @@
     {
       key: 'bytedance',
       label: '字节跳动招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-campus',
       channel: '企业官网',
       hosts: ['jobs.bytedance.com', 'job.bytedance.com'],
-      jobUrlPatterns: [/\/position\//i, /\/job\//i],
-      listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
+      jobUrlPatterns: [
+        /\/campus\/position\/\d+\/detail/i,
+        /\/experienced\/position\/\d+\/detail/i,
+        /\/position\/\d+\/detail/i,
+        /\/position\//i,
+        /\/job\//i
+      ],
+      listUrlPatterns: [/\/campus\/position\/?(\?|$)/i, /\/experienced\/position\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="jobTitle"]', '.position-title', 'h1'],
-        company: ['[class*="companyName"]'],
-        jd: ['[class*="jobDesc"]', '[class*="positionDesc"]'],
-        location: ['[class*="location"]'],
-        success: ['[class*="success"]', '[class*="result"]']
+        title: ['span.job-title', '.job-header .job-title', '.job-header', 'h1[class*="title"]'],
+        company: [],
+        jd: ['.block-content', '[class*="jobDetail"] .block-content'],
+        location: ['.job-info'],
+        success: ['.apply-success', '[class*="success"]', '[class*="result"]']
       },
       statusPage: {
         urlPatterns: [/\/application/i, /\/apply\/record/i, /\/my\//i],
@@ -76,8 +82,25 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function bytedanceRefine(job) {
+        job.company_name = '字节跳动';
+        const info = (() => {
+          const el = document.querySelector('.job-info');
+          return el ? String(el.innerText || '').replace(/\s+/g, ' ').trim() : '';
+        })();
+        const locMatch = info.match(/^([\u4e00-\u9fa5、·/ ]+?)\s*(正式|实习|兼职|全职|校招|社招)/);
+        if (locMatch) job.location = locMatch[1].trim();
+        const batchMatch = info.match(/(20\d{2})\s*届\s*([^\s]*?(校招|校园招聘|秋招|春招|实习))/);
+        if (batchMatch) job.recruitment_batch = `${batchMatch[1]} ${batchMatch[3]}`;
+        // URL 里的数字 ID 更稳定，已经取到就不覆盖
+        const idMatch = info.match(/职位\s*ID\s*[:：]\s*([A-Za-z0-9-_]+)/);
+        if (idMatch && !job.site_job_id) job.site_job_id = idMatch[1];
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-22',
+      verified_paths: ['/campus/position/{id}/detail'],
+      notes: '选择器已于 2026-10-22 用真实页面（jobs.bytedance.com/campus/position/7699119731313821957/detail，AI Agent产品经理 - 巨量AI工作台）验证：span.job-title 取标题、.job-info 取「城市 类型 职能 批次 职位 ID」、.block-content 取 JD 正文（职位描述/职位要求两段）。页面为纯前端渲染 SPA，服务端 HTML 无内容，依赖 content script 轮询重试。投递记录页需登录态，仍未验证。'
     },
     {
       key: 'alibaba',

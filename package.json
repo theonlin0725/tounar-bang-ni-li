@@ -14,8 +14,10 @@
     "test:e2e": "node tests/e2e/run-e2e.mjs",
     "test:web": "node tests/e2e/run-web-e2e.mjs",
     "otp:latest": "node server/scripts/latest-otp.js",
-    "remind": "node server/scripts/run-reminders.js",
-    "mail:sync": "node server/scripts/run-mail-sync.js"
+    "probe:site": "node tools/probe-site.mjs",
+    "plugin:tryrun": "node tools/tryrun-plugin.mjs",
+    "remind": "node --env-file-if-exists .env server/scripts/run-reminders.js",
+    "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js"
   },
   "dependencies": {
     "imapflow": "^2.5.9",

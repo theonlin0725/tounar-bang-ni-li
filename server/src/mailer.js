@@ -6,10 +6,41 @@ import { AppError, escapeHtml, nowIso, randomToken } from './util.js';
 
 let transport = null;
 
+/**
+ * 从 SMTP_URL 构造 nodemailer 传输配置。
+ * 说明：nodemailer 在传入 URL 字符串时不会自动按端口推断 TLS，
+ * 导致 465 端口以明文握手、收不到服务端问候语（Greeting never received）。
+ * 因此这里显式解析 URL：465 强制 secure，587 强制 STARTTLS。
+ */
+function buildTransportOptions(smtpUrl) {
+  const parsed = new URL(smtpUrl);
+  const port = Number(parsed.port || (parsed.protocol === 'smtps:' ? 465 : 587));
+  const auth = {
+    user: decodeURIComponent(parsed.username || ''),
+    pass: decodeURIComponent(parsed.password || '')
+  };
+  const opts = {
+    host: parsed.hostname,
+    port,
+    auth,
+    connectionTimeout: 25000,
+    greetingTimeout: 25000,
+    socketTimeout: 25000
+  };
+  if (port === 465) {
+    opts.secure = true;
+    opts.tls = { servername: parsed.hostname };
+  } else {
+    opts.secure = false;
+    opts.requireTLS = true;
+  }
+  return opts;
+}
+
 function getTransport() {
   if (config.mailMode !== 'smtp') return null;
   if (!config.smtpUrl) throw new AppError(503, 'UNAVAILABLE', '提醒发信服务尚未配置（SMTP_URL 缺失）', { retryable: true });
-  if (!transport) transport = nodemailer.createTransport(config.smtpUrl);
+  if (!transport) transport = nodemailer.createTransport(buildTransportOptions(config.smtpUrl));
   return transport;
 }
 
