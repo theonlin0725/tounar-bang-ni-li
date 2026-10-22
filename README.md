@@ -79,3 +79,39 @@ npm start          # 或 npm run dev（改代码自动重启）
 ## 六、待你拍板的 13 个决策
 
 见 `docs/DECISIONS-D01-D13.md`，已经落地的有：D01（3 秒门槛）、D07（已面 N 天只作提醒标签）、D12（插件自动采集为主 + 手动补录兜底）。
+
+## 七、真实站点适配（同事可认领）
+
+站点适配是**唯一可以并行推进**的阻塞项，一个人认领一家即可，不需要懂后端。
+
+```bash
+# 1. 看真实页面渲染后的 DOM，挑出选择器
+npm run probe:site -- "https://某招聘站/某职位页"
+
+# 2. 把 extension/content/adapters.js 里对应站点改好
+
+# 3. 用生产脚本在真实页面上试跑，看能不能自动采到字段
+npm run plugin:tryrun -- "https://某招聘站/某职位页"
+```
+
+判定"这家做完了"的标准和已完成的证据都在 `docs/SITE-ADAPTER-EVIDENCE.md`。
+**采不到就如实标 `site_verified: false`，不要改文案假装完成。**
+
+当前进度：**1 / 8**（字节跳动校园招聘已验证）。
+
+## 八、外部依赖闭合情况
+
+| 依赖 | 状态 | 说明 |
+|---|---|---|
+| QQ 邮箱 IMAP 收信 | ✅ | 2026-10-22 真实授权码首扫 71 封成功 |
+| SMTP 真实发信 | ✅ | `smtp.qq.com:465`，需显式 TLS（已在 `mailer.js` 修好） |
+| ≥8 家真实站点 | 🟡 1/8 | 见第七节 |
+| WorkBuddy 云环境 | ⬜ | 仍是本地替代方案 |
+
+配真实邮件只需在 `.env` 里填（模板见 `.env.example`）：
+
+```
+SMTP_URL=smtp://你的QQ号@qq.com:授权码@smtp.qq.com:465
+MAIL_FROM=Tounar 帮你理 <你的QQ号@qq.com>
+ALLOWED_EMAILS=你的邮箱@qq.com
+```
