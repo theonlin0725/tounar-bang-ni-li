@@ -384,6 +384,27 @@ try {
     (await qingheRow.count()) === 1,
     `total=${(await page.textContent('[data-test=stat-total]')).trim()}`);
 
+  /* ================= 5b. 提醒邮件深链：待确认 / 指定记录详情 ================= */
+  await page.goto('/?panel=reviews');
+  await page.waitForSelector('[data-test=reviews-view]');
+  const reviewsTabActive = await page.locator('[data-test=tab-reviews].active').count();
+  check('W-16a 深链 /?panel=reviews 直接打开待确认 tab（不再落到台账首页）',
+    reviewsTabActive === 1, `active=${reviewsTabActive}`);
+
+  const appliedList = await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie });
+  const xingheApp = (appliedList.json?.data?.items || []).find((x) => x.company_name === '星河科技');
+  if (!xingheApp) throw new Error('深链测试需要星河科技记录');
+  await page.goto(`/?app=${encodeURIComponent(xingheApp.id)}`);
+  await page.waitForSelector('[data-test=detail-drawer]');
+  await page.waitForSelector('[data-test=detail-company]');
+  const deepDetail = (await page.textContent('[data-test=detail-company]')).trim();
+  check('W-16b 深链 /?app=<id> 打开台账并弹出该条详情', deepDetail.includes('星河科技'), `company=${deepDetail}`);
+  await page.click('[data-test=detail-drawer] .tn-drawer-close');
+  await page.waitForSelector('[data-test=detail-drawer]', { state: 'detached' });
+  await page.goto('/');
+  await page.waitForSelector('[data-test=stat-total]');
+  await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
+
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
   await page.click('[data-test=open-settings-reminder]');
   await page.waitForSelector('[data-test=pref-mode]');

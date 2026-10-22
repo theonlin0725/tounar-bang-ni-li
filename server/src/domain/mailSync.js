@@ -215,7 +215,7 @@ function ingestMessage(connection, message, parsed, bodyText, receivedAt) {
   if (classification.relevant && classification.status) {
     const event = one('SELECT * FROM events WHERE id = ?', [eventId]);
     event.payload = JSON.parse(event.payload_json);
-    const result = processMailEvent(event);
+    const result = processMailEvent(event, { sourceMailId: mailId });
     if (result.review) {
       run('UPDATE mail_messages SET review_item_id = ?, processing_state = ? WHERE id = ?',
         [result.review.id, 'pending', mailId]);
@@ -367,4 +367,10 @@ export async function syncAllConnections() {
 
 export function encoderForTest() {
   return { messageUidKey, findTextPart, findHtmlPart, decodeMimeWords };
+}
+
+/* 离线回归用：不连 IMAP，直接走「入库 → 分类 → 建复核」链路。
+   隐私边界不变：只接受已解析好的字段与正文摘要，不落正文。 */
+export function ingestMessageForTest(connection, message, parsed, bodyText, receivedAt) {
+  return ingestMessage(connection, message, parsed, bodyText, receivedAt);
 }

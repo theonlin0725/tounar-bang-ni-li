@@ -20,7 +20,7 @@ function route() {
   const match = location.pathname.match(/^\/r\/([^/]+)$/);
   if (match) return { name: 'landing', token: decodeURIComponent(match[1]) };
   const params = new URLSearchParams(location.search);
-  return { name: 'app', panel: params.get('panel') };
+  return { name: 'app', panel: params.get('panel'), appId: params.get('app') };
 }
 
 function rootEl() { return document.getElementById('tn-root'); }
@@ -49,7 +49,7 @@ export function showLogin(message) {
   });
 }
 
-export async function enterApp(panel = null) {
+export async function enterApp(panel = null, appId = null) {
   const gen = ++App.gen;
   App.loggedIn = true;
   App.view = 'app';
@@ -59,7 +59,7 @@ export async function enterApp(panel = null) {
   root.append(buildHeader());
   const main = h('div', { class: 'tn-main', id: 'tn-main' });
   root.append(main);
-  await renderLedger(main, { gen, panel });
+  await renderLedger(main, { gen, panel, appId });
 }
 
 function buildHeader() {
@@ -110,7 +110,7 @@ async function boot() {
   try {
     const me = await api.get('/api/v1/me', { silent401: true });
     App.user = me.data.user;
-    await enterApp(r.panel);
+    await enterApp(r.panel, r.appId);
   } catch (err) {
     if (err.status === 401) {
       showLogin();
@@ -122,7 +122,7 @@ async function boot() {
         notice: `无法连接服务：${errorText(err)}`,
         onSuccess: (data) => {
           if (data?.user) App.user = data.user;
-          return enterApp();
+          return enterApp(r.panel, r.appId);
         }
       });
     }

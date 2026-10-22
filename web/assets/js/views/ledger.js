@@ -17,7 +17,7 @@ export { openSettings };
 
 const PAGE_SIZE = 20;
 
-export async function renderLedger(main, { gen, panel = null } = {}) {
+export async function renderLedger(main, { gen, panel = null, appId = null } = {}) {
   const state = {
     view: 'applied',
     q: '', status: '', source: '', due: false,
@@ -434,5 +434,13 @@ export async function renderLedger(main, { gen, panel = null } = {}) {
   renderStats();
   buildTabs();
   await doLoad();
-  if (panel === 'settings' && mounted) openSettingsTab('reminder');
+  /* 深链：/?panel=reviews 直接打开待确认；/?app=<id> 打开台账并弹出该条详情。
+     两个都来自提醒邮件，登录后落到同一个位置（P0 2026-10-22）。 */
+  if (!mounted) return;
+  if (panel === 'reviews') {
+    switchView('reviews');
+  } else if (panel === 'settings') {
+    openSettingsTab('reminder');
+  }
+  if (appId) openDetailFor(appId);
 }

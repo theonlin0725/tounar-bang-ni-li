@@ -121,7 +121,7 @@ export function findCandidates(ownerId, fields) {
   return candidates;
 }
 
-export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {} }) {
+export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {}, sourceMailId = null }) {
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
@@ -137,12 +137,14 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
     match_reason: reason
   }));
   const id = newId('rev');
+  // P0（2026-10-22）：source_mail_id 必须一路带下来。缺了它，待确认列表与提醒邮件
+  // 拿不到「原始邮件收到日期」（reviewList / reviewDigestState 都 JOIN mail_messages）。
   run(`INSERT INTO review_items
     (id, owner_id, kind, reason_code, summary, evidence_json, suggested_changes_json, candidates_json,
-     source_event_id, status, version, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?)`,
+     source_event_id, source_mail_id, status, version, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?)`,
   [id, event.owner_id, kind, reasonCode, clipText(summary, 240), JSON.stringify(evidence),
-    JSON.stringify(suggested), JSON.stringify(candidates), event.id, nowIso()]);
+    JSON.stringify(suggested), JSON.stringify(candidates), event.id, sourceMailId || null, nowIso()]);
   run(`UPDATE events SET processing_state = 'pending', review_reason = ?, processed_at = ? WHERE id = ? AND owner_id = ?`,
     [reasonCode, nowIso(), event.id, event.owner_id]);
   bumpRevision();
@@ -716,7 +718,7 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
  * Mail progress enters the same application/history/notification pipeline as plugin events.
  * Company + title alone stays a review candidate (D04). A unique site_application_id match may apply.
  */
-export function processMailEvent(event) {
+export function processMailEvent(event, { sourceMailId = null } = {}) {
   const p = event.payload || {};
   const fields = {
     company_name: p.company_name,
@@ -752,6 +754,7 @@ export function processMailEvent(event) {
         : `招聘邮件更新候选：${clipText(p.subject_excerpt || p.subject || '', 80)}`,
       suggested: { status, ...(p.applied_at ? { applied_at: p.applied_at } : {}) },
       fields,
+      sourceMailId,
       evidence: {
         subject_excerpt: p.subject_excerpt,
         body_excerpt: p.body_excerpt,
@@ -778,6 +781,7 @@ export function processMailEvent(event) {
         summary: `邮件提示终态「${STATUS_LABELS[status]}」（置信度 ${confidence}），需用户确认`,
         suggested: { status },
         fields,
+        sourceMailId,
         evidence: { subject_excerpt: p.subject_excerpt, category: p.category, confidence }
       });
       return { state: 'pending', review };
@@ -791,6 +795,7 @@ export function processMailEvent(event) {
         summary: '邮件证明申请存在，但缺少可信投递时间；D12 未冻结',
         suggested: { status, has_applied: true },
         fields,
+        sourceMailId,
         evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
       });
       return { state: 'pending', review };
@@ -814,6 +819,7 @@ export function processMailEvent(event) {
       summary: transition.review.summary || '邮件状态需确认',
       suggested: { status },
       fields,
+      sourceMailId,
       evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
     });
     return { state: 'pending', review };

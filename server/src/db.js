@@ -33,6 +33,20 @@ function migrate(instance) {
     instance.exec("UPDATE notification_preferences SET review_frequency = 'daily' WHERE review_frequency = 'weekly_monday'");
     instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_d06_daily', '1')").run();
   }
+  /* P0（2026-10-22）：修 source_mail_id 不写入的历史遗留。
+     只回填能通过 events(connection_id/mailbox/uidvalidity/uid) 唯一对上邮件的复核项；
+     对不上（插件来源 / 邮件已清理）的保持 NULL，前端按创建时间显示，不编造收信日期。 */
+  const mailBackfill = instance.prepare("SELECT value FROM meta WHERE key = 'migration_p0_review_source_mail'").get();
+  if (!mailBackfill) {
+    instance.exec(`UPDATE review_items SET source_mail_id = (
+      SELECT m.id FROM events e JOIN mail_messages m
+        ON m.connection_id = e.connection_id AND m.mailbox = e.mailbox
+       AND m.uidvalidity = e.uidvalidity AND m.uid = e.uid
+      WHERE e.id = review_items.source_event_id
+      LIMIT 1)
+      WHERE source_mail_id IS NULL AND source_event_id IS NOT NULL`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_p0_review_source_mail', '1')").run();
+  }
 }
 
 export function closeDb() {
