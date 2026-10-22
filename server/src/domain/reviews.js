@@ -286,6 +286,7 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
         details: { current_version: app.version }
       });
     }
+    const before = undoSnapshot(app);
     const mergedChanges = { ...suggested, ...(changes || {}) };
     const event = one('SELECT * FROM events WHERE id = ? AND owner_id = ?', [review.source_event_id || '', ownerId]);
     const result = applyReviewChangesToApplication({
@@ -293,8 +294,16 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
     });
     run(`UPDATE review_items SET status = 'resolved', resolution_json = ?, resolved_at = ?, version = version + 1
          WHERE id = ? AND owner_id = ?`,
-    [JSON.stringify({ resolution: action === 'link' ? 'linked' : 'confirmed', application_id: result.application.id }),
-      nowIso(), reviewId, ownerId]);
+    [JSON.stringify({
+      resolution: action === 'link' ? 'linked' : 'confirmed',
+      application_id: result.application.id,
+      undo: {
+        application_id: app.id,
+        before,
+        event_id: result.event_id || null,
+        at: nowIso()
+      }
+    }), nowIso(), reviewId, ownerId]);
     if (review.source_event_id) {
       run(`UPDATE events SET application_id = ?, processing_state = 'applied', review_reason = NULL, processed_at = ?
            WHERE id = ? AND owner_id = ?`, [result.application.id, nowIso(), review.source_event_id, ownerId]);
@@ -312,6 +321,68 @@ function setEventEventApplication(ownerId, eventId, applicationId) {
   if (!eventId) return;
   run(`UPDATE events SET application_id = ?, processing_state = 'applied', review_reason = NULL, processed_at = ?
        WHERE id = ? AND owner_id = ?`, [applicationId, nowIso(), eventId, ownerId]);
+}
+
+/* 撤回凭据：只记录可恢复的展示字段，不复制正文 / 证据。 */
+function undoSnapshot(app) {
+  return {
+    status: app.status,
+    has_applied: app.has_applied,
+    applied_at: app.applied_at,
+    applied_at_precision: app.applied_at_precision,
+    last_status_changed_at: app.last_status_changed_at,
+    last_progress_at: app.last_progress_at,
+    last_reviewed_at: app.last_reviewed_at
+  };
+}
+
+/* P1（2026-10-22）：确认错了要能撤回。恢复确认前的字段快照 + 重新打开复核项；
+   只允许 10 分钟内（界面 toast 是 10 秒，服务端留出安全余量），并留审计痕迹。 */
+export function undoReviewResolution({ ownerId, reviewId, actor = 'user' }) {
+  return transaction(() => {
+    const review = one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]);
+    if (!review) throw new AppError(404, 'NOT_FOUND', '复核项不存在');
+    if (review.status === 'open') {
+      return { review: { ...review }, undone: false, already_open: true };
+    }
+    const resolution = safeJsonParse(review.resolution_json, {});
+    if (!['confirmed', 'linked'].includes(resolution.resolution) || !resolution.undo) {
+      throw new AppError(400, 'UNDO_NOT_AVAILABLE', '这条待确认不是「确认更新」处理的，不能撤回');
+    }
+    const undo = resolution.undo;
+    const resolvedAt = Date.parse(review.resolved_at || '');
+    if (!Number.isFinite(resolvedAt) || Date.now() - resolvedAt > config.reviewUndoMinutes * 60000) {
+      throw new AppError(409, 'UNDO_EXPIRED', `已经超过 ${config.reviewUndoMinutes} 分钟，不能直接撤回；可在台账详情里人工纠错`);
+    }
+    const app = getApplication(ownerId, undo.application_id);
+    if (!app) throw new AppError(404, 'NOT_FOUND', '要撤回的记录已不存在');
+    const updates = {};
+    for (const key of Object.keys(undoSnapshot(app))) {
+      const beforeValue = undo.before?.[key] ?? null;
+      const currentValue = app[key] ?? null;
+      if (beforeValue !== currentValue) updates[key] = beforeValue;
+    }
+    if (Object.keys(updates).length) {
+      markApplicationChanged(ownerId, app.id, undo.event_id || review.source_event_id || null, 'manual', updates, {
+        reason: '撤销待确认确认（用户撤回）'
+      });
+    }
+    if (undo.event_id) {
+      run('DELETE FROM notification_outbox WHERE event_id = ? AND consumed_batch_id IS NULL', [undo.event_id]);
+    }
+    run(`UPDATE review_items SET status = 'open', resolution_json = NULL, resolved_at = NULL, version = version + 1
+         WHERE id = ? AND owner_id = ?`, [reviewId, ownerId]);
+    if (review.source_event_id) {
+      run(`UPDATE events SET application_id = NULL, processing_state = 'pending', review_reason = ?, processed_at = ?
+           WHERE id = ? AND owner_id = ?`, [review.reason_code, nowIso(), review.source_event_id, ownerId]);
+    }
+    audit(ownerId, actor, 'review.undo', 'review', reviewId, { application_id: app.id });
+    return {
+      review: one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]),
+      undone: true,
+      application_id: app.id
+    };
+  });
 }
 
 function applyReviewChangesToApplication({ app, review, event, mergedChanges, reason, ownerId, actor }) {
@@ -361,7 +432,7 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
     }
   }
   if (!Object.keys(updates).length) {
-    return { application: app };
+    return { application: app, event_id: event?.id || null };
   }
   const eventId = event?.id || newId('evt');
   const updated = markApplicationChanged(ownerId, app.id, eventId, 'manual', updates, { reason });
@@ -372,5 +443,5 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
     [newId('out'), ownerId, app.id, eventId, `${updated.company_name} · ${updated.job_title}：${app.status} → ${updated.status}`,
       nowIso(), nowIso()]);
   }
-  return { application: updated };
+  return { application: updated, event_id: eventId };
 }

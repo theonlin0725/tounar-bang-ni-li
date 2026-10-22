@@ -72,6 +72,11 @@ export const config = {
   d12AllowMissingJd: boolEnv('D12_ALLOW_MISSING_JD', false),
   d12AllowMissingLink: boolEnv('D12_ALLOW_MISSING_LINK', false),
   d12AllowMissingAppliedAt: boolEnv('D12_ALLOW_MISSING_APPLIED_AT', false),
+  // P2（2026-10-22）：邮件里没有投递时间时，用「收到该邮件的时间」作为 ≤ 收信日的推断值。
+  // 只用于邮件线索的自动/确认更新，并标记 applied_at_precision = inferred_before；默认开，可用环境变量关闭。
+  d12AllowMailInferredAppliedAt: boolEnv('D12_ALLOW_MAIL_INFERRED_APPLIED_AT', true),
+  // 待确认「确认更新」后可撤回的时间窗（界面 toast 10 秒，服务端留安全余量）
+  reviewUndoMinutes: intEnv('REVIEW_UNDO_MINUTES', 10),
   // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认
   autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', true),
   autoTerminalConfidence: Number.parseFloat(process.env.AUTO_TERMINAL_CONFIDENCE || '0.9'),

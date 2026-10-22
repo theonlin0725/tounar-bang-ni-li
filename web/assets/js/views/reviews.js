@@ -1,11 +1,15 @@
-/* 待确认队列：证据冲突时才出现的复核项。
-   规则：确认/关联前重新 GET 复核详情 + 候选申请最新版本；409 一律重取并请用户重新决定；
-   create 预填建议变化；dismiss 二次确认。不做“静默覆盖正式值”。 */
+/* 待确认队列：把「系统拿不准的自动判定」交给用户一句话裁决。
+   设计口径（P1 2026-10-22）：
+   - 每张卡片第一行必须说清：哪天收到的什么邮件、系统猜的是哪条记录、猜的状态、把握度多少。
+   - 三个主按钮任何时候都可点：对（更新台账）/ 不对（自己选记录或新建）/ 忽略。
+   - 没有候选记录不再禁用按钮：改为「选一条记录并更新」+ 本人台账搜索。
+   - 确认错了 10 秒内可撤销（服务端留 10 分钟安全余量，全程留痕）。
+   - 所有面向用户的文案不出现 D05/D12 之类内部编号。 */
 
-import { api, ApiError, errorText } from '../api.js';
+import { api, ApiError } from '../api.js';
 import { isStale } from '../app.js';
 import {
-  h, clear, toast, confirmDialog, statusChip, fmtDateTime, idemKey,
+  h, clear, toast, toastAction, confirmDialog, statusChip, fmtDateTime, fmtDate, debounce, idemKey,
   STATUS_LABELS, STATUS_ORDER
 } from '../util.js';
 
@@ -17,21 +21,34 @@ const KIND_LABELS = {
   field_missing: '字段缺失',
   suspect_view: '浏览线索',
   ambiguous_match: '匹配待确认',
-  suspect_submission: '疑似已提交'
+  suspect_submission: '疑似已提交',
+  mail_progress: '招聘邮件'
 };
 
 const REASON_LABELS = {
-  D12_MISSING_FIELDS: '缺少 JD 摘要 / 链接等必要字段（D12 未冻结）',
-  D12_MISSING_APPLIED_AT: '缺少可信投递时间（D12 未冻结）',
-  HAS_APPLIED_UNCONFIRMED: '需要确证是否已正式申请',
-  MULTIPLE_APPLICATION_CANDIDATES: '存在多个候选记录',
-  COMPANY_TITLE_ONLY: '仅有公司 + 岗位，需人工判断',
+  MAIL_MATCH_UNCONFIRMED: '邮件没对上具体记录',
+  MULTIPLE_APPLICATION_CANDIDATES: '有多个候选记录',
+  COMPANY_TITLE_ONLY: '只对上公司 + 岗位',
   TERMINAL_REVIEW_REQUIRED: '终态变化需人工确认',
-  TERMINAL_LOCKED: '记录已处于终态，自动事件不能覆盖',
-  APPLIED_FACT_REMOVAL: '自动事件不能撤销已投事实',
-  STATUS_REGRESSION: '后到事件试图回退状态',
-  UNKNOWN_STATUS: '无法识别目标状态',
-  SUSPECT_SUBMISSION: '页面证据显示可能已提交'
+  TERMINAL_LOW_CONFIDENCE: '终态判断把握度不够',
+  HAS_APPLIED_UNCONFIRMED: '需要确认是否已正式申请',
+  APPLIED_FACT_REMOVAL: '不能自动撤销已投事实',
+  STATUS_REGRESSION: '后到的消息在往回退状态',
+  UNKNOWN_STATUS: '没看懂这条消息的状态',
+  WEAK_SUBMISSION_EVIDENCE: '提交成功证据不足',
+  SUSPECT_SUBMISSION: '页面证据显示可能已提交',
+  D12_MISSING_APPLIED_AT: '缺少可信投递时间',
+  D12_MISSING_FIELDS: '缺少部分必填信息'
+};
+
+const PROGRESS_LABELS = {
+  applied: '投递成功',
+  assessment: '笔试 / 测评邀请',
+  interview: '面试邀请',
+  offer: 'Offer',
+  rejected: '拒信',
+  closed: '流程结束',
+  pending: '新的线索'
 };
 
 const FIELD_LABELS = {
@@ -42,41 +59,56 @@ const FIELD_LABELS = {
   round_label: '面次标签', last_interview_completed_at: '面试完成时间'
 };
 
-/* 切到这些状态意味着「已正式申请」，必须带可信投递时间（D12） */
+/* 切到这些状态意味着「已正式申请」，必须带可信投递时间 */
 const NEEDS_APPLIED_AT = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected']);
+const AUTO_CONFIRM_MIN = 0.8;
 
-const EVIDENCE_LABELS = {
-  source: '来源', site: '来源站点', url: '页面', page_url: '页面', excerpt: '最短证据',
-  text: '证据文本', summary: '摘要', observed_at: '观察到', received_at: '收到于',
-  occurred_at: '发生于', evidence_level: '证据强度', adapter: '采集器', version: '采集器版本',
-  status_text: '页面状态文本', matched_fields: '命中字段'
-};
+function kindLabel(kind) { return KIND_LABELS[kind] || '待确认线索'; }
+function reasonLabel(reason) { return REASON_LABELS[reason] || null; }
 
-function kindLabel(kind) { return KIND_LABELS[kind] || kind; }
-function reasonLabel(reason) { return REASON_LABELS[reason] || reason; }
+/* 面向用户的人话错误：不展示 D05/D12/HTTP_xxx 这类内部编号，也不带 request_id 噪声。 */
+function humanError(err) {
+  if (!(err instanceof ApiError)) return err?.message || '请求失败，请稍后重试';
+  const map = {
+    D12_NOT_FROZEN: '这条要进台账还缺投递时间；请填一个你确认过的日期，不会用今天代替。',
+    VERSION_CONFLICT: '这条刚刚被别处更新过，已经刷新，请再确认一次。',
+    UNDO_EXPIRED: '已经超过可撤销时间；请到台账详情里用「纠错」修改，并填写原因。',
+    UNDO_NOT_AVAILABLE: '这条待确认不是「确认更新」处理的，不能这样撤回。',
+    APPLIED_FACT_REMOVAL: '不能通过待确认撤销「已投」事实；如果确实要改，请到台账详情里走终态纠错。',
+    NOT_FOUND: '这条记录或待确认项已经不存在，请刷新后重试。',
+    VALIDATION_ERROR: err.message || '提交的内容不完整，请检查后重试。',
+    FORBIDDEN: '当前账号没有权限执行这个操作。'
+  };
+  return map[err.code] || err.message || `请求失败（${err.status}），请稍后重试`;
+}
 
-function valueText(field, value) {
-  if (value === null || value === undefined || value === '') return '（空）';
-  if (field === 'status') return STATUS_LABELS[value] || value;
-  if (field === 'has_applied') return value === true ? '是' : value === false ? '否' : String(value);
-  if (field === 'applied_at' || field === 'last_interview_completed_at') return fmtDateTime(value);
-  if (field === 'status_url_scope') return value === 'application' ? '申请状态页' : value === 'job' ? '岗位页' : String(value);
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+function progressLabel(status) {
+  return PROGRESS_LABELS[status] || (status ? STATUS_LABELS[status] || '状态更新' : '进展');
+}
+
+function pct(value) {
+  return value == null || !Number.isFinite(Number(value)) ? null : Math.round(Number(value) * 100);
+}
+
+/* 10月20日 —— 只用于句子里的日期，不替代完整时间 */
+function monthDay(iso) {
+  if (!iso) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric'
+  }).formatToParts(new Date(iso));
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  return `${Number(get('month'))}月${Number(get('day'))}日`;
+}
+
+function targetText(company, title) {
+  if (!company && !title) return null;
+  return [company || '（公司待补充）', title || '（岗位待补充）'].join(' · ');
 }
 
 export async function renderReviews(container, { gen, onChanged } = {}) {
   const root = h('div', { class: 'tn-reviews', 'data-test': 'reviews-view' });
   container.append(root);
-  const headEl = h('div', { class: 'tn-toolbar' },
-    h('div', {},
-      h('div', { style: { fontWeight: '600' }, text: '待确认' }),
-      h('div', { class: 'tn-small tn-muted', text: '只在证据冲突或缺少关键字段时出现；不会自动覆盖你的正式记录。' })
-    ),
-    h('div', { class: 'tn-toolbar-right' },
-      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '刷新', 'data-test': 'reviews-refresh', onclick: () => load() })
-    )
-  );
+  const headEl = h('div', { class: 'tn-toolbar' });
   const listEl = h('div', {});
   const bannerEl = h('div', {});
   root.append(headEl, bannerEl, listEl);
@@ -85,13 +117,41 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
   let loading = false;
   let error = null;
   let reqSeq = 0;
+  let batchBusy = false;
+
+  function buildHead() {
+    clear(headEl);
+    const eligible = items.filter((r) => r.total_confidence != null && r.total_confidence >= AUTO_CONFIRM_MIN
+      && r.suggested_application_id).length;
+    headEl.append(
+      h('div', {},
+        h('div', { style: { fontWeight: '600' }, text: `待确认${items.length ? ` · ${items.length} 条` : ''}` }),
+        h('div', { class: 'tn-small tn-muted', text: '这里只放系统拿不准的线索；你确认后才会改台账，改错了 10 秒内可撤销。' })
+      ),
+      h('div', { class: 'tn-toolbar-right' },
+        h('button', {
+          class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'review-batch-confirm',
+          text: eligible ? `把握度 ≥ 80% 的全部确认（${eligible} 条）` : '没有可批量确认的条目',
+          disabled: !eligible || batchBusy,
+          title: eligible ? '逐条按系统判断更新台账；失败的会留在列表里' : '需要同时具备：对上具体记录 + 总把握度 ≥ 80%',
+          onclick: () => batchConfirm()
+        }),
+        h('button', {
+          class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'reviews-refresh', text: '刷新',
+          onclick: () => load()
+        })
+      )
+    );
+  }
 
   async function load() {
     const seq = ++reqSeq;
     loading = true;
     bannerEl.replaceChildren();
-    if (!items.length) listEl.replaceChildren(h('div', { class: 'tn-table-card' }, h('div', { class: 'tn-empty' },
-      h('p', { class: 'tn-muted', text: '加载中…' }))));
+    if (!items.length) {
+      listEl.replaceChildren(h('div', { class: 'tn-table-card' }, h('div', { class: 'tn-empty' },
+        h('p', { class: 'tn-muted', text: '加载中…' }))));
+    }
     try {
       const res = await api.get('/api/v1/review-items?status=open&limit=50');
       if (seq !== reqSeq || isStale(gen)) return;
@@ -99,7 +159,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
       error = null;
     } catch (err) {
       if (seq !== reqSeq || isStale(gen)) return;
-      error = errorText(err);
+      error = humanError(err);
     } finally {
       if (seq !== reqSeq || isStale(gen)) return;
       loading = false;
@@ -109,6 +169,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
 
   function renderList() {
     listEl.replaceChildren();
+    buildHead();
     if (error) {
       bannerEl.replaceChildren(h('div', { class: 'tn-banner err' },
         h('div', { class: 'tn-banner-body', text: `无法加载待确认项：${error}` })));
@@ -117,8 +178,8 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     if (!items.length) {
       listEl.append(h('div', { class: 'tn-table-card' }, h('div', { class: 'tn-empty' },
         h('h3', { text: '没有待确认项' }),
-        h('p', { text: '一切正常：没有证据冲突，也没有因缺字段被挂起的线索。' }),
-        h('p', { class: 'tn-small tn-faint', text: '这里只展示尚未处理完的复核项；已处理的历史可在接口中选择全部状态查看。' })
+        h('p', { text: '系统有把握的已经直接更新台账；这里为空说明没有需要你裁决的线索。' }),
+        h('p', { class: 'tn-small tn-faint', text: '如果邮件里的进展没有出现在台账，可到「数据与授权」里点「立即同步邮箱」。' })
       )));
       return;
     }
@@ -128,54 +189,97 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
   /* ---------- 单张卡片 ---------- */
   function renderCard(review) {
     const card = h('div', { class: 'tn-review-card', 'data-test': 'review-card', 'data-review-id': review.id });
-    const state = { selected: review.candidates?.length === 1 ? review.candidates[0].application_id : null, busy: false, createOpen: false };
+    const suggested = review.suggested_changes || {};
+    const suggestedStatus = review.suggested_status || null;
+    const suggestedTarget = review.suggested_application || null;
+    const candidates = review.candidates || [];
+    const receivedAt = review.mail_received_at || null;
+    const dateLabel = receivedAt ? monthDay(receivedAt) : null;
+    const state = {
+      selected: suggestedTarget?.id || (candidates.length === 1 ? candidates[0].application_id : null),
+      targetInfo: null,
+      editOpen: false,
+      busy: false
+    };
 
-    const dateText = review.mail_received_at
-      ? `邮件收到于 ${fmtDateTime(review.mail_received_at)}`
-      : fmtDateTime(review.created_at);
+    /* 第一行：类型 + 时间 */
     const head = h('div', { class: 'tn-review-head' },
       h('span', { class: 'tn-review-kind', text: kindLabel(review.kind) }),
       h('div', { class: 'tn-grow' },
-        h('div', { class: 'tn-review-title', text: review.summary || '（无摘要）' }),
-        h('div', { class: 'tn-small tn-muted', text: `${reasonLabel(review.reason_code)} · ${dateText} · 复核 v${review.version}` })
+        h('div', { class: 'tn-small tn-muted', text: [
+          receivedAt ? `邮件收到于 ${fmtDateTime(receivedAt)}` : `线索创建于 ${fmtDateTime(review.created_at)}`,
+          reasonLabel(review.reason_code)
+        ].filter(Boolean).join(' · ') })
       )
     );
     card.append(head);
 
-    /* 最短证据 */
-    const evidence = review.evidence && Object.keys(review.evidence).length ? review.evidence : null;
-    if (evidence) {
-      const box = h('div', { class: 'tn-evidence' });
-      let shown = 0;
-      for (const [key, value] of Object.entries(evidence)) {
-        if (!['string', 'number', 'boolean'].includes(typeof value) && !Array.isArray(value)) continue;
-        const label = EVIDENCE_LABELS[key] || key;
-        let text = Array.isArray(value) ? value.join('、') : String(value);
-        if (text.length > 300) text = `${text.slice(0, 300)}…`;
-        box.append(h('div', {}, h('span', { class: 'tn-muted', text: `${label}：` }), h('span', { text })));
-        shown += 1;
-        if (shown >= 6) break;
-      }
-      card.append(h('div', { class: 'tn-review-section' }, h('h4', { text: '最短证据' }), box));
+    /* 一句话结论 */
+    const subjectTarget = suggestedTarget
+      ? targetText(suggestedTarget.company_name, suggestedTarget.job_title)
+      : targetText(suggested.company_name, suggested.job_title);
+    const conclusion = h('div', { class: 'tn-review-conclusion', 'data-test': 'review-conclusion' });
+    if (subjectTarget) {
+      conclusion.append(h('div', { class: 'tn-review-title' },
+        h('span', { text: dateLabel ? `${dateLabel}收到的这封邮件，系统判断是 ` : '系统判断这条线索是 ' }),
+        h('strong', { text: `「${subjectTarget}」` }),
+        h('span', { text: suggestedStatus ? `的「${progressLabel(suggestedStatus)}」。` : '的招聘进展。' })
+      ));
+    } else {
+      conclusion.append(h('div', { class: 'tn-review-title' },
+        h('span', { text: dateLabel ? `${dateLabel}收到的这封邮件` : '这条线索' }),
+        h('span', { text: suggestedStatus ? `看起来是「${progressLabel(suggestedStatus)}」，但系统没猜出对应你台账里的哪条记录。` : '，系统没猜出对应你台账里的哪条记录。' })
+      ));
     }
+    const total = pct(review.total_confidence);
+    const classPct = pct(review.classification_confidence);
+    const matchPct = pct(review.match_confidence);
+    const explain = [];
+    if (classPct != null) explain.push(`分类 ${classPct}%`);
+    if (matchPct != null) explain.push(`匹配 ${matchPct}%`);
+    if (total != null) {
+      conclusion.append(h('div', { class: 'tn-small tn-muted', 'data-test': 'review-confidence',
+        text: `系统把握度 ${total}%${explain.length ? `（${explain.join(' × ')}）` : ''}。低于 90% 不会自动改台账，所以请你确认一下。` }));
+    } else {
+      conclusion.append(h('div', { class: 'tn-small tn-muted', 'data-test': 'review-confidence',
+        text: '系统把握度不足：需要你确认它对应哪条记录、是哪种进展。' }));
+    }
+    card.append(h('div', { class: 'tn-review-section' }, conclusion));
 
     /* 建议变化 */
-    const suggested = review.suggested_changes && Object.keys(review.suggested_changes).length ? review.suggested_changes : null;
-    if (suggested) {
-      const diff = h('div', { class: 'tn-diff' });
-      for (const [key, value] of Object.entries(suggested)) {
-        diff.append(h('span', { class: 'tn-diff-key', text: FIELD_LABELS[key] || key }),
-          h('span', { class: 'tn-diff-new', text: valueText(key, value) }));
-      }
-      card.append(h('div', { class: 'tn-review-section' }, h('h4', { text: '建议变化（需要你确认后才会写入）' }), diff));
+    if (suggestedStatus) {
+      card.append(h('div', { class: 'tn-review-section' },
+        h('div', { class: 'tn-diff' },
+          h('span', { class: 'tn-diff-key', text: '建议状态' }),
+          h('span', { class: 'tn-diff-new', text: STATUS_LABELS[suggestedStatus] || suggestedStatus })
+        )
+      ));
     }
 
-    /* 候选申请 */
-    const candidates = review.candidates || [];
+    /* 证据折叠区 */
+    const ev = review.evidence || {};
+    const evRows = [];
+    const addEv = (label, value) => {
+      if (value == null || value === '') return;
+      evRows.push(h('div', {}, h('span', { class: 'tn-muted', text: `${label}：` }), h('span', { text: String(value).slice(0, 300) })));
+    };
+    addEv('邮件主题', ev.subject_excerpt || review.summary);
+    addEv('发件域名', ev.from_domain);
+    addEv('正文片段', ev.body_excerpt);
+    addEv('收到日期', receivedAt ? fmtDateTime(receivedAt) : null);
+    addEv('来源站点', ev.site_key);
+    addEv('页面状态文本', ev.status_text);
+    addEv('证据强度', ev.evidence_level === 'strong' ? '强' : ev.evidence_level === 'weak' ? '弱' : ev.evidence_level);
+    if (evRows.length) {
+      card.append(h('details', { class: 'tn-review-section', 'data-test': 'review-evidence' },
+        h('summary', { class: 'tn-small tn-muted', style: { cursor: 'pointer' }, text: '证据（点开看邮件主题 / 发件人 / 片段）' }),
+        h('div', { class: 'tn-evidence', style: { marginTop: '6px' } }, evRows)
+      ));
+    }
+
+    /* 候选记录 */
     const candidateBox = h('div', {});
-    if (!candidates.length) {
-      candidateBox.append(h('div', { class: 'tn-small tn-muted', text: '没有匹配到你的既有记录：可用「新建记录」建一条，或忽略该线索。' }));
-    } else {
+    if (candidates.length) {
       const list = h('ul', { class: 'tn-candidates', 'data-test': 'review-candidates' });
       const rebuild = () => {
         clear(list);
@@ -185,7 +289,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
             h('input', {
               type: 'radio', name: `cand-${review.id}`, checked: selected,
               'data-app-id': c.application_id,
-              onchange: () => { state.selected = c.application_id; rebuild(); }
+              onchange: () => { state.selected = c.application_id; state.targetInfo = null; rebuild(); }
             }),
             h('div', {},
               h('div', {}, h('strong', { text: c.company_name || '—' }), ' · ', c.job_title || '—'),
@@ -193,14 +297,14 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
                 c.location, c.recruitment_batch,
                 STATUS_LABELS[c.status] || c.status,
                 c.has_applied ? '已投' : '未投',
-                `记录 v${c.application_version}`
-              ].filter(Boolean).join(' · ') }),
-              c.match_reason ? h('div', { class: 'tn-candidate-meta', text: `匹配原因：${c.match_reason}` }) : null
+                c.match_confidence != null ? `匹配把握 ${Math.round(c.match_confidence * 100)}%` : null
+              ].filter(Boolean).join(' · ') })
             )
           );
           li.addEventListener('click', (e) => {
             if (e.target instanceof HTMLInputElement) return;
             state.selected = c.application_id;
+            state.targetInfo = null;
             rebuild();
           });
           list.append(li);
@@ -208,262 +312,472 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
       };
       rebuild();
       candidateBox.append(list);
+    } else {
+      candidateBox.append(h('div', { class: 'tn-small tn-muted', 'data-test': 'review-no-candidates',
+        text: '没有自动对上你台账里的记录。可以点「不对，我来改」搜索本人台账，或按这封邮件新建一条。' }));
     }
-    card.append(h('div', { class: 'tn-review-section' }, h('h4', { text: '候选记录（本人台账）' }), candidateBox));
+    card.append(h('div', { class: 'tn-review-section' },
+      h('h4', { text: candidates.length ? '候选记录（本人台账）' : '对应记录' }), candidateBox));
 
-    /* D12：可选补投递时间 */
-    let appliedAtInput = null;
-    if (review.kind === 'application_confirmation' || review.reason_code === 'D12_MISSING_APPLIED_AT') {
-      appliedAtInput = h('input', { class: 'tn-input', type: 'datetime-local', 'data-test': 'review-applied-at' });
-      card.append(h('div', { class: 'tn-review-section' },
-        h('div', { class: 'tn-field', style: { marginBottom: '0' } },
-          h('label', { text: '投递时间（缺可信时间时必填；D12 不会用今天/收信时间代替）' }),
-          appliedAtInput,
-          h('div', { class: 'tn-hint', text: '只有你确认的精确时间才会写入；留空则若服务端判定缺时间会返回 422。' })
-        )
-      ));
-    }
+    /* 编辑区容器 */
+    const editHost = h('div', {});
+    card.append(editHost);
 
     /* 错误提示 */
     const errBox = h('div', { 'data-test': 'review-error' });
 
-    /* 动作 */
-    const confirmLabel = review.kind === 'terminal_candidate' ? '确认终态' :
-      review.kind === 'application_confirmation' ? '确认已投 / 应用建议' : '确认并应用建议';
+    /* 三个主按钮 */
+    const confirmLabel = suggestedTarget ? '对，更新台账' : '选一条记录并更新';
     const confirmBtn = h('button', {
       class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'review-confirm',
-      text: confirmLabel, disabled: candidates.length === 0,
-      onclick: () => resolveExisting('confirm', review, state, errBox)
-    });
-    const linkBtn = h('button', {
-      class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'review-link', text: '关联所选记录',
-      disabled: candidates.length === 0,
-      onclick: () => resolveExisting('link', review, state, errBox)
-    });
-    const createBtn = h('button', {
-      class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'review-create',
-      text: state.createOpen ? '收起新建' : '新建记录',
-      onclick: () => { state.createOpen = !state.createOpen; renderCreateForm(); createBtn.textContent = state.createOpen ? '收起新建' : '新建记录'; }
-    });
-    /* 直接切换状态：选一个状态就把这条线索落到对应进度，不用先确认再改 */
-    const switchSel = h('select', { class: 'tn-select', 'data-test': 'review-status-select' });
-    switchSel.append(h('option', { value: '', text: '选择目标状态…' }));
-    for (const s of STATUS_ORDER) switchSel.append(h('option', { value: s, text: STATUS_LABELS[s] }));
-    const switchAt = h('input', { class: 'tn-input', type: 'datetime-local', 'data-test': 'review-switch-at' });
-    const switchAtWrap = h('div', { class: 'tn-field', style: { display: 'none', marginBottom: '0' } },
-      h('label', { text: '投递时间（切到已投及之后的状态必填；不会用今天代替）' }), switchAt);
-    const switchBtn = h('button', {
-      class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'review-switch-status', text: '切换状态',
-      disabled: candidates.length === 0,
-      onclick: () => doSwitchStatus()
-    });
-    switchSel.addEventListener('change', () => {
-      switchAtWrap.style.display = NEEDS_APPLIED_AT.has(switchSel.value) ? '' : 'none';
-    });
-    const switchErrBox = h('div', {});
-    card.append(h('div', { class: 'tn-review-section' },
-      h('h4', { text: '直接切换状态' }),
-      h('div', { class: 'tn-action-row' }, switchSel, switchBtn),
-      switchAtWrap,
-      switchErrBox,
-      h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' },
-        text: '在上面选一条候选记录，再选目标状态即可一步切过去。切到「已投 / 笔试 / 面试 / 已 offer / 已拒绝」需要可信投递时间；切到终态受 D05 约束。' })
-    ));
-
-    async function doSwitchStatus() {
-      clear(switchErrBox);
-      const target = switchSel.value;
-      if (!target) { showErr(switchErrBox, '请先选择要切换到的状态'); return; }
-      if (!state.selected) { showErr(switchErrBox, '请先在「候选记录」里选一条'); return; }
-      if (NEEDS_APPLIED_AT.has(target) && !switchAt.value) {
-        switchAtWrap.style.display = '';
-        switchAt.focus();
-        showErr(switchErrBox, `切到「${STATUS_LABELS[target]}」需要可信投递时间；D12 未冻结，不会用今天代替。`);
-        return;
+      text: confirmLabel,
+      onclick: async () => {
+        if (state.busy) return;
+        const targetId = suggestedTarget?.id || state.selected;
+        if (!targetId) {
+          if (!state.editOpen) toggleEdit();
+          editHost.querySelector('[data-test=review-target-select]')?.focus();
+          toast('这条没有自动对上记录：先在下方选一条本人台账，或按邮件新建一条', 'info');
+          return;
+        }
+        await confirmSuggested(review, targetId, errBox);
       }
-      const changes = { status: target };
-      if (switchAt.value) changes.applied_at = new Date(`${switchAt.value}:00+08:00`).toISOString();
-      if (reasonForSwitch()) changes.reason = reasonForSwitch();
-      await resolveExisting('confirm', review, state, switchErrBox, {
-        changes,
-        requireAppliedAt: NEEDS_APPLIED_AT.has(target),
-        successText: `已切换为「${STATUS_LABELS[target]}」`,
-        buttons: [confirmBtn, linkBtn, createBtn, dismissBtn, switchBtn]
-      });
-    }
-
-    function reasonForSwitch() {
-      return `待确认直接切换为 ${STATUS_LABELS[switchSel.value] || switchSel.value}`;
-    }
-
+    });
+    const editBtn = h('button', {
+      class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'review-edit', text: '不对，我来改',
+      onclick: () => toggleEdit()
+    });
     const dismissBtn = h('button', {
-      class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'review-dismiss', text: '忽略',
+      class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'review-dismiss', text: '这不是招聘进展，忽略',
       onclick: async () => {
         const ok = await confirmDialog({
           title: '忽略这条线索？',
           message: '忽略后它不再进入待确认队列，也不会创建或修改任何申请记录。',
-          detail: '仅当该线索确属误报时使用；忽略不可在界面撤销。',
+          detail: '仅当这条确实不是招聘进展（广告、订阅、误识别）时使用；忽略后不可在界面撤销。',
           confirmLabel: '忽略'
         });
         if (!ok) return;
-        await postResolve(review, { action: 'dismiss', reason: '用户忽略' }, errBox, () => {});
+        await dismissReview(review, errBox);
       }
     });
     card.append(h('div', { class: 'tn-review-section' },
-      h('div', { class: 'tn-action-row' }, confirmBtn, linkBtn, createBtn, dismissBtn),
-      h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' }, text: '确认/关联前会重新读取复核项与候选记录的最新版本；如已被更新，需要你重新决定。' }),
+      h('div', { class: 'tn-action-row' }, confirmBtn, editBtn, dismissBtn),
+      h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' },
+        text: '提交前会重新读取这条线索和记录的最新版本；如果刚被别处改过，会提示你重新确认，不会静默覆盖。' }),
       errBox
     ));
 
-    const createHost = h('div', {});
-    card.append(createHost);
-
-    function renderCreateForm() {
-      clear(createHost);
-      if (!state.createOpen) return;
-      const pre = review.suggested_changes || {};
-      const inputs = {};
-      const mk = (key, label, type = 'text', placeholder = '') => {
-        const input = h('input', { class: 'tn-input', type, placeholder });
-        inputs[key] = input;
-        return h('div', { class: 'tn-field' }, h('label', { text: label }), input);
-      };
-      const company = mk('company_name', '公司名 *');
-      company.querySelector('input').value = pre.company_name || '';
-      const title = mk('job_title', '岗位名 *');
-      title.querySelector('input').value = pre.job_title || '';
-      const jd = h('textarea', { class: 'tn-textarea' });
-      if (pre.jd_summary) jd.value = pre.jd_summary;
-      const jobUrl = mk('job_url', '岗位链接', 'url', 'https://…');
-      jobUrl.querySelector('input').value = pre.job_url || '';
-      const location = mk('location', '城市');
-      location.querySelector('input').value = pre.location || '';
-      const batch = mk('recruitment_batch', '招聘批次');
-      batch.querySelector('input').value = pre.recruitment_batch || '';
-      const appliedAt = mk('applied_at', '投递时间（D12：已投必填）', 'datetime-local');
-      if (pre.applied_at) {
-        const iso = new Date(pre.applied_at);
-        if (!Number.isNaN(iso.getTime())) appliedAt.querySelector('input').value = toShanghaiInput(iso);
-      }
-      const statusSel = h('select', { class: 'tn-select' });
-      statusSel.append(h('option', { value: '', text: '（默认按已投事实）' }));
-      for (const s of STATUS_ORDER) statusSel.append(h('option', { value: s, text: STATUS_LABELS[s] }));
-      if (pre.status) statusSel.value = pre.status;
-      const reasonInput = h('textarea', { class: 'tn-textarea' });
-      reasonInput.value = '按复核线索新建记录';
-
-      createHost.append(h('div', { class: 'tn-inline-form', 'data-test': 'review-create-form' },
-        h('h4', { style: { margin: '0 0 8px' }, text: '新建记录（不会强行新增：若发现候选会提示改为关联）' }),
-        h('div', { class: 'tn-form-grid' }, company, title, location, batch, jobUrl, appliedAt,
-          h('div', { class: 'tn-field' }, h('label', { text: '状态' }), statusSel),
-          h('div', { class: 'tn-field' }, h('label', { text: '纠错/新建原因' }), reasonInput)
-        ),
-        h('div', { class: 'tn-field', style: { marginTop: '10px' } }, h('label', { text: 'JD 摘要（纯文本≤80字）' }), jd),
-        h('div', { class: 'tn-action-row' },
-          h('button', {
-            class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'review-create-submit', text: '创建并处理',
-            onclick: async (e) => {
-              const btn = e.currentTarget;
-              const changes = {};
-              const companyName = inputs.company_name.value.trim();
-              const jobTitle = inputs.job_title.value.trim();
-              if (!companyName || !jobTitle) { showErr(errBox, '公司名和岗位名为必填'); return; }
-              changes.company_name = companyName;
-              changes.job_title = jobTitle;
-              if (jd.value.trim()) changes.jd_summary = jd.value.trim();
-              if (inputs.job_url.value.trim()) changes.job_url = inputs.job_url.value.trim();
-              if (inputs.location.value.trim()) changes.location = inputs.location.value.trim();
-              if (inputs.recruitment_batch.value.trim()) changes.recruitment_batch = inputs.recruitment_batch.value.trim();
-              if (inputs.applied_at.value) changes.applied_at = new Date(`${inputs.applied_at.value}:00+08:00`).toISOString();
-              if (statusSel.value) changes.status = statusSel.value;
-              if (reasonInput.value.trim()) changes.reason = reasonInput.value.trim();
-              btn.disabled = true;
-              try {
-                await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/resolve`, {
-                  expected_version: review.version,
-                  action: 'create',
-                  changes
-                }, { idempotencyKey: idemKey('review-create') });
-                toast('已按复核线索创建记录', 'ok');
-                await refreshAfterChange();
-              } catch (err) {
-                handleResolveError(err, errBox, review);
-              } finally {
-                btn.disabled = false;
-              }
-            }
-          }),
-          h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '取消', onclick: () => { state.createOpen = false; clear(createHost); createBtn.textContent = '新建记录'; } })
-        ),
-        h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' }, text: '若服务端发现新的候选记录（409），不会强行新增；请改用「关联所选记录」。' })
-      ));
+    function toggleEdit() {
+      state.editOpen = !state.editOpen;
+      editBtn.textContent = state.editOpen ? '收起「我来改」' : '不对，我来改';
+      if (state.editOpen) renderEditForm();
+      else clear(editHost);
     }
 
-    /* 确认 / 关联：先取最新复核 + 最新申请版本 */
-    async function resolveExisting(action, reviewSnapshot, stateSnapshot, errBoxEl, extra = {}) {
-      clear(errBoxEl);
-      const targetId = stateSnapshot.selected;
-      if (!targetId) { showErr(errBoxEl, '请先选择一条候选记录'); return; }
-      if (extra.requireAppliedAt && !(extra.changes || {}).applied_at) {
-        showErr(errBoxEl, '该目标状态需要可信投递时间；D12 未冻结，不会用今天代替。');
-        return;
-      }
-      const buttons = extra.buttons || [confirmBtn, linkBtn, createBtn, dismissBtn];
-      buttons.forEach((b) => { b.disabled = true; });
-      try {
-        const detailRes = await api.get(`/api/v1/review-items/${encodeURIComponent(review.id)}`);
-        const fresh = detailRes.data;
-        if (fresh.status !== 'open') {
-          toast('该复核项已处理，已刷新列表', 'ok');
-          await refreshAfterChange();
-          return;
-        }
-        const appRes = await api.get(`/api/v1/applications/${encodeURIComponent(targetId)}`);
-        const freshApp = appRes.data;
-        if (!(fresh.candidates || []).some((c) => c.application_id === targetId)) {
-          showErr(errBoxEl, '候选列表已变化：所选记录不在最新候选中，请重新选择。');
-          items = items.map((it) => it.id === review.id ? { ...it, version: fresh.version, candidates: fresh.candidates, suggested_changes: fresh.suggested_changes, evidence: fresh.evidence } : it);
-          renderList();
-          return;
-        }
-        const body = {
-          expected_version: fresh.version,
-          action,
-          application_id: targetId,
-          expected_application_version: freshApp.version
-        };
-        const changes = { ...(extra.changes || {}) };
-        if (appliedAtInput && appliedAtInput.value) {
-          changes.applied_at = new Date(`${appliedAtInput.value}:00+08:00`).toISOString();
-        }
-        if (Object.keys(changes).length) body.changes = changes;
-        const res = await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/resolve`, body,
-          { idempotencyKey: idemKey(`review-${action}`) });
-        if (res.data?.already_resolved) toast('该复核项已被处理', 'ok');
-        else if (extra.successText) toast(extra.successText, 'ok');
-        else toast(action === 'confirm' ? '已确认并应用建议' : '已关联到所选记录', 'ok');
-        await refreshAfterChange();
-      } catch (err) {
-        handleResolveError(err, errBoxEl, review);
-        buttons.forEach((b) => { b.disabled = false; });
-      }
-    }
-
-    async function postResolve(reviewSnapshot, body, errBoxEl, done) {
-      clear(errBoxEl);
-      try {
-        await api.post(`/api/v1/review-items/${encodeURIComponent(reviewSnapshot.id)}/resolve`,
-          { expected_version: reviewSnapshot.version, ...body },
-          { idempotencyKey: idemKey('review-dismiss') });
-        toast('已忽略该线索', 'ok');
-        await refreshAfterChange();
-        if (done) done();
-      } catch (err) {
-        handleResolveError(err, errBoxEl, reviewSnapshot);
-      }
+    function renderEditForm() {
+      clear(editHost);
+      const form = buildEditForm(review, {
+        candidates,
+        suggested,
+        suggestedStatus,
+        suggestedTarget,
+        receivedAt,
+        initialTargetId: state.selected,
+        onBusy: (v) => { state.busy = v; confirmBtn.disabled = v; dismissBtn.disabled = v; },
+        onResolved: () => refreshAfterChange(),
+        onCancel: () => toggleEdit(),
+        onTargetChange: (info) => { state.targetInfo = info; if (info) state.selected = info.id; }
+      });
+      editHost.append(form);
     }
 
     return card;
+  }
+
+  /* ---------- 「不对，我来改」表单 ---------- */
+  function buildEditForm(review, opts) {
+    const { candidates, suggested, suggestedStatus, suggestedTarget, receivedAt } = opts;
+    const known = new Map();
+    for (const c of candidates) {
+      known.set(c.application_id, {
+        id: c.application_id,
+        company_name: c.company_name,
+        job_title: c.job_title,
+        status: c.status,
+        has_applied: c.has_applied,
+        applied_at: null,
+        version: c.application_version,
+        match_reason: c.match_reason
+      });
+    }
+    if (suggestedTarget) known.set(suggestedTarget.id, suggestedTarget);
+
+    const targetSel = h('select', { class: 'tn-select', 'data-test': 'review-target-select' });
+    function rebuildTargetOptions(extra = null) {
+      const current = targetSel.value || opts.initialTargetId || '';
+      clear(targetSel);
+      targetSel.append(h('option', { value: '', text: '请选择本人台账记录…' }));
+      for (const info of known.values()) {
+        targetSel.append(h('option', {
+          value: info.id,
+          text: `${info.company_name || '—'} · ${info.job_title || '—'}${info.status ? `（${STATUS_LABELS[info.status] || info.status}）` : ''}`
+        }));
+      }
+      targetSel.append(h('option', { value: '__search__', text: '搜索更多本人台账记录…' }));
+      targetSel.append(h('option', { value: '__create__', text: '台账里没有，按这封邮件新建一条…' }));
+      if (extra && ![...known.keys()].includes(extra.id)) {
+        known.set(extra.id, extra);
+        targetSel.insertBefore(h('option', {
+          value: extra.id, text: `${extra.company_name || '—'} · ${extra.job_title || '—'}（已选择）`
+        }), targetSel.querySelector('option[value=__search__]'));
+      }
+      targetSel.value = known.has(current) ? current : (extra?.id || '');
+    }
+    rebuildTargetOptions();
+    targetSel.value = opts.initialTargetId && known.has(opts.initialTargetId) ? opts.initialTargetId : '';
+
+    const searchWrap = h('div', { class: 'tn-field', style: { display: 'none' } });
+    const searchInput = h('input', { class: 'tn-input', type: 'search', placeholder: '输入公司 / 岗位 / 城市搜索本人台账', 'data-test': 'review-search' });
+    const searchResults = h('select', { class: 'tn-select', 'data-test': 'review-search-results', style: { marginTop: '6px' } });
+    searchWrap.append(h('label', { text: '搜索本人台账' }), searchInput, searchResults,
+      h('div', { class: 'tn-hint', text: '只搜索你自己的记录；包含「看过没投」和已归档。' }));
+
+    const createWrap = h('div', { style: { display: 'none' } });
+    const cCompany = h('input', { class: 'tn-input', value: suggested.company_name || '', 'data-test': 'review-create-company' });
+    const cTitle = h('input', { class: 'tn-input', value: suggested.job_title || '', 'data-test': 'review-create-title' });
+    const cJd = h('textarea', { class: 'tn-textarea' });
+    cJd.value = suggested.jd_summary || '';
+    const cUrl = h('input', { class: 'tn-input', type: 'url', value: suggested.job_url || '', placeholder: 'https://…' });
+    const cLocation = h('input', { class: 'tn-input', value: suggested.location || '' });
+    const cBatch = h('input', { class: 'tn-input', value: suggested.recruitment_batch || '' });
+    createWrap.append(h('div', { class: 'tn-form-grid' },
+      h('div', { class: 'tn-field' }, h('label', { text: '公司名 *' }), cCompany),
+      h('div', { class: 'tn-field' }, h('label', { text: '岗位名 *' }), cTitle),
+      h('div', { class: 'tn-field' }, h('label', { text: '城市' }), cLocation),
+      h('div', { class: 'tn-field' }, h('label', { text: '招聘批次' }), cBatch),
+      h('div', { class: 'tn-field' }, h('label', { text: '岗位链接' }), cUrl)
+    ), h('div', { class: 'tn-field', style: { marginTop: '10px' } },
+      h('label', { text: 'JD 摘要（纯文本 ≤80 字）' }), cJd));
+
+    const statusSel = h('select', { class: 'tn-select', 'data-test': 'review-status-select' });
+    statusSel.append(h('option', { value: '', text: '（只关联记录，不改状态）' }));
+    for (const s of STATUS_ORDER) statusSel.append(h('option', { value: s, text: STATUS_LABELS[s] }));
+    if (suggestedStatus) statusSel.value = suggestedStatus;
+
+    const appliedField = h('div', { class: 'tn-field', style: { display: 'none' } });
+    const appliedInput = h('input', { class: 'tn-input', type: 'datetime-local', 'data-test': 'review-applied-at' });
+    const appliedHint = h('div', { class: 'tn-hint', text: '' });
+
+    const errBox = h('div', { 'data-test': 'review-edit-error' });
+    const submitBtn = h('button', {
+      class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'review-edit-submit', text: '保存并更新台账'
+    });
+
+    let mode = 'existing';
+    let currentInfo = null;
+
+    async function loadTargetInfo(id) {
+      currentInfo = known.get(id) || null;
+      if (!currentInfo || currentInfo.applied_at === undefined || currentInfo.applied_at === null) {
+        try {
+          const res = await api.get(`/api/v1/applications/${encodeURIComponent(id)}`);
+          currentInfo = { ...res.data, id: res.data.id };
+          known.set(id, currentInfo);
+        } catch (err) {
+          showErr(errBox, `读取记录失败：${humanError(err)}`);
+          return;
+        }
+      }
+      opts.onTargetChange(currentInfo);
+      const needsTime = NEEDS_APPLIED_AT.has(statusSel.value);
+      const missingTime = !currentInfo.applied_at;
+      if (needsTime && missingTime) {
+        appliedField.style.display = '';
+        appliedHint.textContent = receivedAt
+          ? '这条记录原来没有投递时间。默认填收信日期，标记为「据邮件推断（≤ 收信日）」；你可以改成实际日期。'
+          : '这条记录没有投递时间。请填一个你确认过的日期；不会用今天代替。';
+        if (receivedAt && !appliedInput.value) appliedInput.value = toShanghaiInput(new Date(receivedAt));
+      } else {
+        appliedField.style.display = 'none';
+        appliedInput.value = '';
+      }
+    }
+
+    function syncTimeField() {
+      const needsTime = NEEDS_APPLIED_AT.has(statusSel.value);
+      const missingTime = !currentInfo?.applied_at;
+      if (mode !== 'existing') { appliedField.style.display = 'none'; return; }
+      if (needsTime && missingTime) {
+        appliedField.style.display = '';
+        if (receivedAt && !appliedInput.value) appliedInput.value = toShanghaiInput(new Date(receivedAt));
+      } else {
+        appliedField.style.display = 'none';
+        appliedInput.value = '';
+      }
+    }
+
+    targetSel.addEventListener('change', async () => {
+      const value = targetSel.value;
+      searchWrap.style.display = value === '__search__' ? '' : 'none';
+      createWrap.style.display = value === '__create__' ? '' : 'none';
+      mode = value === '__create__' ? 'create' : 'existing';
+      submitBtn.textContent = mode === 'create' ? '创建并处理' : '保存并更新台账';
+      if (value === '__search__') { searchInput.focus(); return; }
+      if (value === '__create__') { syncTimeField(); return; }
+      if (value) await loadTargetInfo(value);
+    });
+
+    statusSel.addEventListener('change', syncTimeField);
+
+    const doSearch = debounce(async () => {
+      clear(searchResults);
+      const q = searchInput.value.trim();
+      if (q.length < 1) return;
+      try {
+        const res = await api.get(`/api/v1/application-search?q=${encodeURIComponent(q)}&limit=20`);
+        searchResults.append(h('option', { value: '', text: `找到 ${res.data.length} 条，选择一条…` }));
+        for (const row of res.data) {
+          searchResults.append(h('option', {
+            value: row.id,
+            text: `${row.company_name} · ${row.job_title}（${row.status_label}${row.has_applied ? ' · 已投' : ''}）`
+          }));
+        }
+      } catch (err) {
+        showErr(errBox, `搜索失败：${humanError(err)}`);
+      }
+    }, 280);
+
+    searchInput.addEventListener('input', doSearch);
+    searchResults.addEventListener('change', async () => {
+      const id = searchResults.value;
+      if (!id) return;
+      const picked = await api.get(`/api/v1/applications/${encodeURIComponent(id)}`).then((r) => r.data).catch(() => null);
+      if (!picked) { showErr(errBox, '读取所选记录失败，请重试'); return; }
+      rebuildTargetOptions(picked);
+      targetSel.value = id;
+      searchWrap.style.display = 'none';
+      searchInput.value = '';
+      mode = 'existing';
+      submitBtn.textContent = '保存并更新台账';
+      await loadTargetInfo(id);
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      clear(errBox);
+      if (mode === 'create') {
+        const company = cCompany.value.trim();
+        const title = cTitle.value.trim();
+        if (!company || !title) { showErr(errBox, '公司和岗位名必填'); return; }
+        const changes = { company_name: company, job_title: title };
+        if (cJd.value.trim()) changes.jd_summary = cJd.value.trim();
+        if (cUrl.value.trim()) changes.job_url = cUrl.value.trim();
+        if (cLocation.value.trim()) changes.location = cLocation.value.trim();
+        if (cBatch.value.trim()) changes.recruitment_batch = cBatch.value.trim();
+        if (statusSel.value) changes.status = statusSel.value;
+        if (NEEDS_APPLIED_AT.has(statusSel.value)) {
+          changes.has_applied = true;
+          if (appliedInput.value) {
+            changes.applied_at = new Date(`${appliedInput.value}:00+08:00`).toISOString();
+            changes.applied_at_precision = 'date';
+          } else if (receivedAt) {
+            changes.applied_at = receivedAt;
+            changes.applied_at_precision = 'inferred_before';
+          }
+        }
+        await submit(review, { action: 'create', changes }, { errBox, submitBtn, onResolved: opts.onResolved, toastText: '已按这封邮件新建记录' });
+        return;
+      }
+      const targetId = targetSel.value;
+      if (!targetId || targetId.startsWith('__')) { showErr(errBox, '请先选择一条本人台账记录，或选择「新建一条」'); return; }
+      const changes = {};
+      if (statusSel.value) changes.status = statusSel.value;
+      const needsTime = NEEDS_APPLIED_AT.has(statusSel.value);
+      const missingTime = currentInfo && !currentInfo.applied_at;
+      if (needsTime && missingTime) {
+        if (!appliedInput.value && !receivedAt) { showErr(errBox, '这个状态需要投递时间；请填写一个你确认过的日期'); return; }
+        changes.applied_at = appliedInput.value
+          ? new Date(`${appliedInput.value}:00+08:00`).toISOString()
+          : receivedAt;
+        changes.applied_at_precision = appliedInput.value ? 'date' : 'inferred_before';
+      }
+      if (!Object.keys(changes).length) { showErr(errBox, '没有要修改的内容：请选择目标状态，或改用「对，更新台账」直接确认'); return; }
+      if (statusSel.value && currentInfo && !currentInfo.has_applied && NEEDS_APPLIED_AT.has(statusSel.value)) {
+        changes.has_applied = true;
+      }
+      await submit(review, { action: 'confirm', applicationId: targetId, changes }, {
+        errBox, submitBtn, onResolved: opts.onResolved,
+        successText: (app) => `已更新：${app.company_name} · ${app.job_title} → ${STATUS_LABELS[app.status] || app.status}`,
+        undo: true
+      });
+    });
+
+    appliedField.append(h('label', { text: '投递时间（缺失时才需要填）' }), appliedInput, appliedHint);
+
+    const form = h('div', { class: 'tn-inline-form', 'data-test': 'review-edit-form', style: { marginTop: '12px' } },
+      h('h4', { style: { margin: '0 0 8px' }, text: '我来改：选择记录 / 状态' }),
+      h('div', { class: 'tn-field' }, h('label', { text: '对应哪条记录？' }), targetSel),
+      searchWrap,
+      h('div', { class: 'tn-field' }, h('label', { text: '目标状态' }), statusSel,
+        h('div', { class: 'tn-hint', text: '只改状态；时间字段只在记录真的缺投递时间时出现。' })),
+      appliedField,
+      createWrap,
+      errBox,
+      h('div', { class: 'tn-action-row', style: { marginTop: '10px' } },
+        submitBtn,
+        h('button', {
+          class: 'tn-btn tn-btn-sm', type: 'button', text: '取消',
+          onclick: () => { clear(errBox); if (opts.onCancel) opts.onCancel(); else opts.onTargetChange(null); }
+        })
+      )
+    );
+
+    if (opts.initialTargetId && known.has(opts.initialTargetId)) {
+      loadTargetInfo(opts.initialTargetId);
+    } else if (!candidates.length) {
+      /* 没有候选时直接把「搜索本人台账」展开，少点一次。 */
+      targetSel.value = '__search__';
+      searchWrap.style.display = '';
+    }
+    return form;
+  }
+
+  /* ---------- 提交动作 ---------- */
+  async function confirmSuggested(review, targetId, errBox) {
+    const target = (review.candidates || []).find((c) => c.application_id === targetId)
+      || (review.suggested_application?.id === targetId ? review.suggested_application : null);
+    const changes = {};
+    // 系统建议里只挑「可展示、可解释」的字段；不把内部证据字段写进台账。
+    for (const key of ['status', 'applied_at', 'applied_at_precision', 'has_applied', 'interview_scheduled_at', 'round_label', 'interview_round']) {
+      if (review.suggested_changes?.[key] != null) changes[key] = review.suggested_changes[key];
+    }
+    if (!target && !changes.status) {
+      showErr(errBox, '这条没有可自动应用的建议，请用「不对，我来改」选择记录和状态');
+      return;
+    }
+    await submit(review, {
+      action: 'confirm',
+      applicationId: targetId,
+      changes
+    }, {
+      errBox,
+      successText: (app) => `已更新：${app.company_name} · ${app.job_title} → ${STATUS_LABELS[app.status] || app.status}`,
+      undo: true
+    });
+  }
+
+  async function dismissReview(review, errBox) {
+    clear(errBox);
+    try {
+      await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/resolve`, {
+        expected_version: review.version,
+        action: 'dismiss',
+        reason: '用户判断这不是招聘进展'
+      }, { idempotencyKey: idemKey('review-dismiss') });
+      toast('已忽略该线索', 'ok');
+      await refreshAfterChange();
+    } catch (err) {
+      handleResolveError(err, errBox, review);
+    }
+  }
+
+  async function submit(review, body, { errBox, submitBtn, successText, undo, toastText, onResolved }) {
+    clear(errBox);
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      /* 先取最新复核项 + 最新记录版本，避免拿旧版本硬写。 */
+      const freshRes = await api.get(`/api/v1/review-items/${encodeURIComponent(review.id)}`);
+      const fresh = freshRes.data;
+      if (fresh.status !== 'open') {
+        toast('这条已经处理过了，已刷新列表', 'ok');
+        await refreshAfterChange();
+        return;
+      }
+      const payload = {
+        expected_version: fresh.version,
+        action: body.action,
+        changes: body.changes || {}
+      };
+      if (body.action === 'create') {
+        // create 不需要目标记录版本
+      } else {
+        const appRes = await api.get(`/api/v1/applications/${encodeURIComponent(body.applicationId)}`);
+        payload.application_id = body.applicationId;
+        payload.expected_application_version = appRes.data.version;
+      }
+      const res = await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/resolve`, payload,
+        { idempotencyKey: idemKey(`review-${body.action}`) });
+      const app = res.data.application;
+      const text = typeof successText === 'function'
+        ? successText(app)
+        : (successText || toastText || '已更新台账');
+      if (undo && app) {
+        toastAction(text, {
+          actionLabel: '撤销',
+          onAction: async () => {
+            try {
+              await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/undo`, {},
+                { idempotencyKey: idemKey('review-undo') });
+              toast('已撤回这次确认，记录已恢复', 'ok');
+              await refreshAfterChange();
+            } catch (err) {
+              toast(humanError(err), 'err');
+            }
+          }
+        });
+      } else {
+        toast(text, 'ok');
+      }
+      await refreshAfterChange();
+    } catch (err) {
+      handleResolveError(err, errBox, review);
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  }
+
+  async function batchConfirm() {
+    const eligible = items.filter((r) => r.total_confidence != null && r.total_confidence >= AUTO_CONFIRM_MIN
+      && r.suggested_application_id);
+    if (!eligible.length) { toast('没有把握度 ≥ 80% 且能对上记录的条目', 'info'); return; }
+    const ok = await confirmDialog({
+      title: `按系统判断确认 ${eligible.length} 条？`,
+      message: '会逐条把台账更新成系统判断的状态；每条都会留痕，10 秒内可撤销。',
+      detail: '任意一条失败（记录刚被改过、版本冲突等）会留在列表里并标红，不会整体回滚其它条目。',
+      confirmLabel: '全部确认'
+    });
+    if (!ok) return;
+    batchBusy = true;
+    buildHead();
+    let succeeded = 0;
+    const failures = [];
+    for (const review of eligible) {
+      try {
+        const appRes = await api.get(`/api/v1/applications/${encodeURIComponent(review.suggested_application_id)}`);
+        await api.post(`/api/v1/review-items/${encodeURIComponent(review.id)}/resolve`, {
+          expected_version: review.version,
+          action: 'confirm',
+          application_id: review.suggested_application_id,
+          expected_application_version: appRes.data.version,
+          changes: review.suggested_changes || {}
+        }, { idempotencyKey: idemKey('review-batch') });
+        succeeded += 1;
+      } catch (err) {
+        failures.push({ id: review.id, message: humanError(err) });
+      }
+    }
+    batchBusy = false;
+    if (failures.length) {
+      toast(`已确认 ${succeeded} 条，${failures.length} 条失败，已留在列表里标红`, 'err');
+      for (const f of failures) {
+        const card = listEl.querySelector(`[data-review-id="${CSS.escape(f.id)}"]`);
+        if (card) card.classList.add('has-error');
+      }
+    } else {
+      toast(`已按系统判断确认 ${succeeded} 条`, 'ok');
+    }
+    if (succeeded) {
+      try { if (onChanged) onChanged(); } catch { /* ignore */ }
+    }
+    await load();
   }
 
   function showErr(box, text) {
@@ -473,44 +787,33 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
 
   function handleResolveError(err, box, reviewSnapshot) {
     clear(box);
-    if (!(err instanceof ApiError)) { showErr(box, errorText(err)); return; }
+    if (!(err instanceof ApiError)) { showErr(box, humanError(err)); return; }
     if (err.status === 409 && err.code === 'VERSION_CONFLICT' && err.details?.candidates?.length) {
-      const message = '服务端发现新的候选记录，不能强行新增。请从候选中选择并改用「关联所选记录」。';
+      const message = '服务端发现了新的候选记录，不能强行新增。请从候选中选择，或改用「关联记录」。';
       showErr(box, message);
       toast(message, 'err');
-      const wrap = h('div', { class: 'tn-candidates', style: { marginTop: '6px' } });
-      for (const c of err.details.candidates) {
-        wrap.append(h('div', { class: 'tn-small', text: `候选：${c.application_id}（${c.reason}）` }));
-      }
-      box.append(wrap);
       load();
       return;
     }
     switch (err.code) {
       case 'VERSION_CONFLICT': {
-        const message = '复核项或候选记录已被更新；已重新加载，请重新决定（不会自动覆盖）。';
+        const message = '这条刚刚被更新过（复核项或候选记录已被更新），已刷新，请再确认一次。';
         showErr(box, message);
         toast(message, 'err');
         if (reviewSnapshot) load();
         break;
       }
-      case 'D12_NOT_FROZEN':
-        showErr(box, '缺少可信投递时间：D12 未冻结，不会用今天/收信时间代替。请填写投递时间或改用补录。');
+      case 'UNDO_EXPIRED':
+        showErr(box, '已经超过可撤销时间；请到台账详情里用「纠错」修改，并填写原因。');
         break;
-      case 'D05_NOT_FROZEN':
-      case 'D05_DISABLED':
-        showErr(box, '该记录处于终态：终态人工纠错当前被关闭，请联系管理员开启。');
+      case 'UNDO_NOT_AVAILABLE':
+        showErr(box, '这条待确认不是「确认更新」处理的，不能这样撤回。');
         break;
       case 'APPLIED_FACT_REMOVAL':
-        showErr(box, '不能通过复核撤销已投事实；如确需，请走终态纠错评审（D05）。');
-        break;
-      case 'CONFIRMATION_INVALID':
-      case 'CONFIRMATION_CONSUMED':
-      case 'CONFIRMATION_EXPIRED':
-        showErr(box, '确认资格无效或已使用，请重新发起。');
+        showErr(box, '不能通过待确认撤销「已投」事实；如果确实要改，请到台账详情里走终态纠错。');
         break;
       default:
-        showErr(box, errorText(err));
+        showErr(box, `处理失败：${humanError(err)}`);
     }
   }
 
@@ -519,6 +822,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     await load();
   }
 
+  buildHead();
   load();
 }
 

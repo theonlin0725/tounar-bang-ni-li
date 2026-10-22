@@ -1,8 +1,72 @@
 import { all, dataRevision, getApplication, one } from '../db.js';
 import {
-  AppError, STATUSES, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse
+  AppError, STATUSES, STATUS_LABELS, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse
 } from '../util.js';
 import { applicationProjection, getPreferences, reviewAnchor } from './applications.js';
+
+/* P1（2026-10-22）：待确认卡片要能一句话说清「系统猜的是哪条、把握度多少」。
+   匹配把握度按候选来源分档；分类置信度沿用邮件解析的 confidence。
+   总把握度 = 分类置信度 × 匹配把握度（缺分类置信度时，插件线索直接用匹配把握度）。 */
+const MATCH_CONFIDENCE = {
+  site_application_id: 1,
+  site_job_id: 0.9,
+  canonical_job_url: 0.9,
+  company_title_only: 0.5
+};
+
+function matchConfidenceFor(reason) {
+  return Object.hasOwn(MATCH_CONFIDENCE, reason) ? MATCH_CONFIDENCE[reason] : 0.3;
+}
+
+function reviewProjection(row) {
+  const candidates = safeJsonParse(row.candidates_json, []);
+  const evidence = safeJsonParse(row.evidence_json, {});
+  const suggested = safeJsonParse(row.suggested_changes_json, {});
+  const classification = Number.isFinite(Number(evidence.confidence)) && evidence.confidence !== null
+    ? Number(evidence.confidence) : null;
+  const ranked = candidates
+    .map((c) => ({ ...c, match_confidence: matchConfidenceFor(c.match_reason) }))
+    .sort((a, b) => b.match_confidence - a.match_confidence);
+  const top = ranked[0] || null;
+  const topIsUnique = !!top && ranked.filter((c) => c.match_confidence === top.match_confidence).length === 1;
+  const suggestedTarget = topIsUnique ? top : null;
+  const matchConfidence = suggestedTarget ? suggestedTarget.match_confidence : (top ? top.match_confidence : null);
+  const totalConfidence = matchConfidence == null
+    ? null
+    : Number(((classification == null ? 1 : classification) * matchConfidence).toFixed(3));
+  return {
+    id: row.id,
+    kind: row.kind,
+    reason_code: row.reason_code,
+    summary: row.summary,
+    evidence,
+    suggested_changes: suggested,
+    candidates: ranked,
+    source_event_id: row.source_event_id,
+    status: row.status,
+    resolution: safeJsonParse(row.resolution_json, null),
+    version: row.version,
+    created_at: row.created_at,
+    resolved_at: row.resolved_at,
+    mail_received_at: row.mail_received_at || null,
+    classification_confidence: classification,
+    match_confidence: matchConfidence,
+    total_confidence: totalConfidence,
+    suggested_status: suggested.status || null,
+    suggested_application_id: suggestedTarget ? suggestedTarget.application_id : null,
+    suggested_application: suggestedTarget
+      ? {
+        id: suggestedTarget.application_id,
+        company_name: suggestedTarget.company_name,
+        job_title: suggestedTarget.job_title,
+        status: suggestedTarget.status,
+        status_label: STATUS_LABELS[suggestedTarget.status] || suggestedTarget.status,
+        has_applied: suggestedTarget.has_applied,
+        version: suggestedTarget.application_version
+      }
+      : null
+  };
+}
 
 function encodeCursor(offset, revision) {
   return Buffer.from(JSON.stringify({ v: 1, o: offset, r: revision }), 'utf8').toString('base64url');
@@ -148,36 +212,43 @@ export function reviewList(ownerId, query = {}) {
     WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
     ORDER BY r.created_at DESC LIMIT ?`, status === 'all' ? [ownerId, limit] : [ownerId, status, limit]);
   return {
-    data: rows.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      reason_code: row.reason_code,
-      summary: row.summary,
-      evidence: safeJsonParse(row.evidence_json, {}),
-      suggested_changes: safeJsonParse(row.suggested_changes_json, {}),
-      candidates: safeJsonParse(row.candidates_json, []),
-      source_event_id: row.source_event_id,
-      status: row.status,
-      resolution: safeJsonParse(row.resolution_json, null),
-      version: row.version,
-      created_at: row.created_at,
-      mail_received_at: row.mail_received_at || null,
-      resolved_at: row.resolved_at
-    })),
+    data: rows.map(reviewProjection),
     page: { next_cursor: null, has_more: false }
   };
 }
 
 export function reviewDetail(ownerId, reviewId) {
-  const row = one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]);
+  const row = one(`SELECT r.*, m.received_at AS mail_received_at
+    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
+    WHERE r.id = ? AND r.owner_id = ?`, [reviewId, ownerId]);
   if (!row) throw new AppError(404, 'NOT_FOUND', '复核项不存在');
+  return { data: reviewProjection(row) };
+}
+
+/* 待确认里「不对，我来改」的台账搜索：本人全部记录（含看过没投），按公司/岗位/城市模糊匹配。
+   只返回下拉框需要的最小字段，不带证据与正文。 */
+export function searchApplications(ownerId, query = {}) {
+  const q = String(query.q || '').trim().slice(0, 100);
+  const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || '20', 10) || 20));
+  const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  const rows = q
+    ? all(`SELECT * FROM applications WHERE owner_id = ?
+        AND (company_name LIKE ? ESCAPE '\\' OR job_title LIKE ? ESCAPE '\\' OR location LIKE ? ESCAPE '\\')
+        ORDER BY has_applied DESC, updated_at DESC LIMIT ?`, [ownerId, like, like, like, limit])
+    : all(`SELECT * FROM applications WHERE owner_id = ?
+        ORDER BY has_applied DESC, updated_at DESC LIMIT ?`, [ownerId, limit]);
   return {
-    data: {
-      ...row,
-      evidence: safeJsonParse(row.evidence_json, {}),
-      suggested_changes: safeJsonParse(row.suggested_changes_json, {}),
-      candidates: safeJsonParse(row.candidates_json, []),
-      resolution: safeJsonParse(row.resolution_json, null)
-    }
+    data: rows.map((a) => ({
+      id: a.id,
+      company_name: a.company_name,
+      job_title: a.job_title,
+      location: a.location,
+      status: a.status,
+      status_label: STATUS_LABELS[a.status] || a.status,
+      has_applied: !!a.has_applied,
+      applied_at: a.applied_at,
+      applied_at_precision: a.applied_at_precision,
+      version: a.version
+    }))
   };
 }

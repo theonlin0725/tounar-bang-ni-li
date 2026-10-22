@@ -11,10 +11,10 @@ import {
 } from '../auth.js';
 import { withIdempotency } from '../idempotency.js';
 import {
-  applicationDetail, ledgerResponse, reviewDetail, reviewList
+  applicationDetail, ledgerResponse, reviewDetail, reviewList, searchApplications
 } from '../domain/ledger.js';
 import {
-  archiveApplication, correctApplication, markApplicationReviewed, resolveReview
+  archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReviewResolution
 } from '../domain/reviews.js';
 import { manualCreate, getPreferences } from '../domain/applications.js';
 import {
@@ -263,6 +263,28 @@ export function registerRoutes() {
         };
       }
     });
+  });
+  route('POST', '/api/v1/review-items/:id/undo', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId, scope: `review.undo:${req.params.id}`, req,
+      handler: () => {
+        const result = undoReviewResolution({ ownerId: auth.ownerId, reviewId: req.params.id });
+        return {
+          data: {
+            review: result.review,
+            undone: result.undone,
+            already_open: !!result.already_open,
+            application_id: result.application_id || null
+          }
+        };
+      }
+    });
+  });
+  /* 待确认「不对，我来改」的下拉搜索：本人台账，按公司/岗位/城市。 */
+  route('GET', '/api/v1/application-search', (req) => {
+    const auth = requireAuth(req);
+    return searchApplications(auth.ownerId, Object.fromEntries(req.query.entries()));
   });
 
   // ---------- mail ----------

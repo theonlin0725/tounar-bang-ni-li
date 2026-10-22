@@ -113,6 +113,34 @@ export function toast(message, kind = 'info') {
   setTimeout(() => node.remove(), kind === 'err' ? 5200 : 3200);
 }
 
+/* 带操作的 toast：用于「已更新 … 撤销」。默认停留 10 秒（用户要求 10 秒内可撤销）。
+   操作按钮必须能点：.tn-toasts 整体 pointer-events:none，这里单独放开。 */
+export function toastAction(message, { actionLabel = '撤销', onAction, kind = 'ok', timeout = 10000 } = {}) {
+  const box = document.getElementById('tn-toasts');
+  let settled = false;
+  const node = h('div', { class: `tn-toast has-action ${kind === 'err' ? 'err' : kind === 'ok' ? 'ok' : ''}` },
+    h('span', { class: 'tn-toast-text', text: message })
+  );
+  const timer = setTimeout(() => { if (!settled) { settled = true; node.remove(); } }, timeout);
+  const button = h('button', {
+    class: 'tn-toast-action', type: 'button', text: actionLabel,
+    onclick: async () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      button.disabled = true;
+      try {
+        if (onAction) await onAction();
+      } finally {
+        node.remove();
+      }
+    }
+  });
+  node.append(button);
+  box.append(node);
+  return { dismiss: () => { settled = true; clearTimeout(timer); node.remove(); } };
+}
+
 /* ---------- 弹窗 ---------- */
 export function openModal({ title, subtitle, body, footer, tabs, activeTab, narrow = false, onClose, testid, stacked = false }) {
   /* stacked=true 时另建一层遮罩（用于确认框叠在已打开的弹窗之上），关闭后恢复下层弹窗。 */

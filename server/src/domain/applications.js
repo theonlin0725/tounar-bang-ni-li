@@ -125,7 +125,10 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
-  const candidates = findCandidates(event.owner_id, fields).map(({ application, reason }) => ({
+  const candidates = findCandidates(event.owner_id, {
+    ...fields,
+    canonical_job_url: fields.canonical_job_url || canonicalJobUrl(fields.job_url)
+  }).map(({ application, reason }) => ({
     application_id: application.id,
     application_version: application.version,
     company_name: application.company_name,

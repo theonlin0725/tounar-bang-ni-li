@@ -286,6 +286,15 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .tn-toast { background: #202624; color: #fff; border-radius: 999px; padding: 8px 18px; font-size: 13px; box-shadow: var(--shadow); max-width: min(560px, 92vw); }
 .tn-toast.err { background: var(--danger); }
 .tn-toast.ok { background: var(--ok); }
+.tn-toast.has-action { pointer-events: auto; display: flex; gap: 12px; align-items: center; border-radius: 12px; padding: 9px 12px 9px 16px; }
+.tn-toast-action { background: rgba(255, 255, 255, 0.16); color: #fff; border: 1px solid rgba(255, 255, 255, 0.38); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.tn-toast-action:hover { background: rgba(255, 255, 255, 0.3); }
+.tn-toast-action:disabled { opacity: 0.6; cursor: default; }
+
+/* 待确认卡片：一句话结论 + 候选记录元信息 + 失败标红 */
+.tn-review-conclusion .tn-review-title { font-size: 14px; line-height: 1.7; font-weight: 500; }
+.tn-candidate-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.tn-review-card.has-error { border-color: var(--danger); box-shadow: 0 0 0 2px #fdecea; }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 760px) {

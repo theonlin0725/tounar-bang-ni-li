@@ -324,6 +324,12 @@ try {
   }
   check('W-13 待确认队列出现两条弱提交复核（云杉数据 / 青禾网络）',
     !!review1Id && !!review2Id, `review1=${review1Id} review2=${review2Id}`);
+  const confText = (await page.locator(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-confidence]`).textContent()).trim();
+  const cardText = await page.locator(`[data-test=review-card][data-review-id="${review1Id}"]`).textContent();
+  check('W-13a 卡片一句话结论 + 把握度（低于 90% 明示需要确认）',
+    /系统把握度 \d+%/.test(confText) && cardText.includes('低于 90% 不会自动改台账')
+      && cardText.includes('对，更新台账'),
+    confText.slice(0, 90));
   await shot(page, '05-reviews');
 
   /* 真实 409：拦截 UI 的 resolve POST，先用真实 API 修正候选记录（版本 +1），再放行原请求 */
@@ -369,7 +375,7 @@ try {
 
   /* 正常确认第二条（青禾网络：pending → applied） */
   await page.locator(`[data-test=review-card][data-review-id="${review2Id}"] [data-test=review-confirm]`).click();
-  await waitToast(page, '已确认并应用建议');
+  await waitToast(page, '已更新：青禾网络');
   await page.waitForSelector(`[data-test=review-card][data-review-id="${review2Id}"]`, { state: 'detached' });
   const appCList = await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie });
   const appC = (appCList.json?.data?.items || []).find((x) => x.company_name === '青禾网络');
@@ -404,6 +410,66 @@ try {
   await page.goto('/');
   await page.waitForSelector('[data-test=stat-total]');
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
+
+  /* ================= 5c. P1 待确认：无候选可点 / 搜索 / 任意关联 / 撤销 / 批量 ================= */
+  const noCandBatch = await server.eventBatch(device1.device_token, [
+    weakSubmissionEvent('未匹配测试公司', '神秘岗位', 'https://jobs.example.com/unknown/role', 'nocand')
+  ]);
+  const noCandReviewId = noCandBatch.json?.results?.[0]?.review_item_id;
+  if (!noCandReviewId) throw new Error('P1 无候选复核创建失败');
+  await page.goto('/?panel=reviews');
+  await page.waitForSelector(`[data-test=review-card][data-review-id="${noCandReviewId}"]`);
+  const noCandCard = page.locator(`[data-test=review-card][data-review-id="${noCandReviewId}"]`);
+  check('W-16c 无候选记录：主按钮仍可点（不再 disabled）',
+    await noCandCard.locator('[data-test=review-confirm]').isEnabled(), 'confirm enabled');
+  await noCandCard.locator('[data-test=review-confirm]').click();
+  await noCandCard.locator('[data-test=review-edit-form]').waitFor();
+  await noCandCard.locator('[data-test=review-search]').fill('星河');
+  await page.waitForFunction((id) => {
+    const card = document.querySelector(`[data-test=review-card][data-review-id="${id}"]`);
+    return (card?.querySelector('[data-test=review-search-results]')?.options?.length || 0) > 1;
+  }, noCandReviewId, { timeout: 10000 });
+  const searchOptions = await noCandCard.locator('[data-test=review-search-results]').textContent();
+  check('W-16d 无候选时可搜索本人台账（按公司/岗位）',
+    searchOptions.includes('星河科技'), searchOptions.replace(/\s+/g, ' ').slice(0, 80));
+
+  const xingheBefore = await server.request(`/api/v1/applications/${xingheApp.id}`, { cookie: apiCookie });
+  await noCandCard.locator('[data-test=review-search-results]').selectOption(xingheApp.id);
+  await noCandCard.locator('[data-test=review-edit-submit]').click();
+  await waitToast(page, '已更新：星河科技');
+  await page.click('.tn-toast-action');
+  await waitToast(page, '已撤回这次确认');
+  await page.waitForSelector(`[data-test=review-card][data-review-id="${noCandReviewId}"]`);
+  const xingheAfterUndo = await server.request(`/api/v1/applications/${xingheApp.id}`, { cookie: apiCookie });
+  check('W-16e 任意记录关联 + 撤销：复核重新打开、记录字段恢复',
+    xingheAfterUndo.json?.data?.status === xingheBefore.json?.data?.status
+      && xingheAfterUndo.json?.data?.applied_at === xingheBefore.json?.data?.applied_at,
+    `status=${xingheAfterUndo.json?.data?.status} applied_at=${xingheAfterUndo.json?.data?.applied_at}`);
+
+  await noCandCard.locator('[data-test=review-dismiss]').click();
+  await page.waitForSelector('[data-test=confirm-ok]');
+  await page.click('[data-test=confirm-ok]');
+  await waitToast(page, '已忽略该线索');
+  await page.waitForSelector(`[data-test=review-card][data-review-id="${noCandReviewId}"]`, { state: 'detached' });
+
+  const batchSeed = await server.eventBatch(device1.device_token, [
+    weakSubmissionEvent('云杉数据', '数据产品实习生', 'https://jobs.example.com/yunshan/dp-intern', 'batch1'),
+    weakSubmissionEvent('云杉数据', '数据产品实习生', 'https://jobs.example.com/yunshan/dp-intern', 'batch2')
+  ]);
+  const batchReviewIds = (batchSeed.json?.results || []).map((r) => r.review_item_id).filter(Boolean);
+  await page.goto('/?panel=reviews');
+  await page.waitForSelector('[data-test=review-batch-confirm]');
+  await waitForText(page, '[data-test=review-batch-confirm]', '全部确认（2 条）');
+  await page.click('[data-test=review-batch-confirm]');
+  await page.waitForSelector('[data-test=confirm-ok]');
+  await page.click('[data-test=confirm-ok]');
+  await waitToast(page, '已按系统判断确认 2 条');
+  await waitFor(async () => (await page.locator('[data-test=review-card]').count()) === 0,
+    { label: '批量确认后队列清空' });
+  const reviewsAfterBatch = await server.request('/api/v1/review-items?status=open', { cookie: apiCookie });
+  check('W-16g 批量确认 ≥80%：两条逐条成功，队列清空',
+    batchReviewIds.length === 2 && reviewsAfterBatch.json?.data?.length === 0,
+    `batch=${batchReviewIds.length} open=${reviewsAfterBatch.json?.data?.length}`);
 
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
   await page.click('[data-test=open-settings-reminder]');
