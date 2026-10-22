@@ -8,8 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node server/src/index.js",
-    "dev": "APP_ENV=development node --watch server/src/index.js",
+    "start": "node --env-file-if-exists .env server/src/index.js",
+    "dev": "APP_ENV=development node --env-file-if-exists .env --watch server/src/index.js",
     "test": "node --test --test-concurrency=1 server/test/*.test.js",
     "test:e2e": "node tests/e2e/run-e2e.mjs",
     "test:web": "node tests/e2e/run-web-e2e.mjs",

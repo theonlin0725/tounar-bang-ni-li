@@ -12,3 +12,7 @@ data/outbox/
 
 # 本地日志与临时脚本
 *.log
+
+# 本地配置（含发信凭据），绝不入库；模板见 .env.example
+.env
+.env.local
