@@ -5,7 +5,7 @@
 | 站点 | 本轮动作 | 结果 |
 |---|---|---|
 | 百度 | `talent.baidu.com/jobs/social` 用 Chrome for Testing 156 打开 | 仍然 **跳 `about:blank`**（status 200，无 DOM）→ 实时取证不可能；改用留档分支里的 2 份真实快照做离线回放，**已通过**（见下） |
-| BOSS | `zhipin.com/web/geek/job?...` 打开 | 被重定向回首页，拿不到职位列表/详情 → 不绕过 |
+| BOSS | `zhipin.com/web/geek/job?...`，headless 与 **headed** 都试过 | headless 掉回首页；headed 直接跳 `passport-zp` 登录页（URL 带 `_security_check=1`），拿不到职位列表/详情 → 不绕过。需要用户本机已登录的 Chrome |
 | 小红书（白名单外） | 列表页可打开（200），取到 2 个真实详情 URL：`/campus/position/22013`、`/campus/position/22011` | **已修复并取证**：两页原本不产生 `job_viewed`（页面没有 h1/h2，岗位名在普通 `div.text-title` 里）。新增通用兜底「投递按钮附近重复出现的标题」后，两页均识别成功，快照入 `tests/fixtures/sites/xiaohongshu/` |
 
 ## 2. 百度：有两份真实快照，但当前适配器认不出
@@ -58,6 +58,12 @@ SPA 招聘站（小红书这类）不放 `h1/h2`，岗位名是普通 `div`，�
 ## 4. P4 可选：低把握时用大模型补字段
 
 未做。`server/src/cloud/llm.js` 目前只服务邮件解析兜底；`CLOUD_LLM_FIELD_EXTRACT` 开关和“只传岗位名附近 ≤1500 字”的插件侧抽取都没有实现。
+
+## 4.5 BOSS 的准确状态
+
+- 本机 headless / headed 两种 Chromium 都在 `_security_check` 后跳登录页；未登录拿不到任何岗位详情。
+- `bsk`（借用户浏览器）当前 **0 个浏览器连接**：daemon 在跑，但扩展没连上，所以也借不到会话。
+- 只要用户在自己 Chrome 里打开 BOSS 并保证 bsk 扩展已连接，或直接给出两个岗位链接，这一步就能继续；不绕过验证。
 
 ## 5. 建议的下一步（需要你拍板）
 
