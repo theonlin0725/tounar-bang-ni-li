@@ -48,11 +48,16 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
   if (!isRecruitmentHeader(s, fromDomain, mode === 'recruitment_body' ? bodyText : '')) {
     return { relevant: false, category: 'other', confidence: 0, round_label: null, status: null, reason: 'not_recruitment' };
   }
-  const negative = hasAny(text, ['未通过', '不合适', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '感谢信', '拒绝', '进入人才库', '暂不匹配']);
   const offer = hasAny(text, ['录用', 'offer', '意向书', '录取通知', '正式录用']);
   const closed = hasAny(text, ['流程结束', '岗位关闭', '职位关闭', '撤回', 'withdrawn', 'position closed']);
   const interview = hasAny(text, ['面试', 'interview', '面谈']);
   const assessment = hasAny(text, ['笔试', '测评', '在线考试', 'online assessment', 'written test']);
+  // 「感谢您的应聘」类最常见于拒信，但也可能是收简历回执。
+  // 只有确认没有面试/笔试/录用信息时才当拒信，而且置信度封顶 0.88（低于自动终态 0.9，必进待确认）。
+  const explicitNegative = hasAny(text, ['未通过', '不合适', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '感谢信', '拒绝', '进入人才库', '暂不匹配']);
+  const thankYouOnly = !explicitNegative && !interview && !assessment && !offer && !closed
+    && hasAny(text, ['感谢您的应聘', '感谢您应聘', '感谢您的投递', '感谢您投递', '感谢您参加本次', 'thank you for your application', 'thanks for applying']);
+  const negative = explicitNegative || thankYouOnly;
   const genericInvite = hasAny(text, ['恭喜', '邀请', 'invite', 'congratulations']);
   let category = 'other';
   if (negative) category = 'rejected';
@@ -83,7 +88,7 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
     status,
     round_label: roundLabel,
     interview_scheduled_at: scheduled,
-    confidence: category === 'other' || category === 'application_update' ? 0.4 : (negative || offer ? 0.95 : (/面试邀请|笔试邀请|测评邀请|invitation to interview/i.test(text) ? 0.94 : 0.88)),
+    confidence: category === 'other' || category === 'application_update' ? 0.4 : (negative || offer ? (explicitNegative || offer ? 0.95 : 0.88) : (/面试邀请|笔试邀请|测评邀请|invitation to interview/i.test(text) ? 0.94 : 0.88)),
     reason: category
   };
 }

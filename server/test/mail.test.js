@@ -110,6 +110,19 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     assert.equal(irrelevant.relevant, false);
     const scheduled = classifyRecruitmentMail({ subject: '面试通知 2026-11-03 14:30', fromDomain: 'jobs.example.com', mode: 'headers_only' });
     assert.ok(scheduled.interview_scheduled_at);
+    // 真实数据里抓到的假阴性：「感谢您的应聘」被当成 other 丢弃。
+    // 现在按拒信处理，但置信度封顶 0.88（低于自动终态 0.9），必须进待确认。
+    const thankYou = classifyRecruitmentMail({ subject: '合合信息感谢您的应聘', fromDomain: 'shmail.ibeisen.com', mode: 'headers_only' });
+    assert.equal(thankYou.category, 'rejected');
+    assert.equal(thankYou.status, 'rejected');
+    assert.ok(thankYou.confidence < 0.9, `必须低于自动终态阈值，实际 ${thankYou.confidence}`);
+    // 收到简历回执里带面试安排时，不能被误判成拒信
+    const ack = classifyRecruitmentMail({ subject: '感谢您的应聘，我们已收到简历，将尽快安排面试', fromDomain: 'hr.example.com', mode: 'headers_only' });
+    assert.notEqual(ack.category, 'rejected');
+    // 明确写「未通过」的拒信仍保持高置信度（允许自动终态）
+    const explicit = classifyRecruitmentMail({ subject: '感谢您的投递，很遗憾您未通过本次筛选', fromDomain: 'hr.example.com', mode: 'headers_only' });
+    assert.equal(explicit.category, 'rejected');
+    assert.ok(explicit.confidence >= 0.9);
   });
 
   it('字段抽取：正文优先，主题兜底，申请号与域名', () => {
