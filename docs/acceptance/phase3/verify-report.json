@@ -1,0 +1,66 @@
+{
+  "verified_at": "2026-10-23T13:23:53.516Z",
+  "base": "http://127.0.0.1:4311",
+  "data_dir": "/Users/mingenlin/tounar-acceptance/20261023-132023",
+  "email": "1191240794@qq.com",
+  "node": "26.8.1",
+  "checks": [
+    {
+      "name": "1. /api/v1/health 返回 200 且 ok=true",
+      "ok": true,
+      "detail": "status=200 body={\"ok\":true,\"service\":\"tounar-bang-ni-li\",\"time\":\"2026-10-23T13:23:07.953Z\"}"
+    },
+    {
+      "name": "2. 首页 / 返回 200",
+      "ok": true,
+      "detail": "status=200 bytes=1030"
+    },
+    {
+      "name": "3. 请求登录验证码（写入本地 outbox，不发真信）",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "4. 用 outbox 验证码登录成功",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "5. 未打包扩展已加载（service worker 正常）",
+      "ok": true,
+      "detail": "extId=flphnkfgjfhedjlboenbjhalpgdnbdnk"
+    },
+    {
+      "name": "6. 「检测本机服务」发现 4311 并自动填入保存",
+      "ok": true,
+      "detail": "✅ http://127.0.0.1:4311；❌ http://127.0.0.1:4310（连接被拒绝）。已填入并保存 http://127.0.0.1:4311"
+    },
+    {
+      "name": "7. popup 显示「后台可达」并带地址",
+      "ok": true,
+      "detail": "后台可达 · http://127.0.0.1:4311 · 21:23:52"
+    },
+    {
+      "name": "8. 网页会话批准配对码",
+      "ok": true,
+      "detail": "code=K3855L3U status=200"
+    },
+    {
+      "name": "9. 插件显示已绑定",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "10. 绑定状态文案存在",
+      "ok": true,
+      "detail": "已绑定"
+    },
+    {
+      "name": "11. 服务端设备列表包含刚绑定的设备",
+      "ok": true,
+      "detail": "status=200 devices=3"
+    }
+  ],
+  "passed": 11,
+  "failed": 0
+}

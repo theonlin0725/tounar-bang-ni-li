@@ -1,8 +1,24 @@
 /* Minimal API client for the extension. Never sends cookies; device token only. */
 (function () {
-  async function request(path, { method = 'GET', body, token, serverUrl } = {}) {
+  const DEFAULT_TIMEOUT_MS = 8000;
+
+  /** 把 fetch 的笼统失败拆成用户能自查的原因：地址格式 / 超时 / 连不上。 */
+  function describeUrl(base) {
+    let parsed;
+    try { parsed = new URL(base); } catch { return { code: 'BAD_URL', message: `后台地址格式不对：${base}` }; }
+    if (!/^https?:$/.test(parsed.protocol)) {
+      return { code: 'BAD_URL', message: `后台地址必须以 http:// 或 https:// 开头：${base}` };
+    }
+    return null;
+  }
+
+  async function request(path, { method = 'GET', body, token, serverUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     const base = String(serverUrl || '').replace(/\/$/, '');
     if (!base) throw { code: 'NO_SERVER', message: '尚未设置后台地址' };
+    const badUrl = describeUrl(base);
+    if (badUrl) throw badUrl;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
       response = await fetch(base + path, {
@@ -12,19 +28,36 @@
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        credentials: 'omit'
+        credentials: 'omit',
+        signal: controller.signal
       });
     } catch (err) {
-      throw { code: 'NETWORK_UNREACHABLE', message: '后台暂时不可达，事件已留在本地队列', retryable: true };
+      if (err?.name === 'AbortError') {
+        throw {
+          code: 'TIMEOUT',
+          message: `${base} 在 ${Math.round(timeoutMs / 1000)} 秒内没有响应（可能被防火墙/代理拦住，或服务卡住）`,
+          retryable: true
+        };
+      }
+      throw {
+        code: 'NETWORK_UNREACHABLE',
+        message: `连不上 ${base}：该地址上没有服务在监听（后台可能没启动），或被浏览器拦截`,
+        retryable: true
+      };
+    } finally {
+      clearTimeout(timer);
     }
     let payload = null;
     try { payload = await response.json(); } catch { payload = null; }
     if (!response.ok) {
       const error = payload?.error || {};
+      const fallback = response.status === 404
+        ? `${base}${path} 返回 404：这个地址上的服务不是帮你理，或版本太旧`
+        : `${base} 返回 HTTP ${response.status}`;
       throw {
         status: response.status,
         code: error.code || `HTTP_${response.status}`,
-        message: error.message || '请求失败',
+        message: error.message || fallback,
         retryable: !!error.retryable,
         details: error.details || null
       };

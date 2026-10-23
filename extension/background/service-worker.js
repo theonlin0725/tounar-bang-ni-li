@@ -203,7 +203,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const settings = await getSettings();
         const count = await Queue.count();
         let health = null;
-        try { health = await Api.health(settings.serverUrl); } catch (err) { health = { ok: false, error: err.code || 'UNREACHABLE' }; }
+        try { health = await Api.health(settings.serverUrl); } catch (err) {
+          health = { ok: false, error: err.code || 'UNREACHABLE', message: err.message || '' };
+        }
         const hostPermissions = await chrome.permissions.getAll().catch(() => ({ origins: [] }));
         sendResponse({
           ok: true,

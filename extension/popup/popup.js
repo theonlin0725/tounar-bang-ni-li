@@ -26,8 +26,8 @@ async function refresh() {
   // Background health/pairing refreshes must not overwrite an unsaved address.
   if (!serverUrlEdited) $('server-url').value = s.serverUrl || '';
   $('health').textContent = status.health?.ok
-    ? `后台可达 · ${new Date().toLocaleTimeString('zh-CN')}`
-    : `后台不可达${status.health?.error ? `（${status.health.error}）` : ''}`;
+    ? `后台可达 · ${s.serverUrl || ''} · ${new Date().toLocaleTimeString('zh-CN')}`
+    : `后台不可达：${status.health?.message || status.health?.error || '未知原因'}${s.serverUrl ? `（当前地址 ${s.serverUrl}）` : ''}`;
   $('health').className = status.health?.ok ? 'hint' : 'error';
   $('queue-count').textContent = String(status.queue ?? 0);
   if (s.lastError) {
@@ -103,8 +103,48 @@ async function ensureContentScript(origins) {
   }
 }
 
-$('save-server').addEventListener('click', async () => {
-  const url = $('server-url').value.trim();
+/* 本机服务探测：4311 是验收默认端口，4310 是历史默认端口。 */
+const LOCAL_CANDIDATES = [4311, 4310];
+
+async function probeOne(port, timeoutMs = 1500) {
+  const url = `http://127.0.0.1:${port}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${url}/api/v1/health`, { signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+    if (!response.ok) return { url, ok: false, reason: `HTTP ${response.status}` };
+    const body = await response.json().catch(() => null);
+    if (body?.ok === true) return { url, ok: true, reason: '' };
+    return { url, ok: false, reason: '返回内容不是帮你理后台' };
+  } catch (err) {
+    return { url, ok: false, reason: err?.name === 'AbortError' ? '超时无响应' : '连接被拒绝' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+$('probe-local').addEventListener('click', async () => {
+  const button = $('probe-local');
+  button.disabled = true;
+  $('probe-result').textContent = '正在检测 127.0.0.1:4311 / 4310…';
+  show($('probe-result'), true);
+  const results = await Promise.all(LOCAL_CANDIDATES.map((port) => probeOne(port)));
+  button.disabled = false;
+  const usable = results.filter((r) => r.ok);
+  const lines = results.map((r) => `${r.ok ? '✅' : '❌'} ${r.url}${r.ok ? '' : `（${r.reason}）`}`);
+  if (!usable.length) {
+    $('probe-result').textContent = `${lines.join('；')}。本机没有可用的后台，先在项目目录执行 npm run local:acceptance。`;
+    return;
+  }
+  const target = usable[0];
+  $('server-url').value = target.url;
+  const saved = await send({ type: 'set_server_url', serverUrl: target.url });
+  if (saved.ok) serverUrlEdited = false;
+  $('probe-result').textContent = `${lines.join('；')}。已填入并保存 ${target.url}`;
+  await refresh();
+});
+
+$('save-server').addEventListener('click', async () => {  const url = $('server-url').value.trim();
   if (!/^https?:\/\//.test(url)) { alert('请输入以 http(s):// 开头的后台地址'); return; }
   const result = await send({ type: 'set_server_url', serverUrl: url });
   if (!result.ok) {

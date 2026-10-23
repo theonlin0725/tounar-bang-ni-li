@@ -37,6 +37,24 @@ npm start          # 或 npm run dev（改代码自动重启）
 
 > 需要 **Node ≥ 24**（`package.json` 的 `engines`）。后端用的是内置 `node:sqlite`，不用装数据库。
 
+## 一·五、用真实数据验收：一条命令
+
+不想记一堆环境变量，就用这个（会把真实库**副本**放到 `~/tounar-acceptance/<时间戳>/`，原库只读）：
+
+```bash
+npm run local:acceptance            # 默认 127.0.0.1:4311，MAIL_MODE=outbox，不发真信
+npm run local:acceptance -- --mail-mode=smtp   # 需要真发信时（只发 ALLOWED_EMAILS 白名单）
+npm run local:stop                  # 停止（服务是后台常驻的，关终端不会停）
+```
+
+它会自己完成：Node ≥24 检查 → SQLite backup 复制（含 WAL）→ 复制同源 `master.key` →
+端口占用检查（不杀进程）→ 以显式 `DATA_DIR/DB_PATH/HOST/PORT/APP_BASE_URL` 启动 →
+轮询 `/api/v1/health` 与首页，两个都 200 才打印“✅ 已就绪”。
+
+插件那边：popup 里点「检测本机服务」，会依次探测 `127.0.0.1:4311` 和 `4310`，
+找到就自动填入并保存；连不上时会直接显示原因（连接被拒绝 / 超时 / HTTP 状态码 / 地址格式），
+不再只有一句“不可达”。
+
 ## 二、默认白名单邮箱
 
 代码默认（`server/src/config.js`）：
