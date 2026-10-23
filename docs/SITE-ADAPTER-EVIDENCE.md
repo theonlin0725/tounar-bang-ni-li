@@ -1,6 +1,6 @@
 # 二期真实站点适配证据（2026-10-23）
 
-当前完成 **11 站 × 2 岗位＝22/26 页**，其中优先八家完成 **7/8 家**，白名单外完成米哈游、Airbnb 两家。公司/岗位双字段在已验收的七家白名单 14 页中为 28/28 正确；城市和 JD 各 14/14 正确。**这不是全部八家或全部 26 页达标**。
+当前完成 **12 站 × 2 岗位＝24/26 页**（第三轮新增小红书 2 页），其中优先八家完成 **7/8 家**，白名单外完成米哈游、Airbnb、小红书三家。公司/岗位双字段在已验收的七家白名单 14 页中为 28/28 正确；城市和 JD 各 14/14 正确。**这不是全部八家或全部 26 页达标**。
 
 本轮真实页面均在 Chromium 156 正常 TLS 校验下运行 `npm run probe:site` 与 `npm run plugin:tryrun`，只本地捕获事件，没有登录、投递或发送到业务后台。浏览事件均达到可见停留 3 秒的 strong 证据。原始采集要点和日期见 [live-results.json](../tests/fixtures/sites/live-results.json)，七字段预期与人工核对的已知值见 [cases.json](../tests/fixtures/sites/cases.json)。时间戳采用 UTC。
 
@@ -21,6 +21,7 @@
 | 实习僧 | 2/2 | 两条公开实习详情；乱码字段保守留空，未绕过字体反爬。 |
 | 米哈游 | 2/2 | 白名单外通用识别；公司/城市保守留空，岗位、JD、ID、hash 链接正确。 |
 | Airbnb | 2/2 | 第二家白名单外官网，使用 generic；两页标题/JD/ID/链接正确，公司及城市四字段留空。 |
+| 小红书 | 2/2 | 第三轮（2026-10-23）实时采集，`job.xiaohongshu.com/campus/position/{22013,22011}`；新增「投递按钮附近重复出现的标题」通用兜底后标题/JD/ID/链接正确，公司/城市留空。 |
 
 用户已授权补齐开发环境网络；保留原 41 项并新增 fc.alibaba.com、wappass.baidu.com、talent-holding.alibaba.com、careers.airbnb.com，共 45 项。工具只保存草稿，不能据此声称已发布开发环境；四个所需域名此后均已实际访问，阿里和 Airbnb 的详情已完成取证。剩余百度/BOSS 共 4 页未完成，两站适配器仍为草案。百度普通有界面 Chromium 仍跳 about:blank；BOSS 仍进入安全验证或账号入口，未尝试绕过。详情见 [失败证据](../tests/fixtures/sites/blocked-results.json)。拼多多入口失败，按任务书“白名单外公司任选”改用 Airbnb。
 

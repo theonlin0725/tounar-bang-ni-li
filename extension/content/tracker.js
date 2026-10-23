@@ -243,6 +243,24 @@
     }
     return result.filter(t=>t&&t.length<=80);
   }
+  function repeatedTitleNearApply(buttons){
+    if(!buttons||buttons.length!==1)return null;
+    let scope=buttons[0];
+    for(let i=0;i<5&&scope.parentElement&&scope.parentElement!==document.body;i++)scope=scope.parentElement;
+    const bodyText=textOf(document.body);
+    const seen=new Set();
+    for(const node of scope.querySelectorAll('div,span,p,strong')){
+      if(node.children.length||!visible(node))continue;
+      const text=textOf(node);
+      if(text.length<6||text.length>60||!validTitle(text))continue;
+      if(/[：:]$/.test(text)||/(工作地点|项目|职位方向|子方向|薪资|人数)\s*[：:]/.test(text))continue;
+      if(seen.has(text))continue;
+      seen.add(text);
+      if(bodyText.split(text).length-1>=2)return text;
+    }
+    return null;
+  }
+
   function detectJob() {
     if(/\/chat\b|\/im\b|\/message\b/i.test(location.pathname))return null;
     const hook=document.querySelector('[data-tounar-job-id]');
@@ -288,6 +306,12 @@
       return 82-Math.min(12,distance/100)+(node.tagName==='H1'?3:0);
     }
     for(const node of headings){const score=headingScore(node);if(score)add('job_title',textOf(node),score,'heading_near_apply');}
+    if(!(candidates.job_title||[]).some(c=>c.score>=70)){
+      // 通用兜底：SPA 详情页常常没有 h1/h2，岗位名以普通 div 重复出现（面包屑 + 标题），
+      // 且整页只有一个投递按钮。只在还没有中高把握标题时启用，避免把弹窗/列表标题当岗位。
+      const repeated=repeatedTitleNearApply(applyButtons);
+      if(repeated)add('job_title',repeated,74,'repeated_text_near_apply');
+    }
     const companyLabels=labelled(/(?:公司名称|公司名|雇主|Company)\s*[:：]\s*(.{2,50})/i);
     for(const node of [...document.querySelectorAll('main div,main span,main strong,article div,article span')].slice(0,200)){
       if(node.children.length||!visible(node)||!validTitle(textOf(node)))continue;
