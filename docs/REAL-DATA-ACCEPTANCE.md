@@ -1,5 +1,7 @@
 # 本机真实数据的隔离验收
 
+接手的本地 agent 请先读 [完整交接说明](LOCAL-AGENT-HANDOFF.md)。Mac 的 `Missing script: "start"` 尚未修复；先核实代码根目录，再在副本上启动。本机验收不要求把数据库上传云端。
+
 用户已明确：唯一真实库在 Mac 的 `/Users/mingenlin/Desktop/opencode project/帮你理/data/tounar.sqlite`。用户报告台账 6、邮件 84、待确认 20、用户 2；这些是用户提供的数量，尚未经本云环境读取核实。云工作区 `/workspace` 没有挂载该 Mac 路径。
 
 本轮验收一律使用 `MAIL_MODE=outbox`，禁止真实 SMTP 发信。无需上传 `.env`、`master.key`、`internal-tick.token` 或完整 `data/`；去除邮箱凭据的副本足够验证现有台账、待确认、迁移及回看。真实 IMAP 同步在该副本中不可用，这项限制保留在交付报告。

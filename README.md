@@ -6,6 +6,8 @@
 
 > 当前状态：**本地链路已跑通并可体验，真实环境尚未验收**（详见 `docs/DELIVERY-REPORT.md`）。
 
+二期 Mac 本地接手请先读 [完整交接说明](docs/LOCAL-AGENT-HANDOFF.md)：包含最新 GitHub 状态、Mac 启动故障、数据保护要求、测试证据与未完成事项。
+
 ---
 
 ## 一、本机跑起来（3 分钟）

@@ -4,6 +4,16 @@
 
 **代码补齐及隔离测试已完成，真实验收仍有缺口；代码已推送独立验收分支，未合并 main、未部署生产。** 用户随后明确授权先推 GitHub 分支用于验收；生产发布仍须另行申请，不能宣称“全部验证无误”。完整逐项结果见 [二期交付报告](PHASE2-DELIVERY.md)。
 
+## 最新交接：转 Mac 本地 agent
+
+用户已要求移交本地 agent，完整移交文档见 [LOCAL-AGENT-HANDOFF.md](LOCAL-AGENT-HANDOFF.md)，原始需求已归档为 [PHASE2-ORIGINAL-PROMPT.md](PHASE2-ORIGINAL-PROMPT.md)。
+
+- Mac 仍未修复：用户仅提供 `npm error Missing script: "start"`；实际 cwd、package.json、分支和 Node/npm 版本尚未取得。此前直接判断“目录不对”过于确定，准确结论是 npm 未读取到包含 start 的配置。
+- 用户确认 Mac 未配置 SSH；本会话没有连接或操作 Mac，也没有读取唯一真实数据库。
+- 云端额外完成启动/网页/OTP/扩展健康/配对/待确认深链 **7/7** 烟测，代码 `187e90f`；[摘要证据](evidence/LOCAL-START-VERIFICATION-20261023.json) 已归档。测试服务已停止；不是 Mac 实机结果。
+- 本地 agent 可直接在 Mac 创建并测试去凭据副本，不要求用户把数据库上传到云端。先定位正确代码根目录，使用独立代码工作区/数据副本，网页和插件统一为测试端口 4311。
+- 本次只补充交接文档与已执行烟测的摘要，不修改业务代码，不重新声称完成真实验收。
+
 ## 已完成
 
 | 阶段 | 内容 | 本地提交 |

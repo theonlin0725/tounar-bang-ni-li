@@ -1,0 +1,43 @@
+{
+  "checked_at": "2026-10-23T12:34:37.567Z",
+  "environment": "Linux cloud workspace; not the user Mac",
+  "branch": "phase2-acceptance-20261023",
+  "code_ref": "187e90f",
+  "isolated_data": true,
+  "real_database_accessed": false,
+  "real_mail_sent": false,
+  "server_stopped_after_verification": true,
+  "results": [
+    {
+      "name": "npm --prefix starts the correct package from /tmp",
+      "passed": true,
+      "port": 4311,
+      "mail_mode": "outbox",
+      "scheduler": false
+    },
+    {
+      "name": "health endpoint responds HTTP 200",
+      "passed": true
+    },
+    {
+      "name": "web home responds HTTP 200",
+      "passed": true
+    },
+    {
+      "name": "browser OTP login succeeds using test outbox and an empty ledger",
+      "passed": true
+    },
+    {
+      "name": "real extension reaches the configured 4311 backend",
+      "passed": true
+    },
+    {
+      "name": "real extension pairing completes with the browser session",
+      "passed": true
+    },
+    {
+      "name": "review deep link opens after login",
+      "passed": true
+    }
+  ]
+}
