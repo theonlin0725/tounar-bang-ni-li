@@ -122,6 +122,9 @@ export function findCandidates(ownerId, fields) {
 }
 
 export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {} }) {
+  if (event.source_method === 'mail') {
+    suggested = { ...Object.fromEntries(['company_name', 'job_title', 'location', 'recruitment_batch', 'job_url', 'jd_summary', 'interview_scheduled_at', 'round_label'].filter(k => fields[k] || event.payload?.[k]).map(k => [k, fields[k] || event.payload[k]])), ...suggested };
+  }
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
@@ -165,7 +168,7 @@ function addInitialHistory(ownerId, applicationId, eventId, status, sourceMethod
   }
 }
 
-export function createApplication({ ownerId, fields, eventId, sourceMethod, status = 'pending', at }) {
+export function createApplication({ ownerId, fields, eventId = null, sourceMethod, status = 'pending', at }) {
   const id = newId('app');
   const now = at || nowIso();
   const company = normalizeWhitespace(fields.company_name, 200);

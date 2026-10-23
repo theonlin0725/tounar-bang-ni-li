@@ -14,7 +14,7 @@ import {
   applicationDetail, ledgerResponse, reviewDetail, reviewList
 } from '../domain/ledger.js';
 import {
-  archiveApplication, correctApplication, markApplicationReviewed, resolveReview
+  archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReview
 } from '../domain/reviews.js';
 import { manualCreate, getPreferences } from '../domain/applications.js';
 import {
@@ -230,9 +230,20 @@ export function registerRoutes() {
   });
 
   // ---------- reviews ----------
+  route('GET', '/api/v1/application-search', (req) => {
+    const auth = requireAuth(req);
+    const term = String(req.query.get('q') || '').trim().slice(0, 100).toLowerCase();
+    const rows = all('SELECT id, company_name, job_title, status, applied_at, version FROM applications WHERE owner_id = ? AND archived_at IS NULL ORDER BY updated_at DESC', [auth.ownerId]);
+    return { data: rows.filter(a => `${a.company_name} ${a.job_title}`.toLowerCase().includes(term)).slice(0, 50) };
+  });
   route('GET', '/api/v1/review-items', (req) => {
     const auth = requireAuth(req);
-    return { data: reviewList(auth.ownerId, Object.fromEntries(req.query.entries())).data };
+    return reviewList(auth.ownerId, Object.fromEntries(req.query.entries()));
+  });
+  route('POST', '/api/v1/review-items/:id/undo', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({ ownerId: auth.ownerId, scope: `review.undo:${req.params.id}`, req,
+      handler: () => ({ data: undoReview({ ownerId: auth.ownerId, reviewId: req.params.id, expectedVersion: req.body.expected_version }) }) });
   });
   route('GET', '/api/v1/review-items/:id', (req) => {
     const auth = requireAuth(req);

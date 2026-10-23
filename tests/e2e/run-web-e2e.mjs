@@ -23,6 +23,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { startTestServer, strongViewEvent } from '../../server/test/helpers.js';
 import { resolveChromiumExecutable } from './browser.mjs';
+import { phase2Web } from './phase2-web.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const REPORT_PATH = path.join(ROOT, '.tmp', 'web-e2e-report.json');
@@ -356,7 +357,7 @@ try {
     page.locator(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-confirm]`).click()
   ]);
   const raceStatus = raceResponse.status();
-  await waitToast(page, '复核项或候选记录已被更新');
+  await waitToast(page, '这条刚被更新过，已刷新，请再确认一次');
   await page.unroute(resolvePattern, raceHandler);
   const review1After = await server.request(`/api/v1/review-items/${review1Id}`, { cookie: apiCookie });
   check('W-14 复核 409 竞态：服务端真实 VERSION_CONFLICT，UI 明确提示且不覆盖',
@@ -614,6 +615,7 @@ try {
   check('W-37 前端无未捕获脚本异常（console 仅允许登录前 401）',
     browserLog.filter((x) => x.startsWith('pageerror')).length === 0,
     browserLog.slice(0, 3).join(' | ') || '无');
+  await phase2Web(check);
 } catch (err) {
   check('WEB-E2E 运行异常', false, String(err?.stack || err).slice(0, 1600));
 } finally {

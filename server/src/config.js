@@ -72,6 +72,7 @@ export const config = {
   d12AllowMissingJd: boolEnv('D12_ALLOW_MISSING_JD', false),
   d12AllowMissingLink: boolEnv('D12_ALLOW_MISSING_LINK', false),
   d12AllowMissingAppliedAt: boolEnv('D12_ALLOW_MISSING_APPLIED_AT', false),
+  d12AllowMailInferredAppliedAt: boolEnv('D12_ALLOW_MAIL_INFERRED_APPLIED_AT', true),
   // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认
   autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', true),
   autoTerminalConfidence: Number.parseFloat(process.env.AUTO_TERMINAL_CONFIDENCE || '0.9'),

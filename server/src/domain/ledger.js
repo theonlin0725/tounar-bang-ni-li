@@ -142,13 +142,14 @@ export function applicationDetail(ownerId, applicationId) {
 export function reviewList(ownerId, query = {}) {
   const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || '20', 10) || 20));
   const status = query.status || 'open';
+  const offset = Math.max(0, Number.parseInt(query.cursor || '0', 10) || 0);
   if (!['open', 'resolved', 'dismissed', 'all'].includes(status)) throw new AppError(400, 'VALIDATION_ERROR', 'status 无效');
   const rows = all(`SELECT r.*, m.received_at AS mail_received_at
     FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
     WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
-    ORDER BY r.created_at DESC LIMIT ?`, status === 'all' ? [ownerId, limit] : [ownerId, status, limit]);
+    ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?`, status === 'all' ? [ownerId, limit + 1, offset] : [ownerId, status, limit + 1, offset]);
   return {
-    data: rows.map((row) => ({
+    data: rows.slice(0, limit).map((row) => ({
       id: row.id,
       kind: row.kind,
       reason_code: row.reason_code,
@@ -162,9 +163,14 @@ export function reviewList(ownerId, query = {}) {
       version: row.version,
       created_at: row.created_at,
       mail_received_at: row.mail_received_at || null,
+      classification_confidence: safeJsonParse(row.evidence_json, {}).classification_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
+      matching_confidence: safeJsonParse(row.evidence_json, {}).matching_confidence ?? null,
+      total_confidence: safeJsonParse(row.evidence_json, {}).total_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
+      suggested_application_id: safeJsonParse(row.candidates_json, []).length === 1 ? safeJsonParse(row.candidates_json, [])[0].application_id : null,
       resolved_at: row.resolved_at
     })),
-    page: { next_cursor: null, has_more: false }
+    page: { next_cursor: rows.length > limit ? String(offset + limit) : null, has_more: rows.length > limit },
+    total: one(`SELECT COUNT(*) AS n FROM review_items WHERE owner_id = ? ${status === 'all' ? '' : 'AND status = ?'}`, status === 'all' ? [ownerId] : [ownerId, status]).n
   };
 }
 
