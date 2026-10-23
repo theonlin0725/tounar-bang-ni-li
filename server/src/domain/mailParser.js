@@ -83,7 +83,7 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
     status,
     round_label: roundLabel,
     interview_scheduled_at: scheduled,
-    confidence: category === 'other' || category === 'application_update' ? 0.4 : (negative || offer ? 0.95 : 0.88),
+    confidence: category === 'other' || category === 'application_update' ? 0.4 : (negative || offer ? 0.95 : (/面试邀请|笔试邀请|测评邀请|invitation to interview/i.test(text) ? 0.94 : 0.88)),
     reason: category
   };
 }

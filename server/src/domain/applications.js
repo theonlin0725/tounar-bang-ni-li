@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { findProgressCandidates } from './mailMatching.js';
 import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
@@ -121,14 +122,14 @@ export function findCandidates(ownerId, fields) {
   return candidates;
 }
 
-export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {} }) {
+export function createReviewForEvent(event, { kind, reasonCode, summary, suggested = {}, fields = {}, evidence = {}, progressCandidates = null }) {
   if (event.source_method === 'mail') {
     suggested = { ...Object.fromEntries(['company_name', 'job_title', 'location', 'recruitment_batch', 'job_url', 'jd_summary', 'interview_scheduled_at', 'round_label'].filter(k => fields[k] || event.payload?.[k]).map(k => [k, fields[k] || event.payload[k]])), ...suggested };
   }
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
-  const candidates = findCandidates(event.owner_id, fields).map(({ application, reason }) => ({
+  const candidates = (progressCandidates || findCandidates(event.owner_id, fields)).map(({ application, reason, confidence }) => ({
     application_id: application.id,
     application_version: application.version,
     company_name: application.company_name,
@@ -138,6 +139,7 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
     status: application.status,
     has_applied: !!application.has_applied,
     match_reason: reason
+    ,matching_confidence: confidence ?? null
   }));
   const id = newId('rev');
   run(`INSERT INTO review_items
@@ -330,7 +332,7 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
       return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT', summary: '缺少可信投递时间，D12 未冻结' } };
     }
   }
-  let updated = markApplicationChanged(app.owner_id, app.id, event.id, sourceMethod, updates, { reason: '统一状态处理器' });
+  let updated = markApplicationChanged(app.owner_id, app.id, event.id, sourceMethod, updates, { reason: sourceMethod === 'mail' ? `由 ${shanghaiDateKey(event.payload?.source_received_at || event.occurred_at)} 收到的邮件《${clipText(event.payload?.subject_excerpt || '', 80)}》自动更新` : '统一状态处理器' });
   updated = maybeSetRound(updated, event.payload || {}, event.id, sourceMethod);
   updated = ensureSource(updated, sourceMethod, event.id);
   outboxStatusChange(updated, event, app.status, targetStatus);
@@ -544,73 +546,7 @@ function processSubmitted(event) {
 }
 
 function processSiteStatus(event) {
-  const p = event.payload;
-  const fields = {
-    company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
-    site_job_id: p.site_job_id, site_application_id: p.site_application_id,
-    job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
-    recruitment_batch: p.recruitment_batch, status_url: p.status_url, status_url_scope: p.status_url_scope,
-    applied_at: eventAppliedAt(event)
-  };
-  const candidates = findCandidates(event.owner_id, { ...fields, canonical_job_url: canonicalJobUrl(p.job_url) });
-  const strong = candidates.filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason));
-  if (strong.length !== 1) {
-    const review = reviewForEvent(event, {
-      kind: strong.length > 1 ? 'ambiguous_match' : 'status_conflict',
-      reasonCode: strong.length > 1 ? 'MULTIPLE_APPLICATION_CANDIDATES' : 'STATUS_PAGE_UNMATCHED',
-      summary: strong.length > 1 ? '状态页命中多条申请，不能按公司批量修改' : '未能把官网状态唯一归属到申请',
-      suggested: { status: p.mapped_status || 'pending' }, fields
-    });
-    return { state: 'pending', review };
-  }
-  let app = strong[0].application;
-  if (!p.mapped_status) {
-    const review = reviewForEvent(event, {
-      kind: 'status_conflict', reasonCode: 'STATUS_UNMAPPED',
-      summary: `官网状态“${clipText(p.status_text || '', 60)}”未映射，保留原文待确认`,
-      suggested: {}, fields
-    });
-    return { state: 'pending', review };
-  }
-  if (event.evidence_level !== 'strong') {
-    const review = reviewForEvent(event, {
-      kind: 'status_conflict', reasonCode: 'WEAK_STATUS_EVIDENCE',
-      summary: '官网状态证据不足，只进入待确认',
-      suggested: { status: p.mapped_status }, fields
-    });
-    return { state: 'pending', review };
-  }
-  app = fillMissingFields(app, fields, event.id, 'plugin');
-  const observedAt = event.observed_at || nowIso();
-  if (!app.last_site_observed_at || Date.parse(observedAt) > Date.parse(app.last_site_observed_at)) {
-    app = markApplicationChanged(app.owner_id, app.id, event.id, 'plugin', { last_site_observed_at: observedAt }, { reason: '官网状态观察' });
-  }
-  if (p.mapped_status === app.status) {
-    app = ensureSource(app, 'plugin', event.id);
-    return { state: 'applied', application: app };
-  }
-  if (p.mapped_status === 'applied' && !app.has_applied) {
-    if (!config.d12AllowMissingAppliedAt && !fields.applied_at) {
-      const review = reviewForEvent(event, {
-        kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT',
-        summary: '官网证明申请存在，但缺少可信投递时间；D12 未冻结',
-        suggested: { has_applied: true, status: 'applied' }, fields
-      });
-      return { state: 'pending', review };
-    }
-  }
-  const transition = applyStatusTransition(app, p.mapped_status, event, {
-    // D08 已冻结：只有邮件解析带置信度评分（>=0.9 自动判）；插件状态页证据无置信度，
-    // 且多数站点适配器尚未真实验证，终态一律进待确认由用户裁决。
-    sourceMethod: 'plugin', reviewTerminal: true
-  });
-  if (!transition.ok) {
-    const review = reviewForEvent(event, {
-      ...transition.review, fields, suggested: { status: p.mapped_status }
-    });
-    return { state: 'pending', review };
-  }
-  return { state: 'applied', application: transition.app };
+  return processMailEvent(event);
 }
 
 export function processPluginEvent(event) {
@@ -722,108 +658,55 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
  * Company + title alone stays a review candidate (D04). A unique site_application_id match may apply.
  */
 export function processMailEvent(event) {
-  const p = event.payload || {};
-  const fields = {
-    company_name: p.company_name,
-    job_title: p.job_title,
-    site_key: p.site_key || event.site_key,
-    site_job_id: p.site_job_id,
-    site_application_id: p.site_application_id,
-    job_url: p.job_url,
-    jd_summary: p.jd_summary,
-    location: p.location,
-    recruitment_batch: p.recruitment_batch,
-    status_url: p.status_url,
-    status_url_scope: p.status_url_scope,
-    applied_at: p.applied_at
-  };
-  const candidates = findCandidates(event.owner_id, {
-    ...fields,
-    canonical_job_url: canonicalJobUrl(p.job_url)
-  });
-  const strong = candidates.filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason));
-  const status = p.mapped_status || mapStatusText(p.status_text);
-  if (!status) {
-    run(`UPDATE events SET processing_state = 'ignored', processed_at = ? WHERE id = ? AND owner_id = ?`,
-      [nowIso(), event.id, event.owner_id]);
-    return { state: 'ignored' };
-  }
-  if (strong.length !== 1) {
-    const review = createReviewForEvent(event, {
-      kind: strong.length > 1 ? 'ambiguous_match' : 'mail_progress',
-      reasonCode: strong.length > 1 ? 'MULTIPLE_APPLICATION_CANDIDATES' : 'MAIL_MATCH_UNCONFIRMED',
-      summary: strong.length > 1
-        ? '邮件命中多条申请，不能按公司名批量更新'
-        : `招聘邮件更新候选：${clipText(p.subject_excerpt || p.subject || '', 80)}`,
-      suggested: { status, ...(p.applied_at ? { applied_at: p.applied_at } : {}) },
-      fields,
-      evidence: {
-        subject_excerpt: p.subject_excerpt,
-        body_excerpt: p.body_excerpt,
-        from_domain: p.from_domain,
-        read_mode: p.read_mode,
-        category: p.category,
-        confidence: p.confidence
-      }
-    });
-    return { state: 'pending', review };
-  }
-  let app = strong[0].application;
-  app = fillMissingFields(app, fields, event.id, 'mail');
-  if (status === 'offer' || status === 'rejected' || status === 'closed') {
-    // D08 已冻结（2026-10-22）：置信度 ≥ AUTO_TERMINAL_CONFIDENCE（默认 0.9）直接判定；
-    // 低于阈值的一律进待确认，由用户裁决。误判「你挂了」的代价远高于多确认一次。
-    const confidence = Number(p.confidence) || 0;
-    if (!config.autoTerminalFromMail || confidence < config.autoTerminalConfidence) {
-      const review = createReviewForEvent(event, {
-        kind: 'terminal_candidate',
-        reasonCode: confidence > 0 && confidence < config.autoTerminalConfidence
-          ? 'TERMINAL_LOW_CONFIDENCE'
-          : 'TERMINAL_REVIEW_REQUIRED',
-        summary: `邮件提示终态「${STATUS_LABELS[status]}」（置信度 ${confidence}），需用户确认`,
-        suggested: { status },
-        fields,
-        evidence: { subject_excerpt: p.subject_excerpt, category: p.category, confidence }
-      });
-      return { state: 'pending', review };
+  return transaction(() => {
+    const p = event.payload || {};
+    const source = event.source_method === 'plugin' ? 'plugin' : 'mail';
+    const fields = { ...p, site_key: p.site_key || event.site_key };
+    const candidates = findProgressCandidates(event.owner_id, fields, { source });
+    const classification = Math.max(0, Math.min(1, Number(p.confidence ?? (source === 'plugin' && event.evidence_level === 'strong' ? 0.88 : 0)) || 0));
+    const match = candidates.length === 1 ? candidates[0].confidence : 0.5;
+    const total = classification * match;
+    const status = normalizeStatus(p.mapped_status) || mapStatusText(p.status_text);
+    if (!status) {
+      if (source === 'plugin') return { state: 'pending', review: createReviewForEvent(event, {
+        kind: 'status_conflict', reasonCode: 'STATUS_UNMAPPED', summary: '官网状态暂无法识别，请确认', fields,
+        evidence: { status_text: p.status_text }, progressCandidates: candidates
+      }) };
+      run("UPDATE events SET processing_state = 'ignored', processed_at = ? WHERE id = ? AND owner_id = ?", [nowIso(), event.id, event.owner_id]);
+      return { state: 'ignored' };
     }
-  }
-  if (!app.has_applied) {
-    if (!p.applied_at && !config.d12AllowMissingAppliedAt) {
-      const review = createReviewForEvent(event, {
-        kind: 'application_confirmation',
-        reasonCode: 'D12_MISSING_APPLIED_AT',
-        summary: '邮件证明申请存在，但缺少可信投递时间；D12 未冻结',
-        suggested: { status, has_applied: true },
-        fields,
-        evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
-      });
-      return { state: 'pending', review };
+    const suggested = { ...fields, status, has_applied: status !== 'pending' };
+    for (const key of ['source_mail_id','source_received_at','confidence','mapped_status','status_text','from_domain','subject_excerpt','body_excerpt','read_mode','category','field_confidence']) delete suggested[key];
+    const evidence = { subject_excerpt: p.subject_excerpt, body_excerpt: p.body_excerpt, from_domain: p.from_domain,
+      read_mode: p.read_mode, category: p.category, status_text: p.status_text,
+      confidence: classification, classification_confidence: classification, matching_confidence: match, total_confidence: total,
+      source_received_at: p.source_received_at || event.occurred_at };
+    const review = (details) => ({ state: 'pending', review: createReviewForEvent(event, {
+      kind: 'mail_progress', reasonCode: 'MAIL_MATCH_UNCONFIRMED', summary: '请确认这条招聘进展属于哪条申请',
+      ...details, suggested, fields, evidence, progressCandidates: candidates
+    }) });
+    if (candidates.length !== 1) return review(candidates.length > 1 ? { kind:'ambiguous_match', reasonCode:'MULTIPLE_APPLICATION_CANDIDATES', summary:'有多条可能的申请，请明确选择' } : {});
+    const terminal = TERMINAL.has(status);
+    if (total < (terminal ? config.autoTerminalConfidence : config.autoProgressConfidence) || (terminal && !config.autoTerminalFromMail)) {
+      return review({ kind: terminal ? 'terminal_candidate' : 'mail_progress', reasonCode: terminal ? 'TERMINAL_LOW_CONFIDENCE' : 'MAIL_LOW_CONFIDENCE', summary: '系统把握度不足，等待人工确认' });
     }
-    app = markApplicationChanged(app.owner_id, app.id, event.id, 'mail', {
-      has_applied: 1,
-      applied_at: p.applied_at || app.applied_at,
-      applied_at_precision: p.applied_at ? 'exact' : app.applied_at_precision,
-      status: 'applied',
-      last_status_changed_at: event.occurred_at,
-      last_progress_at: event.occurred_at
-    }, { reason: '招聘邮件确证申请' });
-  }
-  const transition = applyStatusTransition(app, status, event, {
-    sourceMethod: 'mail',
-    reviewTerminal: !config.autoTerminalFromMail
+    let app = candidates[0].application;
+    // Check protections before mutating fields or inferring the applied fact.
+    if (TERMINAL.has(app.status) && status !== app.status) return review({kind:'terminal_conflict',reasonCode:'TERMINAL_LOCKED',summary:'记录已处于终态，自动事件不能覆盖'});
+    const rank={pending:0,applied:1,assessment:2,interview:3};
+    if (status==='pending'||(!terminal&&rank[status]<rank[app.status])) return review({kind:'status_conflict',reasonCode:'STATUS_REGRESSION',summary:'后到证据不能自动回退状态'});
+    if (!app.has_applied) {
+      const explicit = parseIso(p.applied_at);
+      const inferred = source === 'mail' && config.d12AllowMailInferredAppliedAt ? parseIso(p.source_received_at || event.occurred_at) : null;
+      if (!explicit && !inferred && !config.d12AllowMissingAppliedAt) return review({kind:'application_confirmation',reasonCode:'D12_MISSING_APPLIED_AT',summary:'请补充投递时间后确认'});
+      app = markApplicationChanged(app.owner_id,app.id,event.id,source,{has_applied:1,applied_at:explicit||inferred||null,applied_at_precision:explicit?'exact':inferred?'inferred_before':'unknown'}, {reason:'招聘证据确证申请；收信日期仅作投递时间上界'});
+    }
+    app = fillMissingFields(app,fields,event.id,source);
+    const transition=applyStatusTransition(app,status,event,{sourceMethod:source,reviewTerminal:false});
+    if (!transition.ok) return review(transition.review);
+    app=transition.app;
+    if(source==='plugin')app=markApplicationChanged(app.owner_id,app.id,event.id,source,{last_site_observed_at:event.observed_at||nowIso()},{reason:'官网状态观察'});
+    run("UPDATE events SET application_id = ?, processing_state = 'applied', processed_at = ? WHERE id = ? AND owner_id = ?",[app.id,nowIso(),event.id,event.owner_id]);
+    return { state:'applied', application:app };
   });
-  if (!transition.ok) {
-    const review = createReviewForEvent(event, {
-      ...transition.review,
-      summary: transition.review.summary || '邮件状态需确认',
-      suggested: { status },
-      fields,
-      evidence: { subject_excerpt: p.subject_excerpt, category: p.category }
-    });
-    return { state: 'pending', review };
-  }
-  run(`UPDATE events SET application_id = ?, processing_state = 'applied', processed_at = ? WHERE id = ? AND owner_id = ?`,
-    [transition.app.id, nowIso(), event.id, event.owner_id]);
-  return { state: 'applied', application: transition.app };
 }

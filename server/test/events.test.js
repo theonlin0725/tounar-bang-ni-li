@@ -176,7 +176,8 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     const offer = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_offer', { ...job, status_text: 'Offer 已发放', mapped_status: 'offer' }, { occurred_at: '2026-10-25T01:00:00.000Z' })]);
     assert.equal(offer.json.results[0].processing_state, 'pending');
     const review = await server.request(`/api/v1/review-items/${offer.json.results[0].review_item_id}`, { cookie });
-    assert.equal(review.json.data.reason_code, 'TERMINAL_REVIEW_REQUIRED');
+    assert.equal(review.json.data.reason_code, 'TERMINAL_LOW_CONFIDENCE');
+    assert.ok(review.json.data.evidence.total_confidence < 0.9);
     const unmapped = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_unmapped', { ...job, status_text: '流程进入下一阶段', mapped_status: null }, { occurred_at: '2026-10-26T01:00:00.000Z' })]);
     assert.equal(unmapped.json.results[0].processing_state, 'pending');
   });

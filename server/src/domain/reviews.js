@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
-import { bumpRevision, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
+import { all, bumpRevision, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, TERMINAL, canonicalJobUrl, clipText, isSafeHttpUrl, newId,
   normalizeWhitespace, nowIso, parseIso, safeJsonParse, shanghaiDateKey
@@ -424,5 +424,28 @@ export function undoReview({ ownerId, reviewId, expectedVersion }) {
     bumpRevision();
     audit(ownerId, 'user', 'review.undo', 'review', reviewId);
     return { undone: true };
+  });
+}
+
+export function undoAutomaticMail({ ownerId, applicationId, historyId, expectedVersion }) {
+  return transaction(() => {
+    const app = getApplication(ownerId, applicationId);
+    if (!app) throw new AppError(404, 'NOT_FOUND', '记录不存在');
+    validateApplicationVersion(app, expectedVersion);
+    const entry = one('SELECT rowid AS sequence, * FROM application_history WHERE id = ? AND owner_id = ? AND application_id = ? AND source_method = ?', [historyId, ownerId, applicationId, 'mail']);
+    if (!entry || !entry.event_id) throw new AppError(404, 'NOT_FOUND', '自动更新历史不存在');
+    const latest = one('SELECT event_id FROM application_history WHERE owner_id = ? AND application_id = ? ORDER BY rowid DESC LIMIT 1', [ownerId, applicationId]);
+    if (latest?.event_id !== entry.event_id) throw new AppError(409, 'VERSION_CONFLICT', '此后已有新变化，请通过纠错处理');
+    const updates = {};
+    for (const h of all('SELECT changed_fields_json FROM application_history WHERE owner_id = ? AND application_id = ? AND event_id = ? ORDER BY rowid ASC', [ownerId, applicationId, entry.event_id])) {
+      for (const [field, change] of Object.entries(safeJsonParse(h.changed_fields_json, {}))) {
+        if (!(field in updates) && [...CORRECTION_FIELDS, 'has_applied', 'company_key', 'last_status_changed_at', 'last_progress_at', 'source_methods_json'].includes(field)) updates[field] = change.from ?? null;
+      }
+    }
+    if (TERMINAL.has(app.status) && updates.status !== app.status && !config.d05AllowTerminalCorrection) throw new AppError(409, 'D05_DISABLED', '当前关闭了终态纠错');
+    markApplicationChanged(ownerId, applicationId, null, 'manual', updates, { reason: '邮件自动判定有误' });
+    run('DELETE FROM notification_outbox WHERE owner_id = ? AND event_id = ? AND consumed_batch_id IS NULL', [ownerId, entry.event_id]);
+    audit(ownerId, 'user', 'mail.auto_update.undo', 'application', applicationId, { history_id: historyId, reason: '邮件自动判定有误' });
+    return { application: getApplication(ownerId, applicationId) };
   });
 }

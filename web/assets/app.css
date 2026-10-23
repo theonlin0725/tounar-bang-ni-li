@@ -298,3 +298,7 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
   .tn-login-slogan { font-size: 26px; }
   .tn-drawer { width: 100vw; }
 }
+
+/* 刚由邮件更新的记录；字段缺失仍显示待补充。 */
+.tn-row-updated { background: #e9f5e9; }
+.tn-review-failed { border-color: #b42318; }

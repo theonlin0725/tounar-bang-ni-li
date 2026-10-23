@@ -6,7 +6,7 @@ import { api, errorText } from '../api.js';
 import { App, isStale } from '../app.js';
 import {
   h, clear, statusChip, fmtDateTime, daysText, debounce, extLink,
-  STATUS_LABELS, STATUS_ORDER
+  STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
 import { openDetail } from './detail.js';
 import { renderReviews } from './reviews.js';
@@ -29,6 +29,9 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   };
   let reqSeq = 0;
   let mounted = true;
+  let checkingUpdates = false;
+  let highlighted = new Set();
+  let updateMessage = '';
 
   main.append(
     h('div', { class: 'tn-stats', id: 'tn-stats' }),
@@ -88,6 +91,24 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     toolbarEl.append(
       searchInput, statusSelect, sourceSelect, dueWrap, clearBtn,
       h('div', { class: 'tn-toolbar-right' },
+        h('button', { class: 'tn-btn tn-btn-sm', text: '立即同步邮箱', 'data-test': 'ledger-mail-sync', onclick: async (e) => {
+          const button = e.currentTarget; button.disabled = true;
+          try {
+            const connection = (await api.get('/api/v1/me')).data.mail_connection;
+            if (!connection || connection.status === 'disconnected') { toast('请先在数据与授权中连接邮箱'); openSettingsTab('data'); return; }
+            await api.post(`/api/v1/mail-connections/${encodeURIComponent(connection.id)}/sync`, {});
+            toast('同步请求已受理，完成后刷新台账');
+            let attempts = 0;
+            const poll = async () => {
+              if (isStale(gen) || !main.isConnected) return;
+              const result = await api.get(`/api/v1/mail-connections/${encodeURIComponent(connection.id)}`);
+              if (['connecting', 'syncing'].includes(result.data.status) && ++attempts < 30) setTimeout(() => poll().catch(() => {}), 1000);
+              else { await checkUpdates(); await doLoad({ silent: true }); if (result.data.status !== 'connected') toast('邮箱同步未成功，请在数据与授权中查看原因', 'err'); }
+            };
+            setTimeout(() => poll().catch(() => toast('无法查询邮箱同步结果，请稍后刷新', 'err')), 500);
+          } catch (err) { toast(err.message || '邮箱同步失败', 'err'); }
+          finally { button.disabled = false; }
+        } }),
         h('button', {
           class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'open-manual',
           title: '补录漏采岗位（与「已归档」记录入口不同）',
@@ -157,7 +178,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   }
 
   function renderRow(item) {
-    const tr = h('tr', { class: 'tn-row-click', 'data-test': 'ledger-row', 'data-app-id': item.id });
+    const tr = h('tr', { class: `tn-row-click${highlighted.has(item.id) ? ' tn-row-updated' : ''}`, 'data-test': 'ledger-row', 'data-app-id': item.id });
     tr.addEventListener('click', () => openDetailFor(item.id));
     const subParts = [item.recruitment_batch, item.location].filter(Boolean);
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
@@ -173,7 +194,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
       ),
       h('td', {}, h('span', {
         class: `tn-days${item.due_for_review ? ' tn-days-late' : ''}`,
-        text: daysText(item.days_since_applied)
+        text: item.applied_at_precision === 'inferred_before' ? `≤ ${fmtDate(item.applied_at)}（据邮件推断）` : daysText(item.days_since_applied)
       })),
       h('td', {}, linkCell(item.job_url, '查看岗位', '链接缺失')),
       h('td', {}, statusLinkCell(item)),
@@ -330,6 +351,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
 
   function renderBanner() {
     clear(bannerEl);
+    if (updateMessage) bannerEl.append(h('div', { class: 'tn-banner info', 'data-test': 'mail-update-banner', text: updateMessage }));
     if (state.error) {
       if (state.items.length && state.view !== 'reviews') {
         const when = state.lastLoadedAt ? `截至 ${fmtDateTime(state.lastLoadedAt.toISOString())} 的数据` : '上一次成功加载的数据';
@@ -420,14 +442,29 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   dueCheck.addEventListener('change', () => { state.due = dueCheck.checked; state.cursor = null; state.cursorStack = []; updateClearBtn(); doLoad(); });
   clearBtn.addEventListener('click', () => { resetFilters(); resetAndLoad(); });
 
-  // 页面重新可见时检查新鲜度（超过 5 分钟则静默刷新）
+  async function checkUpdates() {
+    if (checkingUpdates || isStale(gen) || !main.isConnected || document.visibilityState !== 'visible') return;
+    checkingUpdates = true;
+    try {
+      const result = (await api.get('/api/v1/ledger-updates?since=' + encodeURIComponent(state.as_of || new Date().toISOString()))).data;
+      if (isStale(gen) || !main.isConnected) return;
+      if (String(result.data_revision) !== String(state.data_revision)) {
+        highlighted = new Set(result.mail_updates);
+        updateMessage = highlighted.size ? `刚刚根据邮件更新了 ${highlighted.size} 条记录` : '';
+        await doLoad({ silent: true });
+      }
+    } catch (err) { if (!isStale(gen)) { state.error = err.message || '检查新进展失败'; renderBanner(); } }
+    finally { checkingUpdates = false; }
+  }
   const onVisible = () => {
-    if (document.visibilityState !== 'visible' || !mounted) return;
-    if (!state.lastLoadedAt || Date.now() - state.lastLoadedAt.getTime() > 5 * 60 * 1000) {
-      doLoad({ silent: true });
-    }
+    if (document.visibilityState === 'visible' && mounted) checkUpdates();
   };
   document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', onVisible);
+  const updatesTimer = setInterval(() => {
+    if (isStale(gen) || !main.isConnected) { mounted = false; clearInterval(updatesTimer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); }
+    else checkUpdates();
+  }, 60000);
 
   /* ---------- 首次加载 ---------- */
   buildToolbar();

@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { execFileSync } from 'node:child_process';
 import { startTestServer } from '../../server/test/helpers.js';
 import { resolveChromiumExecutable } from './browser.mjs';
 import { chromium } from 'playwright';
@@ -28,6 +29,22 @@ export async function phase2Web(check) {
     check('P1-批量确认逐条提交并更新台账',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
     await page.goto('/?app='+app.id);await page.waitForSelector('[data-test=detail-company]');
     check('P0-台账详情深链',await page.locator('[data-test=detail-company]').textContent()==='二期测试公司');
+    await page.goto('/'); await page.waitForSelector('[data-test=ledger-row]');
+    execFileSync(process.execPath,['--input-type=module','-e',`
+      const {run,closeDb}=await import('./server/src/db.js');
+      const {processMailEvent}=await import('./server/src/domain/applications.js');
+      const id='p2-auto-mail',owner=${JSON.stringify(owner)},at=new Date().toISOString();
+      const payload={company_name:'二期测试公司',job_title:'产品经理',mapped_status:'rejected',confidence:1,subject_excerpt:'招聘结果通知',source_received_at:at};
+      run("INSERT INTO events (id,owner_id,client_event_id,source_method,event_type,occurred_at,observed_at,received_at,schema_version,evidence_level,payload_hash,payload_json) VALUES (?,?,?,'mail','mail_progress_detected',?,?,?,'C1','strong','test',?)",[id,owner,id,at,at,at,JSON.stringify(payload)]);
+      const result=processMailEvent({id,owner_id:owner,source_method:'mail',occurred_at:at,payload});
+      if(result.state!=='applied') throw Error('auto update did not apply');closeDb();
+    `],{cwd:process.cwd(),env:{...process.env,DATA_DIR:server.dir}});
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.waitForSelector('[data-test=mail-update-banner]');
+    check('P2-重新获焦检查修订，邮件更新提示并高亮行',await page.locator('.tn-row-updated').count()===1&&await page.locator('[data-test=mail-update-banner]').textContent()==='刚刚根据邮件更新了 1 条记录');
+    await page.locator('[data-test=ledger-row]').click();await page.locator('[data-test=undo-mail]').first().click();await page.click('[data-test=confirm-ok]');
+    await page.waitForFunction(()=>[...document.querySelectorAll('.tn-toast')].some(x=>x.textContent.includes('已撤回邮件自动更新')));
+    check('P2-详情撤回邮件自动判断并留历史',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
     db.close();
   }finally{await browser?.close();await server.stop();}
 }

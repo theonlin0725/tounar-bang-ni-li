@@ -14,7 +14,7 @@ import {
   applicationDetail, ledgerResponse, reviewDetail, reviewList
 } from '../domain/ledger.js';
 import {
-  archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReview
+  archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReview, undoAutomaticMail
 } from '../domain/reviews.js';
 import { manualCreate, getPreferences } from '../domain/applications.js';
 import {
@@ -155,6 +155,18 @@ export function registerRoutes() {
   });
 
   // ---------- ledger ----------
+  route('GET', '/api/v1/ledger-updates', (req) => {
+    const auth = requireAuth(req);
+    const since = req.query.get('since');
+    if (since && !Number.isFinite(Date.parse(since))) throw new AppError(400, 'VALIDATION_ERROR', '更新时间格式不正确');
+    return { data: { data_revision: dataRevision(), mail_updates: all(`SELECT DISTINCT application_id FROM application_history
+      WHERE owner_id = ? AND source_method = 'mail' AND changed_at > ? AND from_status <> to_status`, [auth.ownerId, since || nowIso()]).map(x => x.application_id) } };
+  });
+  route('POST', '/api/v1/applications/:id/undo-mail', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({ ownerId: auth.ownerId, scope: `mail.undo:${req.params.id}`, req,
+      handler: () => ({ data: undoAutomaticMail({ ownerId: auth.ownerId, applicationId: req.params.id, historyId: req.body.history_id, expectedVersion: req.body.expected_version }) }) });
+  });
   route('GET', '/api/v1/ledger', (req) => {
     const auth = requireAuth(req);
     return ledgerResponse(auth.ownerId, Object.fromEntries(req.query.entries()));

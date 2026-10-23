@@ -9,7 +9,7 @@ import {
 } from '../util.js';
 
 const SOURCE_LABELS = { plugin: '插件采集', mail: '招聘邮件', manual: '用户确认' };
-const PRECISION_LABELS = { exact: '精确时间', date: '日期级记录', unknown: '时间未知' };
+const PRECISION_LABELS = { exact: '精确时间', date: '日期级记录', inferred_before: '据邮件推断的最晚投递日期', unknown: '时间未知' };
 
 export function openDetail(id, { gen, onChanged } = {}) {
   const layer = document.getElementById('tn-drawer-layer');
@@ -76,7 +76,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
     ));
     fact('投递状态', STATUS_LABELS[app.status] || app.status,
       app.round_label || app.interview_round ? h('span', { class: 'tn-round', text: `· ${app.round_label || `${app.interview_round} 面`}` }) : null);
-    fact('投递时间', app.applied_at ? h('span', { text: fmtDateTime(app.applied_at) }) : '投递时间待补',
+    fact('投递时间', app.applied_at ? h('span', { text: app.applied_at_precision === 'inferred_before' ? `≤ ${fmtDate(app.applied_at)}（据邮件推断）` : fmtDateTime(app.applied_at) }) : '投递时间待补',
       h('span', { class: 'tn-flag tn-flag-precision', text: PRECISION_LABELS[app.applied_at_precision] || '精度未知' }));
     fact('已投天数（上海口径）', daysText(app.days_since_applied));
     fact('投递渠道', app.channel || '未知');
@@ -144,6 +144,13 @@ export function openDetail(id, { gen, onChanged } = {}) {
         h('div', { class: 'tn-h-time', text: fmtDateTime(entry.changed_at) }),
         h('div', { class: 'tn-h-main', text: entry.from_status === entry.to_status ? `${to}（无状态变化）` : `${from} → ${to}` }),
         h('div', { class: 'tn-h-fields', text: `${SOURCE_LABELS[entry.source_method] || entry.source_method}${entry.reason ? ` · ${entry.reason}` : ''}${fields.length ? ` · 变更字段：${fields.join(', ')}` : ''}` })
+        ,entry.source_method === 'mail' && entry.from_status !== entry.to_status ? h('button', {
+          class: 'tn-btn tn-btn-sm', 'data-test': 'undo-mail', text: '这条改错了，撤回',
+          onclick: async () => {
+            if (!await confirmDialog({ title: '撤回邮件自动更新？', message: '将恢复本次邮件更新前的字段，并保留纠错历史。已有后续修改时不能直接撤回。', confirmLabel: '撤回' })) return;
+            await act(() => api.post(`/api/v1/applications/${encodeURIComponent(id)}/undo-mail`, { history_id: entry.id, expected_version: app.version }, { idempotencyKey: idemKey('undo-mail') }), '已撤回邮件自动更新');
+          }
+        }) : null
       ));
     }
     bodyEl.append(section('状态时间线', app.history && app.history.length ? tl : h('div', { class: 'tn-muted tn-small', text: '暂无历史。' })));
