@@ -214,7 +214,10 @@
   }
 
   function visible(node) {
-    if (!node || node.closest('nav,footer,aside,[role="navigation"],[class*="recommend"],[class*="skeleton"],[aria-busy="true"],form,input:not([type="button"]):not([type="submit"]),textarea,select')) return false;
+    // 表单/输入类排除要包含节点自身（避免把表单内容当岗位文本）；
+    // 容器类排除只看祖先——按钮自己的类名可能叫 recommend-btn，但那仍是真实投递按钮。
+    if (!node || node.closest('form,input:not([type="button"]):not([type="submit"]),textarea,select')) return false;
+    if (node.parentElement && node.parentElement.closest('nav,footer,aside,[role="navigation"],[class*="recommend"],[class*="skeleton"],[aria-busy="true"]')) return false;
     if(node.closest('header')&&!node.closest('main,article'))return false;
     // A global region/login modal is not job content, even when its stylesheet
     // fails to load. Keep actual job-detail drawers eligible.
@@ -243,6 +246,29 @@
     }
     return result.filter(t=>t&&t.length<=80);
   }
+  function titleClassNearApply(buttons){
+    if(!buttons||buttons.length!==1)return null;
+    const btn=buttons[0];
+    const btnRect=btn.getBoundingClientRect();
+    let scope=btn;
+    for(let i=0;i<6&&scope.parentElement&&scope.parentElement!==document.body;i++)scope=scope.parentElement;
+    const candidates=[];
+    for(const node of scope.querySelectorAll('[class*="title"],[class*="Title"]')){
+      if(!visible(node))continue;
+      const text=textOf(node);
+      if(text.length<2||text.length>60||!validTitle(text))continue;
+      if(/[：:]$/.test(text)||/(工作地点|项目|职位方向|子方向|薪资|人数)\s*[：:]/.test(text))continue;
+      if(/^(相关链接|相关职位|相似职位|热门职位|职位推荐|公司介绍|公司信息|招聘流程|投递须知|温馨提示|分享|收藏)$/.test(text))continue;
+      const r=node.getBoundingClientRect();
+      if(r.top>btnRect.top+80)continue;
+      const distance=Math.abs(btnRect.top-r.top)+Math.abs(btnRect.left-r.left)*0.2;
+      if(distance>900)continue;
+      candidates.push({text,distance});
+    }
+    // 按 DOM 顺序取第一个：详情页的面包屑/主标题在版式上先于副标题与“相关链接”。
+    return candidates[0]?.text||null;
+  }
+
   function repeatedTitleNearApply(buttons){
     if(!buttons||buttons.length!==1)return null;
     let scope=buttons[0];
@@ -309,8 +335,8 @@
     if(!(candidates.job_title||[]).some(c=>c.score>=70)){
       // 通用兜底：SPA 详情页常常没有 h1/h2，岗位名以普通 div 重复出现（面包屑 + 标题），
       // 且整页只有一个投递按钮。只在还没有中高把握标题时启用，避免把弹窗/列表标题当岗位。
-      const repeated=repeatedTitleNearApply(applyButtons);
-      if(repeated)add('job_title',repeated,74,'repeated_text_near_apply');
+      const repeated=repeatedTitleNearApply(applyButtons)||titleClassNearApply(applyButtons);
+      if(repeated)add('job_title',repeated,74,'title_near_apply');
     }
     const companyLabels=labelled(/(?:公司名称|公司名|雇主|Company)\s*[:：]\s*(.{2,50})/i);
     for(const node of [...document.querySelectorAll('main div,main span,main strong,article div,article span')].slice(0,200)){

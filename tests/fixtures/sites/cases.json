@@ -374,5 +374,35 @@
       "site_job_id": "22011",
       "job_url": "https://job.xiaohongshu.com/campus/position/22011"
     }
+  },
+  {
+    "site": "baidu",
+    "url": "https://talent.baidu.com/jobs/detail/5ec120b2-f7a4-452e-a4d2-c97fafecf6aa",
+    "file": "baidu/5ec120b2-f7a4-452e-a4d2-c97fafecf6aa.html",
+    "captured_at": "2026-10-23T01:12:00.000Z",
+    "note": "真实 DOM 由留档分支 archive/local-phase2-alt-20261022 的 0.2.0-draft 适配器在本机采集（2026-10-23 01:12）；本轮用当前代码回放，字段人工核对。快照文件名是脱敏 UUID，不是百度真实 job id。",
+    "expected": {
+      "company_name": "百度",
+      "job_title": "DuMate生态运营（J100426）",
+      "location": "",
+      "recruitment_batch": "",
+      "jd_summary": "-负责 Dumate生态整体战略规划与执行，统筹企业及开发者两类合作伙伴的拓展、运营与治理 -主导重点生态伙伴（头部企业、平台、开发者社区等）的高阶商务谈判，推",
+      "job_url": "https://talent.baidu.com/jobs/detail/5ec120b2-f7a4-452e-a4d2-c97fafecf6aa"
+    }
+  },
+  {
+    "site": "baidu",
+    "url": "https://talent.baidu.com/jobs/detail/96a406ef-e29d-4745-aa93-0eee3aed3c69",
+    "file": "baidu/96a406ef-e29d-4745-aa93-0eee3aed3c69.html",
+    "captured_at": "2026-10-23T01:12:00.000Z",
+    "note": "真实 DOM 由留档分支 archive/local-phase2-alt-20261022 的 0.2.0-draft 适配器在本机采集（2026-10-23 01:12）；本轮用当前代码回放，字段人工核对。快照文件名是脱敏 UUID，不是百度真实 job id。",
+    "expected": {
+      "company_name": "百度",
+      "job_title": "北京-网络研发工程师(J100700)",
+      "location": "",
+      "recruitment_batch": "",
+      "jd_summary": "负责行业领先的超大规模云基础设施网络平台研发，打造AI时代的顶级网络技术及产品 -负责CDN、边缘计算、流量调度，以及智能负载均衡、HTTP、DNS、网络测量、",
+      "job_url": "https://talent.baidu.com/jobs/detail/96a406ef-e29d-4745-aa93-0eee3aed3c69"
+    }
   }
 ]

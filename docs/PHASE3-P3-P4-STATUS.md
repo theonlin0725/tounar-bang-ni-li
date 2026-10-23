@@ -4,7 +4,7 @@
 
 | 站点 | 本轮动作 | 结果 |
 |---|---|---|
-| 百度 | `talent.baidu.com/jobs/social` 用 Chrome for Testing 156 打开 | **跳 `about:blank`**（status 200，finalUrl=about:blank，无 DOM）→ 与云端结论一致，无法取证 |
+| 百度 | `talent.baidu.com/jobs/social` 用 Chrome for Testing 156 打开 | 仍然 **跳 `about:blank`**（status 200，无 DOM）→ 实时取证不可能；改用留档分支里的 2 份真实快照做离线回放，**已通过**（见下） |
 | BOSS | `zhipin.com/web/geek/job?...` 打开 | 被重定向回首页，拿不到职位列表/详情 → 不绕过 |
 | 小红书（白名单外） | 列表页可打开（200），取到 2 个真实详情 URL：`/campus/position/22013`、`/campus/position/22011` | **已修复并取证**：两页原本不产生 `job_viewed`（页面没有 h1/h2，岗位名在普通 `div.text-title` 里）。新增通用兜底「投递按钮附近重复出现的标题」后，两页均识别成功，快照入 `tests/fixtures/sites/xiaohongshu/` |
 
@@ -21,7 +21,15 @@ data-tounar-job-title="北京-网络研发工程师(J100700)"  data-tounar-detec
 用**当前二期适配器**回放这两份 DOM：`job_viewed` 事件为 `null`，即**认不出**。
 两份快照只存在于留档分支 `archive/local-phase2-alt-20261022`（`tests/fixtures/sites/baidu/`），没有并入二期。
 
-结论：百度不是“页面拿不到”，而是**当前适配器比那版弱**。要补，得把 A 版百度选择器移植过来并配回归——本轮没做。
+结论：百度不是“页面拿不到”，而是**当前适配器比那版弱**。
+
+本轮已修：两处根因都在通用规则里，不是百度专属选择器——
+
+1. `visible()` 把类名包含 `recommend` 的元素整棵排除，而百度投递按钮的类名恰好是 `recommend-btn__*`，导致“页面没有投递按钮” → 直接判定不是岗位页。改为：表单/输入类排除包含节点自身，容器类排除只看祖先。
+2. 详情页标题不是 `h1/h2`，是 `div[class*="title"]`。新增 `titleClassNearApply`：整页唯一投递按钮、文本在按钮 6 层祖先内、2–60 字、过 `validTitle`、位置上在按钮上方且距离 ≤900，按 DOM 顺序取第一个（面包屑/主标题先于副标题和“相关链接”），打分 74。
+
+结果：两份百度快照回放**标题、公司（百度）、JD 全部正确**，快照入 `tests/fixtures/sites/baidu/`，`cases.json` 26 条。
+**边界**：DOM 是 2026-10-23 01:12 由另一版适配器在本机采集的，本轮实时访问仍不可用，所以站点表标「2/2（离线回放）」，不算线上验收通过。
 
 ## 3. 本轮新增的通用兜底（已落地）
 
