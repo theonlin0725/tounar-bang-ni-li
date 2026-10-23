@@ -25,6 +25,15 @@ export function openDatabase(dbPath) {
 /* 轻量迁移：D06 冻结（2026-10-22）后新装库默认 daily；
    老库一次性把 weekly_monday 迁到 daily，并补 D08 的待确认摘要时间列。 */
 function migrate(instance) {
+  if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_mail_link'").get()) {
+    instance.exec(`UPDATE review_items SET source_mail_id = (
+      SELECT m.id FROM events e JOIN mail_messages m ON m.owner_id = e.owner_id
+        AND m.connection_id = e.connection_id AND m.mailbox = e.mailbox
+        AND m.uidvalidity = e.uidvalidity AND m.uid = e.uid
+      WHERE e.id = review_items.source_event_id AND e.owner_id = review_items.owner_id
+      LIMIT 1) WHERE status = 'open' AND source_mail_id IS NULL`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_phase2_mail_link', '1')").run();
+  }
   try {
     instance.exec('ALTER TABLE notification_preferences ADD COLUMN last_review_digest_at TEXT');
   } catch { /* 列已存在（schema.sql 新版本已建） */ }

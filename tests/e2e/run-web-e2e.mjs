@@ -180,6 +180,11 @@ try {
     (await page.textContent('#tn-content')).includes('还没有投递记录'),
     `total=${(await page.textContent('[data-test=stat-total]')).trim()}`);
   await shot(page, '02-ledger-empty');
+  await page.goto('/?panel=reviews');
+  await page.waitForSelector('[data-test=reviews-view]');
+  check('P0-深链 打开待确认', await page.locator('[data-test=tab-reviews].active').count() === 1);
+  await page.goto('/');
+  await page.waitForSelector('[data-test=open-manual]');
 
   /* ================= 2. 手动补录：D12 拦截 / 成功 / 409 重复 ================= */
   await page.click('[data-test=open-manual]');

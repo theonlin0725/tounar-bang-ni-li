@@ -20,7 +20,7 @@ function route() {
   const match = location.pathname.match(/^\/r\/([^/]+)$/);
   if (match) return { name: 'landing', token: decodeURIComponent(match[1]) };
   const params = new URLSearchParams(location.search);
-  return { name: 'app', panel: params.get('panel') };
+  return { name: 'app', panel: params.get('panel'), applicationId: params.get('app') };
 }
 
 function rootEl() { return document.getElementById('tn-root'); }
@@ -59,7 +59,8 @@ export async function enterApp(panel = null) {
   root.append(buildHeader());
   const main = h('div', { class: 'tn-main', id: 'tn-main' });
   root.append(main);
-  await renderLedger(main, { gen, panel });
+  const currentRoute = route();
+  await renderLedger(main, { gen, panel: panel || currentRoute.panel, applicationId: currentRoute.applicationId });
 }
 
 function buildHeader() {

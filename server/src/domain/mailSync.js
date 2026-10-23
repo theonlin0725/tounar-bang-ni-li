@@ -162,6 +162,8 @@ function ingestMessage(connection, message, parsed, bodyText, receivedAt) {
   const fields = parsed.fields;
   const eventId = newId('evt');
   const payload = {
+    source_mail_id: mailId,
+    source_received_at: receivedAt,
     category: classification.category,
     confidence: classification.confidence,
     status_text: classification.category,

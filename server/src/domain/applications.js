@@ -139,10 +139,12 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
   const id = newId('rev');
   run(`INSERT INTO review_items
     (id, owner_id, kind, reason_code, summary, evidence_json, suggested_changes_json, candidates_json,
-     source_event_id, status, version, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?)`,
+     source_event_id, source_mail_id, status, version, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1, ?)`,
   [id, event.owner_id, kind, reasonCode, clipText(summary, 240), JSON.stringify(evidence),
-    JSON.stringify(suggested), JSON.stringify(candidates), event.id, nowIso()]);
+    JSON.stringify(suggested), JSON.stringify(candidates), event.id,
+    event.source_method === 'mail' ? (event.payload?.source_mail_id || one(`SELECT id FROM mail_messages WHERE owner_id = ? AND connection_id = ? AND mailbox = ? AND uidvalidity = ? AND uid = ?`,
+      [event.owner_id, event.connection_id || '', event.mailbox || 'INBOX', event.uidvalidity || '', event.uid || ''])?.id || null) : null, nowIso()]);
   run(`UPDATE events SET processing_state = 'pending', review_reason = ?, processed_at = ? WHERE id = ? AND owner_id = ?`,
     [reasonCode, nowIso(), event.id, event.owner_id]);
   bumpRevision();

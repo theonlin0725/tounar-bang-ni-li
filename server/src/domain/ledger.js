@@ -169,7 +169,9 @@ export function reviewList(ownerId, query = {}) {
 }
 
 export function reviewDetail(ownerId, reviewId) {
-  const row = one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]);
+  const row = one(`SELECT r.*, m.received_at AS mail_received_at FROM review_items r
+    LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
+    WHERE r.id = ? AND r.owner_id = ?`, [reviewId, ownerId]);
   if (!row) throw new AppError(404, 'NOT_FOUND', '复核项不存在');
   return {
     data: {

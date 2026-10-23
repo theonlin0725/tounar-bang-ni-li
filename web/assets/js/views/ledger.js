@@ -17,7 +17,7 @@ export { openSettings };
 
 const PAGE_SIZE = 20;
 
-export async function renderLedger(main, { gen, panel = null } = {}) {
+export async function renderLedger(main, { gen, panel = null, applicationId = null } = {}) {
   const state = {
     view: 'applied',
     q: '', status: '', source: '', due: false,
@@ -434,5 +434,7 @@ export async function renderLedger(main, { gen, panel = null } = {}) {
   renderStats();
   buildTabs();
   await doLoad();
+  if (panel === 'reviews' && !isStale(gen)) switchView('reviews');
+  if (applicationId && !isStale(gen)) openDetailFor(applicationId);
   if (panel === 'settings' && mounted) openSettingsTab('reminder');
 }
