@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { findProgressCandidates } from './mailMatching.js';
+import { findProgressCandidates, companyIdentity } from './mailMatching.js';
 import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
@@ -36,6 +36,7 @@ export function applicationProjection(app, preferences, asOf = new Date()) {
   const out = {};
   for (const field of PUBLIC_APPLICATION_FIELDS) out[field] = app[field];
   out.source_methods = methods;
+  out.field_confidence = Object.fromEntries(all('SELECT field, confidence FROM application_field_sources WHERE owner_id = ? AND application_id = ?', [app.owner_id, app.id]).map(x => [x.field,x.confidence]));
   out.days_since_applied = app.applied_at ? daysBetweenShanghai(app.applied_at, asOf) : null;
   out.days_since_interview = app.last_interview_completed_at
     ? daysBetweenShanghai(app.last_interview_completed_at, asOf) : null;
@@ -163,10 +164,11 @@ function addInitialHistory(ownerId, applicationId, eventId, status, sourceMethod
   [newId('hist'), ownerId, applicationId, eventId, status,
     JSON.stringify(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { from: null, to: v }]))),
     nowIso(), sourceMethod]);
+  const payload = eventId ? safeJsonParse(one('SELECT payload_json FROM events WHERE id = ? AND owner_id = ?', [eventId,ownerId])?.payload_json, {}) : {};
   for (const field of Object.keys(fields)) {
     run(`INSERT OR REPLACE INTO application_field_sources
-      (application_id, owner_id, field, source_method, event_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)`, [applicationId, ownerId, field, sourceMethod, eventId, nowIso()]);
+      (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [applicationId, ownerId, field, sourceMethod, eventId, nowIso(), sourceMethod === 'manual' ? 'high' : payload.field_confidence?.[field] || 'medium', payload.field_sources?.[field] || null]);
   }
 }
 
@@ -231,32 +233,25 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
 
 function fillMissingFields(app, fields, eventId, sourceMethod) {
   const updates = {};
-  const fillable = ['jd_summary', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
+  const fillable = ['company_name', 'job_title', 'jd_summary', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
     'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at', 'round_label', 'interview_round'];
+  const ranks={low:0,medium:1,high:2};
   for (const key of fillable) {
-    if (app[key] == null || app[key] === '') {
-      let value = fields[key];
-      if (key === 'jd_summary' && value) value = clipText(value, 80);
-      if (key === 'job_url') value = sanitizeUrl(value);
-      if (key === 'canonical_job_url' && !value && fields.job_url) value = canonicalJobUrl(fields.job_url);
-      if (key === 'status_url') value = sanitizeUrl(value);
-      if (key === 'deadline_at') value = parseIso(value);
-      if (key === 'interview_scheduled_at') value = parseIso(value);
-      if (value != null && value !== '') updates[key] = value;
-    }
+    const source=one('SELECT source_method, confidence FROM application_field_sources WHERE application_id = ? AND owner_id = ? AND field = ?', [app.id,app.owner_id,key]);
+    const confidence=fields.field_confidence?.[key] || 'medium';
+    if(source?.source_method==='manual' || confidence==='low')continue;
+    if(app[key]!=null && app[key]!=='' && ranks[confidence]<=(ranks[source?.confidence]??1))continue;
+    let value=fields[key];
+    if(key==='jd_summary'&&value)value=clipText(value,80);
+    if(['job_url','status_url'].includes(key))value=sanitizeUrl(value);
+    if(key==='canonical_job_url')value=canonicalJobUrl(fields.job_url);
+    if(['deadline_at','interview_scheduled_at'].includes(key))value=parseIso(value);
+    if(value!=null&&value!==''&&value!==app[key])updates[key]=value;
   }
-  if (!updates.canonical_job_url && fields.job_url && !app.canonical_job_url) {
-    const canonical = canonicalJobUrl(fields.job_url);
-    if (canonical) updates.canonical_job_url = canonical;
-  }
-  if (fields.location && !app.location) updates.location = clipText(fields.location, 100);
-  if (fields.recruitment_batch && !app.recruitment_batch) updates.recruitment_batch = clipText(fields.recruitment_batch, 100);
-  if (fields.status_url && !app.status_url) {
-    updates.status_url = sanitizeUrl(fields.status_url);
-    updates.status_url_scope = fields.status_url_scope || 'application';
-  }
-  if (!Object.keys(updates).length) return app;
-  return markApplicationChanged(app.owner_id, app.id, eventId, sourceMethod, updates, { reason: '字段补全' });
+  if(updates.company_name)updates.company_key=normalizeCompanyKey(updates.company_name);
+  if(updates.status_url)updates.status_url_scope=fields.status_url_scope||'application';
+  if(!Object.keys(updates).length)return app;
+  return markApplicationChanged(app.owner_id,app.id,eventId,sourceMethod,updates,{reason:'更高把握字段补全 / 纠正',fieldConfidence:fields.field_confidence});
 }
 
 function ensureSource(app, method, eventId) {
@@ -389,6 +384,7 @@ function processView(event) {
     return { state: 'pending', review };
   }
   const fields = {
+    field_confidence: p.field_confidence,
     company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
     job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
@@ -408,6 +404,15 @@ function processView(event) {
     return { state: 'pending', review };
   }
   if (strong.length === 1) {
+    const found = strong[0];
+    const titleSource = one('SELECT source_method, confidence FROM application_field_sources WHERE application_id = ? AND field = ?', [found.application.id, 'job_title']);
+    const ranks = { low: 0, medium: 1, high: 2 };
+    if ((found.reason === 'canonical_job_url' || p.field_sources?.site_job_id === 'url_identifier') && found.application.job_title !== p.job_title
+      && titleSource?.source_method !== 'manual' && (ranks[p.field_confidence?.job_title || 'medium'] <= ranks[titleSource?.confidence || 'medium'])) {
+      return { state: 'pending', review: reviewForEvent(event, { kind: 'ambiguous_match', reasonCode: 'PAGE_CONTENT_IDENTITY_UNCERTAIN',
+        summary: '同一链接出现不同岗位，请明确选择关联原记录，或按新岗位新建', fields,
+        suggested: { ...p, status: 'pending' } }) };
+    }
     let app = fillMissingFields(strong[0].application, fields, event.id, 'plugin');
     const updates = {};
     if (!app.first_viewed_at || Date.parse(event.occurred_at) < Date.parse(app.first_viewed_at)) updates.first_viewed_at = event.occurred_at;
@@ -465,6 +470,7 @@ function processSubmitted(event) {
     return { state: 'pending', review };
   }
   const fields = {
+    field_confidence: p.field_confidence,
     company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
     job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
@@ -666,7 +672,7 @@ export function processMailEvent(event) {
   return transaction(() => {
     const p = event.payload || {};
     const source = event.source_method === 'plugin' ? 'plugin' : 'mail';
-    const fields = { ...p, site_key: p.site_key || event.site_key };
+    const fields = { ...p, company_name: p.company_name || companyIdentity(null, p.from_domain), site_key: p.site_key || event.site_key };
     const candidates = findProgressCandidates(event.owner_id, fields, { source });
     const classification = Math.max(0, Math.min(1, Number(p.confidence ?? (source === 'plugin' && event.evidence_level === 'strong' ? 0.88 : 0)) || 0));
     const match = candidates.length === 1 ? candidates[0].confidence : 0.5;

@@ -182,6 +182,21 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.equal(unmapped.json.results[0].processing_state, 'pending');
   });
 
+  it('字段把握度：低把握值不写入台账，非法分值拒绝', async () => {
+    const low = await server.eventBatch(token, [evt('job_viewed', 'evt_field_low_jd', {
+      company_name: '字段测试公司', job_title: '测试工程师', job_url: 'https://example.com/job/field-low',
+      site_job_id: 'field-low', visible_dwell_ms: 3200, jd_summary: '这是一段不可信的页面导航',
+      field_confidence: { company_name: 'high', job_title: 'high', jd_summary: 'low' }
+    })]);
+    const id = low.json.results[0].application_id;
+    const detail = await server.request(`/api/v1/applications/${id}`, { cookie });
+    assert.equal(detail.json.data.jd_summary, null);
+    const invalid = await server.eventBatch(token, [evt('job_viewed', 'evt_field_invalid', {
+      company_name: '字段测试公司', job_title: '测试岗', field_confidence: { job_title: 'guessed' }
+    })]);
+    assert.equal(invalid.json.results[0].accepted, false);
+  });
+
   it('统计口径：浏览不计入三统计，强提交计入', async () => {
     const ledger = await server.request('/api/v1/ledger?view=applied', { cookie });
     const stats = ledger.json.data.stats;

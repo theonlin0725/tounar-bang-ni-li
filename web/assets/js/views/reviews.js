@@ -76,7 +76,7 @@ export async function renderReviews(container,{gen,onChanged}={}) {
     let selected=r.suggested_application_id||(cs.length===1?cs[0].application_id:''),working=false,searchSeq=0;
     const el=h('div',{class:'tn-review-card','data-test':'review-card','data-review-id':r.id});
     const pct=r.total_confidence==null?null:Math.round(r.total_confidence*100);
-    const threshold=NEEDS_TIME.has(pre.status)&&['offer','rejected','closed'].includes(pre.status)?90:80;
+    const threshold=['offer','rejected','closed'].includes(pre.status)?90:80;
     el.append(h('h3',{class:'tn-review-title',text:pre.company_name||pre.job_title?`系统判断：${r.mail_received_at?fmtDateTime(r.mail_received_at)+' 收到的邮件，是 ':''}${pre.company_name||cs[0]?.company_name||'待补充公司'} · ${pre.job_title||cs[0]?.job_title||'待补充岗位'}的${STATUS_LABELS[pre.status]||'招聘进展'}`:r.summary}),h('p',{class:'tn-small tn-muted',text:`${LABELS[r.kind]||'线索待确认'} · ${r.mail_received_at?'邮件收到于 '+fmtDateTime(r.mail_received_at):fmtDateTime(r.created_at)}`}),h('p',{text:pct===null?'系统证据不足，请你确认。':`系统把握度 ${pct}%（自动更新要求至少 ${threshold}%，且记录唯一、状态不回退；请你确认归属和状态）`}));
     const evidence=h('details',{},h('summary',{text:'查看邮件 / 页面证据'}));
     for(const [k,label] of [['subject_excerpt','邮件主题'],['from_domain','发件域名'],['body_excerpt','正文片段'],['status_text','页面状态']])if(e[k])evidence.append(h('p',{text:`${label}：${String(e[k]).slice(0,300)}`}));
@@ -84,11 +84,11 @@ export async function renderReviews(container,{gen,onChanged}={}) {
     const edit=h('div',{class:'tn-inline-form',hidden:true,'data-test':'review-edit'}),err=h('div',{'data-test':'review-error'});
     const search=h('input',{class:'tn-input',type:'search',placeholder:'按公司 / 岗位搜索本人台账','data-test':'review-search'});
     const select=h('select',{class:'tn-select','data-test':'review-target'});
-    function options(rows){clear(select);select.append(h('option',{value:'',text:'请选择本人台账记录'}));for(const a of rows)select.append(h('option',{value:a.application_id||a.id,text:`${a.company_name} · ${a.job_title}`}));select.append(h('option',{value:'__new__',text:'按邮件新建一条'}));select.value=selected;}
+    function options(rows){clear(select);select.append(h('option',{value:'',text:'请选择本人台账记录'}));for(const a of rows)select.append(h('option',{value:a.application_id||a.id,text:`${a.company_name} · ${a.job_title}`}));select.append(h('option',{value:'__new__',text:'按邮件新建一条'}));select.value=selected;if(select.value!==selected)selected='';}
     options(cs);
     const status=h('select',{class:'tn-select','data-test':'review-status-select'});for(const s of STATUS_ORDER)status.append(h('option',{value:s,text:STATUS_LABELS[s]}));status.value=pre.status||'applied';
-    const time=h('input',{class:'tn-input',type:'datetime-local','data-test':'review-switch-at',value:localInput(pre.applied_at||r.mail_received_at)});
-    const timeWrap=h('label',{},'投递时间（北京时间；默认据原信推断，可修改）',time);
+    const time=h('input',{class:'tn-input',type:'datetime-local','data-test':'review-switch-at',value:localInput(pre.applied_at||(r.mail_inferred_applied_at_enabled?r.mail_received_at:null))});
+    const timeWrap=h('label',{},r.mail_inferred_applied_at_enabled?'投递时间（北京时间；默认据原信推断，可修改）':'实际投递时间（北京时间）',time);
     const company=h('input',{class:'tn-input',value:pre.company_name||'',placeholder:'公司名','data-test':'review-create-company'}), title=h('input',{class:'tn-input',value:pre.job_title||'',placeholder:'岗位名','data-test':'review-create-title'});
     const newFields=h('div',{hidden:true},company,title);
     async function targetChanged(){selected=select.value;newFields.hidden=selected!=='__new__';const request=++searchSeq;
@@ -112,7 +112,7 @@ export async function renderReviews(container,{gen,onChanged}={}) {
         if(fresh.status!=='open'){toast('该复核项已处理，已刷新列表');await load();notify();return;}
         if(fresh.version!==r.version)throw {status:409};
         const changes={};if(custom){changes.status=status.value;
-          if(!timeWrap.hidden&&time.value){changes.applied_at=new Date(time.value+':00+08:00').toISOString();changes.applied_at_precision=r.mail_received_at&&time.value===localInput(r.mail_received_at)?'inferred_before':'exact';}
+          if(!timeWrap.hidden&&time.value){changes.applied_at=new Date(time.value+':00+08:00').toISOString();changes.applied_at_precision=r.mail_inferred_applied_at_enabled&&r.mail_received_at&&time.value===localInput(r.mail_received_at)?'inferred_before':'exact';}
           if(selected==='__new__'){changes.company_name=company.value.trim();changes.job_title=title.value.trim();action='create';}
         }
         if(action!=='dismiss'&&action!=='create'&&!selected){edit.hidden=false;throw new Error('请先搜索并选择一条本人记录');}

@@ -52,11 +52,12 @@ export function openDetail(id, { gen, onChanged } = {}) {
 
   function render() {
     const app = current;
+    const field = (key) => app.field_confidence?.[key] === 'low' ? '待补充' : app[key] || '待补充';
     clear(headEl);
     headEl.append(
       h('div', {},
-        h('h2', { 'data-test': 'detail-company', text: app.company_name || '—' }),
-        h('div', { class: 'tn-job-title', text: app.job_title || '—' }),
+        h('h2', { 'data-test': 'detail-company', text: field('company_name') }),
+        h('div', { class: 'tn-job-title', text: field('job_title') }),
         h('div', { style: { marginTop: '6px' } }, statusChip(app.status))
       ),
       h('button', { class: 'tn-btn tn-btn-sm tn-drawer-close', type: 'button', text: '关闭', onclick: close })
@@ -80,7 +81,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
       h('span', { class: 'tn-flag tn-flag-precision', text: PRECISION_LABELS[app.applied_at_precision] || '精度未知' }));
     fact('已投天数（上海口径）', daysText(app.days_since_applied));
     fact('投递渠道', app.channel || '未知');
-    fact('招聘批次 / 城市', [app.recruitment_batch, app.location].filter(Boolean).join(' · ') || '—');
+    fact('招聘批次 / 城市', [field('recruitment_batch'), field('location')].join(' · '));
     fact('最近有效进展', fmtDateTime(app.last_progress_at));
     fact('官网最近采集', app.last_site_observed_at ? fmtDateTime(app.last_site_observed_at) : '尚无（官网仅在你访问时采集）');
     fact('最近人工确认', app.last_reviewed_at ? fmtDateTime(app.last_reviewed_at) : '尚未确认过');
@@ -92,7 +93,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
     bodyEl.append(section('核心字段', facts));
 
     /* JD 摘要 */
-    bodyEl.append(section('JD 摘要', app.jd_summary
+    bodyEl.append(section('JD 摘要', app.jd_summary && app.field_confidence?.jd_summary !== 'low'
       ? h('div', { class: 'tn-evidence', text: app.jd_summary })
       : h('div', { class: 'tn-link-disabled', text: '摘要待补充（纯文本，不渲染网页 HTML）' })));
 
@@ -119,7 +120,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
       for (const f of app.field_sources) {
         list.append(h('div', { class: 'tn-kv-item' },
           h('span', { class: 'tn-kv-key', text: f.field }),
-          h('span', { text: `${SOURCE_LABELS[f.source_method] || f.source_method} · ${fmtDateTime(f.updated_at)}` })));
+          h('span', { text: `${SOURCE_LABELS[f.source_method] || f.source_method} · ${ {high:'高把握',medium:'中把握',low:'待补充'}[f.confidence] || '把握度未知'} · ${fmtDateTime(f.updated_at)}` })));
       }
       sourcesBox.append(h('details', {}, h('summary', { class: 'tn-small tn-muted', text: `字段来源明细（${app.field_sources.length} 项）` }), list));
     }

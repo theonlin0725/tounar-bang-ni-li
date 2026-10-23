@@ -18,6 +18,7 @@ import { startTestServer, freePort } from '../../server/test/helpers.js';
 import { buildTestExtension } from '../../extension/scripts/make-test-build.mjs';
 import { startFixtureServer } from './fixtures.mjs';
 import { resolveChromiumExecutable } from './browser.mjs';
+import { captureRegression } from './capture-regression.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const PROFILE_DIR = path.join(ROOT, '.tmp', 'e2e-profile');
@@ -318,6 +319,7 @@ try {
   );
 
   check('E2E-12 撤销后 popup 不再显示绑定信息', deviceAfter.server_revoked_at != null && !(await popupPaired(popup)));
+  await captureRegression(check);
 } catch (err) {
   check('E2E 运行异常', false, String(err?.stack || err).slice(0, 1200));
 } finally {

@@ -147,3 +147,40 @@ SMTP_URL=smtp://你的QQ号@qq.com:授权码@smtp.qq.com:465
 MAIL_FROM=Tounar 帮你理 <你的QQ号@qq.com>
 ALLOWED_EMAILS=你的邮箱@qq.com
 ```
+
+## 十、二期优化（本地待验收，未发布线上）
+
+二期代码、验证结果、未验收项和风险见 [二期交付报告](docs/PHASE2-DELIVERY.md)，操作步骤见 [本地验收清单](docs/PHASE2-ACCEPTANCE.md)。真实站点覆盖以 [适配证据](docs/SITE-ADAPTER-EVIDENCE.md) 为准，离线用例不代表真实站点验收。
+
+| 二期配置 / 决策 | 默认值 | 说明 |
+|---|---|---|
+| `notification_preferences.stage_followup_days` | `7` | 设置页选择 7 / 14 / 关闭（0）；独立于已投回看阈值，阶段推进重算，终态停止 |
+| `AUTO_PROGRESS_CONFIDENCE` | `0.8` | 面邀 / 笔试 / 测评自动更新总把握度阈值 |
+| `AUTO_TERMINAL_CONFIDENCE` | `0.9` | 终态自动更新总把握度阈值；同时受 `AUTO_TERMINAL_FROM_MAIL` 开关限制 |
+| `D12_ALLOW_MAIL_INFERRED_APPLIED_AT` | `true` | 原投递时间缺失时允许按原信收到时间标记上界 `inferred_before`，界面显示「≤ 日期（据邮件推断）」；不是精确投递时间 |
+| 台账刷新 | 60 秒 / 重新获焦 | 按修订检查，显示本次邮件变更数量并高亮 |
+| 采集把握度 | 高 / 中 / 低 | 低把握留空；机器只能用更高把握纠正旧采集字段，不能覆盖人工字段 |
+
+总把握度 = 分类置信度 × 匹配把握度。唯一记录、状态不回退、终态保护也必须同时满足。
+
+**旧采集字段的一次性修复：先只读查看，再由用户审阅。**
+
+```bash
+node server/scripts/repair-captured-fields.js --db data/tounar.sqlite --out .tmp/field-repair-plan.json
+# 审阅 JSON；确认内容后由用户执行，脚本会先做 SQLite 一致性备份并校验版本：
+node server/scripts/repair-captured-fields.js --db data/tounar.sqlite --apply --confirm --plan .tmp/field-repair-plan.json
+```
+
+自动识别疑似错值的规则可能误伤岗位名含“招聘”的真实岗位，因此不自动执行。数据库变化后旧计划会被拒绝，须重新审阅。先启动新版完成增量迁移；不要把数据库、备份、计划中的用户资料或授权码提交到 Git。
+
+云环境回归使用官方 Playwright Chromium：
+
+```bash
+export PLAYWRIGHT_BROWSERS_PATH=/workspace/.cache/playwright-official
+npx playwright install chromium
+npm test
+npm run test:e2e
+npm run test:web
+```
+
+`probe:site` / `plugin:tryrun` 现在使用共享浏览器解析，可用 `--snapshot tests/fixtures/sites/<站点>/<岗位>.html` 保存去表单、去可执行脚本和页面状态、去联系方式的公开岗位快照。证书失败页不保存为岗位快照；禁止关闭 TLS 校验来通过验收。

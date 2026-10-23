@@ -8,7 +8,7 @@ const COMPANIES = [
   ['小米',['小米','xiaomi'],['xiaomi.com']],['百度',['百度','baidu'],['baidu.com']],
   ['网易',['网易','netease'],['service.netease.com','corp.netease.com','netease.com']]
 ];
-const tidy=s=>String(s||'').toLowerCase().replace(/[\s·•,.，。()（）]/g,'').replace(/(?:股份)?有限公司$|集团$/g,'');
+const tidy=s=>String(s||'').toLowerCase().replace(/[\s·•,.，。()（）]/g,'').replace(/(?:股份)?有限公司$|集团$|校园招聘$|招聘$/g,'');
 export function companyIdentity(name, domain='') {
   const n=tidy(name), d=String(domain||'').toLowerCase();
   const named=COMPANIES.find(c=>c[1].some(a=>tidy(a)===n));

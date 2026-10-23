@@ -1,4 +1,5 @@
 import { all, dataRevision, getApplication, one } from '../db.js';
+import { config } from '../config.js';
 import {
   AppError, STATUSES, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse, stageFollowupState
 } from '../util.js';
@@ -115,7 +116,7 @@ export function applicationDetail(ownerId, applicationId) {
   const history = all(`SELECT id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason
     FROM application_history WHERE owner_id = ? AND application_id = ?
     ORDER BY changed_at DESC LIMIT 100`, [ownerId, applicationId]);
-  const sources = all(`SELECT field, source_method, event_id, updated_at FROM application_field_sources
+  const sources = all(`SELECT field, source_method, event_id, updated_at, confidence, source_detail FROM application_field_sources
     WHERE owner_id = ? AND application_id = ? ORDER BY field`, [ownerId, applicationId]);
   const reviews = all(`SELECT id, kind, reason_code, summary, status, version, created_at
     FROM review_items WHERE owner_id = ? AND (
@@ -145,12 +146,13 @@ export function reviewList(ownerId, query = {}) {
   const offset = Math.max(0, Number.parseInt(query.cursor || '0', 10) || 0);
   if (!['open', 'resolved', 'dismissed', 'all'].includes(status)) throw new AppError(400, 'VALIDATION_ERROR', 'status 无效');
   const rows = all(`SELECT r.*, m.received_at AS mail_received_at
-    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
+    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
     WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
     ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?`, status === 'all' ? [ownerId, limit + 1, offset] : [ownerId, status, limit + 1, offset]);
   return {
     data: rows.slice(0, limit).map((row) => ({
       id: row.id,
+      mail_inferred_applied_at_enabled: config.d12AllowMailInferredAppliedAt,
       kind: row.kind,
       reason_code: row.reason_code,
       summary: row.summary,
@@ -182,6 +184,11 @@ export function reviewDetail(ownerId, reviewId) {
   return {
     data: {
       ...row,
+      mail_inferred_applied_at_enabled: config.d12AllowMailInferredAppliedAt,
+      classification_confidence: safeJsonParse(row.evidence_json, {}).classification_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
+      matching_confidence: safeJsonParse(row.evidence_json, {}).matching_confidence ?? null,
+      total_confidence: safeJsonParse(row.evidence_json, {}).total_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
+      suggested_application_id: safeJsonParse(row.candidates_json, []).length === 1 ? safeJsonParse(row.candidates_json, [])[0].application_id : null,
       evidence: safeJsonParse(row.evidence_json, {}),
       suggested_changes: safeJsonParse(row.suggested_changes_json, {}),
       candidates: safeJsonParse(row.candidates_json, []),

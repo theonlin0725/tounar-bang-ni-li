@@ -33,6 +33,12 @@ function migrate(instance) {
   addColumn('applications', 'stage_received_at', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
+  addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");
+  addColumn('application_field_sources', 'source_detail', 'TEXT');
+  if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_confidence'").get()) {
+    instance.exec("UPDATE application_field_sources SET confidence = 'high' WHERE source_method = 'manual'");
+    instance.prepare("INSERT INTO meta(key,value) VALUES ('migration_phase2_confidence','1')").run();
+  }
   if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_followup'").get()) {
     instance.exec(`UPDATE notification_outbox SET source_received_at = COALESCE(
       (SELECT m.received_at FROM events e JOIN mail_messages m ON e.owner_id=m.owner_id AND e.connection_id=m.connection_id
@@ -52,9 +58,7 @@ function migrate(instance) {
       LIMIT 1) WHERE status = 'open' AND source_mail_id IS NULL`);
     instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_phase2_mail_link', '1')").run();
   }
-  try {
-    instance.exec('ALTER TABLE notification_preferences ADD COLUMN last_review_digest_at TEXT');
-  } catch { /* 列已存在（schema.sql 新版本已建） */ }
+  addColumn('notification_preferences', 'last_review_digest_at', 'TEXT');
   const done = instance.prepare("SELECT value FROM meta WHERE key = 'migration_d06_daily'").get();
   if (!done) {
     instance.exec("UPDATE notification_preferences SET review_frequency = 'daily' WHERE review_frequency = 'weekly_monday'");
@@ -157,12 +161,15 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
       options.reason || null
     );
   for (const field of changed) {
+    const sourceEvent = eventId ? one('SELECT payload_json FROM events WHERE id = ? AND owner_id = ?', [eventId, ownerId]) : null;
+    const payload = sourceEvent ? JSON.parse(sourceEvent.payload_json || '{}') : {};
+    const confidence = sourceMethod === 'manual' ? 'high' : (options.fieldConfidence?.[field] || payload.field_confidence?.[field] || 'medium');
     getDb().prepare(`INSERT INTO application_field_sources
-      (application_id, owner_id, field, source_method, event_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(application_id, field) DO UPDATE SET source_method=excluded.source_method,
-        event_id=excluded.event_id, updated_at=excluded.updated_at`)
-      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso());
+        event_id=excluded.event_id, updated_at=excluded.updated_at, confidence=excluded.confidence, source_detail=excluded.source_detail`)
+      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso(), confidence, payload.field_sources?.[field] || null);
   }
   bumpRevision();
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);

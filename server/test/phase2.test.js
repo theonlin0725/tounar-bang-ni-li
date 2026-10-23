@@ -1,6 +1,7 @@
 import { after, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tounar-phase2-'));
@@ -144,4 +145,61 @@ it('P0/P3: 旧库增量升级回填原信且保留业务数据，重开不重复
     assert.ok(upgraded.prepare('PRAGMA table_info(notification_preferences)').all().some(x=>x.name==='stage_followup_days'));
     assert.equal(upgraded.prepare("SELECT COUNT(*) AS n FROM meta WHERE key='migration_phase2_followup'").get().n,1);upgraded.close();
   }
+});
+it('P4: 后到高把握插件数据修正旧兜底；人工字段永不被覆盖',()=>{
+  const app=apps.createApplication({ownerId:owner,fields:{company_name:'Jobs',job_title:'旧标题',site_key:'generic',site_job_id:'field-fix-123',job_url:'https://example.com/job/field-fix-123'},sourceMethod:'plugin'});
+  function viewed(title){const e=mailEvent({company_name:'正确企业',job_title:title,site_job_id:'field-fix-123',job_url:app.job_url,visible_dwell_ms:3200,field_confidence:{company_name:'high',job_title:'high'}});db.run("UPDATE events SET source_method='plugin' WHERE id=?",[e.id]);return {...e,source_method:'plugin',site_key:'generic',event_type:'job_viewed',evidence_level:'strong',observed_at:e.occurred_at};}
+  const corrected=apps.processPluginEvent(viewed('正确岗位')).application;
+  assert.equal(corrected.company_name,'正确企业');assert.equal(corrected.job_title,'正确岗位');
+  assert.equal(ledger.applicationDetail(owner,app.id).data.field_confidence.job_title,'high');
+  reviews.correctApplication({ownerId:owner,applicationId:app.id,expectedVersion:corrected.version,changes:{job_title:'用户命名'},reason:'人工补充'});
+  assert.equal(apps.processPluginEvent(viewed('机器新名称')).application.job_title,'用户命名');
+});
+
+it('P4: 修复脚本 dry-run 不写库，需审阅计划才能执行；保留备份与人工字段',()=>{
+  const bad=apps.createApplication({ownerId:owner,fields:{company_name:'jobs',job_title:'招聘官网',job_url:'https://jobs.example.com/job/legacy',jd_summary:'首页 登录 注册 页面导航'},sourceMethod:'plugin'});
+  const manual=apps.createApplication({ownerId:owner,fields:{company_name:'jobs',job_title:'招聘运营经理',job_url:'https://jobs.example.com/job/manual'},sourceMethod:'manual'});
+  const script=new URL('../scripts/repair-captured-fields.js',import.meta.url).pathname, file=path.join(dir,'tounar.sqlite'), planFile=path.join(dir,'repair-plan.json');
+  const before=db.dataRevision();
+  execFileSync(process.execPath,[script,'--db',file,'--out',planFile]);
+  const planned=JSON.parse(fs.readFileSync(planFile));assert.ok(planned.items.some(x=>x.application_id===bad.id));assert.ok(!planned.items.some(x=>x.application_id===manual.id));assert.equal(db.dataRevision(),before);
+  const result=JSON.parse(execFileSync(process.execPath,[script,'--db',file,'--apply','--confirm','--plan',planFile],{encoding:'utf8'}));
+  assert.ok(fs.existsSync(result.backup));assert.equal(db.getApplication(owner,bad.id).company_name,'');assert.equal(db.getApplication(owner,manual.id).job_title,manual.job_title);
+  assert.throws(()=>execFileSync(process.execPath,[script,'--db',file,'--apply','--confirm','--plan',planFile],{stdio:'pipe'}));
+});
+
+it('P4: URL保留SPA岗位路由，同时去掉认证与追踪信息',async()=>{
+  const {canonicalJobUrl}=await import('../src/util.js');
+  assert.equal(canonicalJobUrl('https://user:pass@example.com/?token=x#/job/12345?utm_source=mail&auth=secret'),'https://example.com/#/job/12345');
+  assert.notEqual(canonicalJobUrl('https://example.com/#/job/12345'),canonicalJobUrl('https://example.com/#/job/12346'));
+});
+it('P3: 笔试推进面试后旧回看作废，较晚预约重新锚定',()=>{
+  const own='phase3-stage';const app=apps.createApplication({ownerId:own,fields:{company_name:'推进企业',job_title:'阶段岗',site_key:'test',site_application_id:'advance-id',applied_at:'2026-10-01T00:00:00Z',job_url:'https://example.com/job/advance'},sourceMethod:'manual',status:'applied'});
+  const assessment=mailEvent({site_key:'test',site_application_id:'advance-id',mapped_status:'assessment',confidence:1,source_received_at:'2026-10-20T03:00:00Z'},own);
+  apps.processMailEvent(assessment);
+  const interview=mailEvent({site_key:'test',site_application_id:'advance-id',mapped_status:'interview',confidence:1,source_received_at:'2026-10-22T03:00:00Z',interview_scheduled_at:'2026-10-25T06:00:00Z'},own);
+  const result=apps.processMailEvent(interview).application;
+  assert.equal(result.stage_received_at,'2026-10-22T03:00:00Z');assert.equal(result.stage_anchor_at,'2026-10-25T06:00:00.000Z');
+  assert.equal(stageFollowupState(result,7,new Date('2026-10-27T00:00:00Z')).due,false);
+  assert.equal(stageFollowupState(result,7,new Date('2026-11-01T00:00:00Z')).due,true);
+});
+it('P1/P2: 无候选邮件可预填新建，投递日期明确标记为推断上界',()=>{
+  const mail=db.one('SELECT id FROM mail_messages WHERE owner_id=?',[owner]);
+  const e=mailEvent({company_name:'邮件新增企业',job_title:'新岗位',mapped_status:'assessment',confidence:0.4,source_mail_id:mail.id});
+  const r=apps.processMailEvent(e).review;
+  const result=reviews.resolveReview({ownerId:owner,reviewId:r.id,expectedVersion:r.version,action:'create'});
+  assert.equal(result.application.company_name,'邮件新增企业');assert.equal(result.application.status,'assessment');assert.equal(result.application.applied_at_precision,'inferred_before');
+});
+it('P2: 错误的阈值配置回退安全默认值，不让NaN绕过判定',()=>{
+  const result=execFileSync(process.execPath,['--input-type=module','-e',"const {config}=await import('./server/src/config.js');console.log(JSON.stringify([config.autoProgressConfidence,config.autoTerminalConfidence]))"],{cwd:new URL('../../',import.meta.url),env:{...process.env,AUTO_PROGRESS_CONFIDENCE:'invalid',AUTO_TERMINAL_CONFIDENCE:'2'},encoding:'utf8'});
+  assert.deepEqual(JSON.parse(result),[0.8,0.9]);
+});
+it('P4: 同URL无独立岗位ID时不把不同岗位静默合并，允许人工确认新建',()=>{
+  const app=apps.createApplication({ownerId:owner,fields:{company_name:'抽屉企业',job_title:'旧岗位',job_url:'https://example.com/drawer'},sourceMethod:'plugin'});
+  const e=mailEvent({company_name:'抽屉企业',job_title:'新岗位',job_url:app.job_url,visible_dwell_ms:3100,field_confidence:{job_title:'medium'}});
+  db.run("UPDATE events SET source_method='plugin' WHERE id=?",[e.id]);
+  const result=apps.processPluginEvent({...e,source_method:'plugin',event_type:'job_viewed',evidence_level:'strong',observed_at:e.occurred_at});
+  assert.equal(result.review.reason_code,'PAGE_CONTENT_IDENTITY_UNCERTAIN');assert.equal(db.getApplication(owner,app.id).job_title,'旧岗位');
+  const created=reviews.resolveReview({ownerId:owner,reviewId:result.review.id,expectedVersion:result.review.version,action:'create'});
+  assert.notEqual(created.application.id,app.id);assert.equal(created.application.job_title,'新岗位');
 });

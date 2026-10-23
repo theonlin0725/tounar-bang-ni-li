@@ -135,7 +135,7 @@ export function reviewDigestState(ownerId, now = new Date()) {
   // 日期标注用原始邮件的接收时间（mail_messages.received_at），不是线索入库时间；
   // 非邮件来源的线索退回用 created_at。
   const open = all(`SELECT r.*, m.received_at AS mail_received_at
-    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id
+    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
     WHERE r.owner_id = ? AND r.status = 'open' ORDER BY r.created_at ASC LIMIT 20`,
     [ownerId]);
   const total = one(`SELECT COUNT(*) AS c FROM review_items WHERE owner_id = ? AND status = 'open'`, [ownerId])?.c || 0;

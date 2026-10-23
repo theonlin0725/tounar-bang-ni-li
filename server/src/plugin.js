@@ -194,6 +194,18 @@ function normalizeEvent(raw, batchSchemaVersion) {
   const payload = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload) ? raw.payload : {};
   if (Buffer.byteLength(JSON.stringify(payload)) > 200_000) throw new AppError(400, 'VALIDATION_ERROR', 'payload 过大');
   const normalizedPayload = { ...payload };
+  if (payload.field_confidence != null) {
+    if (typeof payload.field_confidence !== 'object' || Array.isArray(payload.field_confidence)) throw new AppError(400, 'VALIDATION_ERROR', '字段把握度格式错误');
+    normalizedPayload.field_confidence = {};
+    normalizedPayload.field_sources = {};
+    for (const field of ['company_name','job_title','location','recruitment_batch','jd_summary','site_job_id','job_url']) {
+      const value = payload.field_confidence[field];
+      if (value != null && !['low','medium','high'].includes(value)) throw new AppError(400, 'VALIDATION_ERROR', '未知字段把握度');
+      if (value) normalizedPayload.field_confidence[field] = value;
+      if (value === 'low') normalizedPayload[field] = null;
+      if (typeof payload.field_sources?.[field] === 'string') normalizedPayload.field_sources[field] = normalizeWhitespace(payload.field_sources[field], 60);
+    }
+  }
   for (const key of ['company_name', 'job_title', 'recruitment_batch', 'location']) {
     if (normalizedPayload[key] != null) normalizedPayload[key] = normalizeWhitespace(normalizedPayload[key], 200);
   }

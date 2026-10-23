@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS application_field_sources (
   field TEXT NOT NULL,
   source_method TEXT NOT NULL,
   event_id TEXT,
+  confidence TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high')),
+  source_detail TEXT,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (application_id, field)
 );

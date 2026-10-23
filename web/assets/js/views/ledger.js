@@ -180,12 +180,16 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   function renderRow(item) {
     const tr = h('tr', { class: `tn-row-click${highlighted.has(item.id) ? ' tn-row-updated' : ''}`, 'data-test': 'ledger-row', 'data-app-id': item.id });
     tr.addEventListener('click', () => openDetailFor(item.id));
-    const subParts = [item.recruitment_batch, item.location].filter(Boolean);
+    const subParts = [['recruitment_batch','批次'],['location','城市']].map(([field,label]) => item[field] && item.field_confidence?.[field] !== 'low' ? item[field] : `${label}待补充`);
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
+    const fieldNode = (field, className = '') => {
+      const missing = !item[field] || item.field_confidence?.[field] === 'low';
+      return h('div', { class: className + (missing ? ' tn-muted' : ''), text: missing ? '待补充' : item[field], title: missing ? '插件没把握，点开可补' : item[field] });
+    };
     tr.append(
-      h('td', {}, h('div', { class: 'tn-company', title: item.company_name, text: item.company_name || '—' })),
-      h('td', {}, h('div', { text: item.job_title || '—' }), subParts.length ? h('div', { class: 'tn-job-sub', text: subParts.join(' · ') }) : null),
-      h('td', {}, h('div', { class: 'tn-jd clip', title: item.jd_summary || '', text: item.jd_summary || '摘要待补充' })),
+      h('td', {}, fieldNode('company_name', 'tn-company')),
+      h('td', {}, fieldNode('job_title'), subParts.length ? h('div', { class: 'tn-job-sub', text: subParts.join(' · ') }) : null),
+      h('td', {}, fieldNode('jd_summary', 'tn-jd clip')),
       h('td', { text: item.channel || '未知' }),
       h('td', {},
         statusChip(item.status),

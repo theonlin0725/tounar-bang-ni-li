@@ -236,6 +236,9 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
       throw new AppError(400, 'VALIDATION_ERROR', 'action 无效');
     }
     const suggested = safeJsonParse(review.suggested_changes_json, {});
+    if (changes.applied_at_precision === 'inferred_before' && !config.d12AllowMailInferredAppliedAt) {
+      throw new AppError(422, 'D12_NOT_FROZEN', '当前关闭了邮件推断，请填写实际投递时间');
+    }
     const sourceMail = review.source_mail_id ? one('SELECT received_at FROM mail_messages WHERE id = ? AND owner_id = ?', [review.source_mail_id, ownerId]) : null;
     const inferredAt = sourceMail?.received_at || (review.source_mail_id ? one('SELECT occurred_at FROM events WHERE id = ? AND owner_id = ?', [review.source_event_id, ownerId])?.occurred_at : null);
     const resolution = (data, before = null, after = null) => JSON.stringify({ ...data,
@@ -253,7 +256,9 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
       const fields = { ...suggested, ...(changes || {}) };
       if (!fields.company_name || !fields.job_title) throw new AppError(400, 'VALIDATION_ERROR', '创建记录需要公司和岗位');
       const candidates = findCandidates(ownerId, { ...fields, canonical_job_url: canonicalJobUrl(fields.job_url) });
-      if (candidates.length) {
+      const distinctJobOnSharedPage = review.reason_code === 'PAGE_CONTENT_IDENTITY_UNCERTAIN'
+        && candidates.every(c => c.application.job_title !== fields.job_title);
+      if (candidates.length && !distinctJobOnSharedPage) {
         throw new AppError(409, 'VERSION_CONFLICT', '创建时发现新的候选记录，不能强行新增', {
           details: { candidates: candidates.map((c) => ({ application_id: c.application.id, reason: c.reason })) }
         });

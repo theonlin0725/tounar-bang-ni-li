@@ -14,6 +14,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { resolveChromiumExecutable } from '../tests/e2e/browser.mjs';
+import { sanitizedSnapshot } from './site-snapshot.mjs';
 
 const url = process.argv[2];
 if (!url) {
@@ -25,7 +27,9 @@ const ROOT = process.cwd();
 const adapters = fs.readFileSync(path.join(ROOT, 'extension/content/adapters.js'), 'utf8');
 const tracker = fs.readFileSync(path.join(ROOT, 'extension/content/tracker.js'), 'utf8');
 
-const b = await chromium.launch({ channel: 'chrome' });
+const resolved = await resolveChromiumExecutable();
+if (!resolved) throw new Error('Install Playwright Chromium first');
+const b = await chromium.launch({ executablePath: resolved.path, headless: true });
 const p = await b.newPage({
   viewport: { width: 1440, height: 1000 },
   userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -64,4 +68,11 @@ console.log(`\n自动采集命中 ${filled.length}/4 项核心字段：${filled.
 const host = new URL(p.url()).hostname;
 fs.mkdirSync('.tmp', { recursive: true });
 await p.screenshot({ path: path.join('.tmp', `tryrun-${host}.png`), fullPage: false });
+const snapshotIndex = process.argv.indexOf('--snapshot');
+if (snapshotIndex >= 0 && process.argv[snapshotIndex + 1] && /^https?:/.test(p.url())) {
+  const destination = process.argv[snapshotIndex + 1];
+  fs.mkdirSync(path.dirname(destination), {recursive:true});
+  fs.writeFileSync(destination, await sanitizedSnapshot(p));
+}
+if (!/^https?:/.test(p.url())) process.exitCode = 1;
 await b.close();

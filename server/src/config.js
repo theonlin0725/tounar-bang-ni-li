@@ -17,6 +17,11 @@ function boolEnv(name, fallback = false) {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env[name]).toLowerCase());
 }
 
+function confidenceEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return process.env[name]?.trim() && Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
+}
+
 function loadOrCreateSecret(fileName) {
   const file = path.join(DATA_DIR, fileName);
   if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
@@ -75,8 +80,8 @@ export const config = {
   d12AllowMailInferredAppliedAt: boolEnv('D12_ALLOW_MAIL_INFERRED_APPLIED_AT', true),
   // D08 已冻结（2026-10-22）：高置信度（默认 ≥0.9）自动判定终态；低置信度进待确认
   autoTerminalFromMail: boolEnv('AUTO_TERMINAL_FROM_MAIL', true),
-  autoTerminalConfidence: Number.parseFloat(process.env.AUTO_TERMINAL_CONFIDENCE || '0.9'),
-  autoProgressConfidence: Number.parseFloat(process.env.AUTO_PROGRESS_CONFIDENCE || '0.8'),
+  autoTerminalConfidence: confidenceEnv('AUTO_TERMINAL_CONFIDENCE', 0.9),
+  autoProgressConfidence: confidenceEnv('AUTO_PROGRESS_CONFIDENCE', 0.8),
   // D08 已冻结：待确认队列每 15 天随提醒邮件汇总一次
   reviewDigestDays: intEnv('REVIEW_DIGEST_DAYS', 15),
   aIncludeNewViews: boolEnv('A_INCLUDE_NEW_VIEWS', false),

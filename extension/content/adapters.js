@@ -15,7 +15,7 @@
   const GENERIC = {
     key: 'generic',
     label: '通用识别（任意已授权站点）',
-    version: '1.1.0-universal',
+    version: '1.2.0-scored',
     channel: '网页',
     hosts: [],
     // 覆盖面优先的详情页 URL 线索（只放「指向详情页」的形态；landing 页泛词如 /campus、/career
@@ -35,7 +35,7 @@
     },
     statusPage: null,
     site_verified: false,
-    notes: '通用识别链：结构化数据(JSON-LD/data-tounar) → URL 线索 + 投递按钮信号 → og:title/h1/标题 → meta/og 公司名 → 主机映射。不猜测任意页面正文。'
+    notes: '多候选评分：显式钩子/JSON-LD/已验证适配器/岗位语义；低把握留空，不用域名猜公司或最长正文猜JD。真实页面覆盖仍需逐站验收。'
   };
 
   // 已知招聘官网域名 → 公司名（通用识别的公司字段兜底；聚合平台返回 null，不猜）
@@ -65,6 +65,7 @@
   const ADAPTERS = [
     {
       key: 'tencent',
+      company_name: '腾讯',
       priority: 1,
       label: '腾讯招聘',
       version: '0.1.0-draft',
@@ -91,6 +92,7 @@
     },
     {
       key: 'bytedance',
+      company_name: '字节跳动',
       priority: 1,
       label: '字节跳动招聘',
       version: '1.0.0-verified-campus',
@@ -140,6 +142,7 @@
     },
     {
       key: 'alibaba',
+      company_name: '阿里巴巴',
       priority: 1,
       label: '阿里巴巴校园招聘',
       version: '0.1.0-draft',
@@ -166,6 +169,7 @@
     },
     {
       key: 'meituan',
+      company_name: '美团',
       priority: 1,
       label: '美团招聘',
       version: '0.1.0-draft',
@@ -192,6 +196,7 @@
     },
     {
       key: 'jd',
+      company_name: '京东',
       priority: 1,
       label: '京东招聘',
       version: '0.1.0-draft',
@@ -218,6 +223,7 @@
     },
     {
       key: 'xiaomi',
+      company_name: '小米',
       priority: 1,
       label: '小米招聘',
       version: '0.1.0-draft',
@@ -244,6 +250,7 @@
     },
     {
       key: 'baidu',
+      company_name: '百度',
       priority: 1,
       label: '百度招聘',
       version: '0.1.0-draft',
@@ -270,6 +277,7 @@
     },
     {
       key: 'netease',
+      company_name: '网易',
       priority: 1,
       label: '网易招聘',
       version: '0.1.0-draft',
