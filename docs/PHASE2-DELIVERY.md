@@ -1,6 +1,6 @@
 # 二期交付报告（持续更新）
 
-> **当前结论**：P0–P3 代码及隔离验证完成；P4 通用采集与七家优先官网的真实校准完成，整体真实验收仍为 22/26 页。当前测试为后端 81/81、插件 63/63、网页 51/51。全部改动仅在本地，未 push 或发布生产。
+> **当前结论**：P0–P3 代码及隔离验证完成；P4 通用采集与七家优先官网的真实校准完成，整体真实验收仍为 22/26 页。当前测试为后端 81/81、插件 63/63、网页 51/51。用户已授权先推送独立验收分支 `phase2-acceptance-20261023`；main 未合并，生产未部署。
 
 基线：main `88b7334`。任务依据：用户上传的《帮你理·第二轮优化任务书》。未发布线上，也未读取或修改用户 Mac 原始真实数据。按用户最新要求，验收一律 MAIL_MODE=outbox，禁止真发邮件。数据库迁移前已用 SQLite backup API 备份本地数据库到 `.tmp/backups/pre-phase2-1792719162067.sqlite`（未提交）。用户已澄清：唯一真实库在其 Mac，本云环境并无原库副本。实际发布前须备份该真实库，并确认目标部署环境与持久化数据位置。
 
@@ -108,4 +108,4 @@
 | 真实 SMTP / IMAP / 用户现有复核项 | SMTP 按用户要求禁止发送；去凭据副本不支持 IMAP；20 条复核项待真实副本验收 |
 | 本地数据库备份、旧库迁移幂等、修复脚本只读与锁内验证 | 已通过隔离测试；未执行真实数据修复 |
 
-本地验收步骤见 [PHASE2-ACCEPTANCE.md](PHASE2-ACCEPTANCE.md)。字段准确率与真实取证状态见 [SITE-ADAPTER-EVIDENCE.md](SITE-ADAPTER-EVIDENCE.md)。README 已追加配置默认值。P0–P3 已各自提交（03b1824、6d1164f、92f90c2、f3ec66d），P4 通用部分提交为 6f1fc56；真实校准补充改动已完成三套全绿、证据脱敏与文档审查，并单独收录本地补充提交（准确提交号见 git log）。所有提交均保留在本地，未推送或发布线上。最新交接状态见 [CURRENT-WORK-STATUS.md](CURRENT-WORK-STATUS.md)。
+本地验收步骤见 [PHASE2-ACCEPTANCE.md](PHASE2-ACCEPTANCE.md)。字段准确率与真实取证状态见 [SITE-ADAPTER-EVIDENCE.md](SITE-ADAPTER-EVIDENCE.md)。README 已追加配置默认值。P0–P3 已各自提交（03b1824、6d1164f、92f90c2、f3ec66d），P4 通用部分提交为 6f1fc56；真实校准补充改动已完成三套全绿、证据脱敏与文档审查，并单独收录本地补充提交（准确提交号见 git log）。七个功能提交已推送至 [GitHub 验收分支](https://github.com/theonlin0725/tounar-bang-ni-li/tree/phase2-acceptance-20261023)，功能代码固定为 `7e00f82`；随后仅更新推送状态文档。main 保持 `88b7334`，没有生产部署。最新交接状态见 [CURRENT-WORK-STATUS.md](CURRENT-WORK-STATUS.md)。

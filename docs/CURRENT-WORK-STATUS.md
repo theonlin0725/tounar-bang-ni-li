@@ -1,8 +1,8 @@
 # 当前工作状态与交接说明
 
-更新时间：2026-10-23（UTC）。仓库 `theonlin0725/tounar-bang-ni-li`，工作目录 `/workspace/tounar-bang-ni-li`，分支 `work`，main 基线 `88b733410658947417b79b28f2d45f008ca110e9`。
+更新时间：2026-10-23（UTC）。仓库 `theonlin0725/tounar-bang-ni-li`，工作目录 `/workspace/tounar-bang-ni-li`，分支 `phase2-acceptance-20261023`，main 基线 `88b733410658947417b79b28f2d45f008ca110e9`。
 
-**代码补齐及隔离测试已完成，真实验收仍有缺口；没有 push 或生产部署。** 用户要求解决剩余问题后再申请发布，当前不应宣称“全部验证无误”。完整逐项结果见 [二期交付报告](PHASE2-DELIVERY.md)。
+**代码补齐及隔离测试已完成，真实验收仍有缺口；代码已推送独立验收分支，未合并 main、未部署生产。** 用户随后明确授权先推 GitHub 分支用于验收；生产发布仍须另行申请，不能宣称“全部验证无误”。完整逐项结果见 [二期交付报告](PHASE2-DELIVERY.md)。
 
 ## 已完成
 
@@ -64,7 +64,7 @@
 3. **百度/BOSS 四页**：需在可正常访问的环境完成普通公开详情取证；现有云端两种 Chromium 模式均未成功。不能把空壳、安全页或合成 DOM 算作通过。
 4. **邮件边界**：用户硬要求 `MAIL_MODE=outbox`；测试同时设 `SMTP_URL=`、`ENABLE_SCHEDULER=false`、`CLOUD_LLM_ENABLED=false`。禁止真发邮件；去凭据副本不支持真实 IMAP，历史 QQ 成功记录不代表本轮通过。
 5. **真实旧字段修复**：未执行 apply。先 dry-run、人工审阅具体计划并备份；没有修改用户原库。
-6. **发布**：完成上述验收后，核对唯一真实库备份、部署目标及持久化方式，再按 [发布与回滚方案](PHASE2-RELEASE-PLAN.md) 申请 push/部署授权。Git push 不等于应用部署。
+6. **发布**：完成上述验收后，核对唯一真实库备份、部署目标及持久化方式，再按 [发布与回滚方案](PHASE2-RELEASE-PLAN.md) 申请合并 main / 生产部署授权。Git push 不等于应用部署。
 
 额外风险：邮件置信度是规则分而非实测概率；同 URL/同标题且无稳定 ID 的 SPA 仍可能需人工归属；全部官网登录及投递成功状态尚未真实验收；阿里 CSS 模块类名可能随站点部署变化。
 
@@ -75,6 +75,13 @@
 - 用户已授权本轮开发网络补齐，替代此前“暂不应用”。原 41 域名加 fc.alibaba.com、wappass.baidu.com、talent-holding.alibaba.com、careers.airbnb.com，共 45 项草稿已保存；四个所需域名已实际访问。工具只保存草稿并返回 requires_publish，不能据此宣称环境快照已发布。
 - 有界面诊断使用官方签名 Debian 包提供的用户目录 Xvfb，没有修改站点检测脚本。
 - 迁移备份 `.tmp/backups/pre-phase2-1792719162067.sqlite` 属于开发空库，不是用户 Mac 原库备份。
-- 本地未推送提交不能只依赖环境快照恢复；交付另存 `/workspace/phase2-delivery.bundle`，可用 `git bundle verify` 检查。只包含代码提交，不含 data/.env/密钥。
+- 代码已同步 GitHub 独立验收分支；另存 `/workspace/phase2-delivery.bundle`，可用 `git bundle verify` 检查。只包含代码提交，不含 data/.env/密钥。
 
 继续时先读本文和二期报告，核对 `git status` 与 `git log`，不要重做已经通过的检查；只有新改动或未解释失败才重跑相关验收。
+
+## GitHub 验收分支（用户授权后）
+
+- 分支：[phase2-acceptance-20261023](https://github.com/theonlin0725/tounar-bang-ni-li/tree/phase2-acceptance-20261023)；功能代码提交 `7e00f827b621e3c62785002a5340a6135ac4f885`。
+- 原 main 保持 `88b733410658947417b79b28f2d45f008ca110e9`；七个功能阶段提交均保留，未强推或改写历史。
+- 本次后续提交只更新推送状态文档；功能代码和已通过的三套测试保持一致。
+- 验收时 checkout 独立分支，并使用 REAL-DATA-ACCEPTANCE.md 的隔离副本/outbox 命令；不要直接复用原生产 data 启动测试。
