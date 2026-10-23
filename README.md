@@ -54,9 +54,9 @@ npm start          # 或 npm run dev（改代码自动重启）
 | `npm run otp:latest` | 打印 outbox 里最新验证码 |
 | `npm run remind` | 手动触发一次提醒批次（不等 08:00） |
 | `npm run mail:sync` | 手动触发一次邮箱同步 |
-| `npm test` | 后端测试（58 项） |
-| `npm run test:e2e` | 插件端到端（17 项，需 Chrome for Testing） |
-| `npm run test:web` | 网页端到端（40 项） |
+| `npm test` | 后端及工具测试（81 项） |
+| `npm run test:e2e` | 插件端到端（63 项，使用官方 Playwright Chromium） |
+| `npm run test:web` | 网页端到端（51 项） |
 
 > 本机若装了 WorkBuddy 的安全删除守卫，测试可能因为清理临时目录被拦截，加前缀即可：
 > `env -u CODEBUDDY_SAFE_DELETE_BULK_STATE_DIR -u CODEBUDDY_SAFE_DELETE_BULK_GUARD npm test`
@@ -117,7 +117,7 @@ npm run plugin:tryrun -- "https://某招聘站/某职位页"
 判定"这家做完了"的标准和已完成的证据都在 `docs/SITE-ADAPTER-EVIDENCE.md`。
 **采不到就如实标 `site_verified: false`，不要改文案假装完成。**
 
-当前进度：优先八家 **6/8**；连同实习僧及白名单外米哈游，共 **8 站 16/26 页**。剩余阿里、百度、BOSS、牛客、拼多多未完成真实验收；小米仅验证旧版招聘库。
+当前进度：优先八家 **7/8**；连同牛客、实习僧及白名单外米哈游、Airbnb，共 **11 站 22/26 页**。剩余百度、BOSS 未完成真实详情验收；小米仅验证旧版招聘库。牛客修复公司/城市字段，阿里新入口已校准；Airbnb 使用通用规则，公司/城市留空。
 
 ## 八、外部依赖历史记录与当前边界
 
@@ -127,7 +127,7 @@ QQ 邮箱与云环境条目记录前一轮 2026-10-22 的结果，不能证明�
 |---|---|---|
 | QQ 邮箱 IMAP 收信 | ✅ | 2026-10-22 真实授权码首扫 71 封成功 |
 | SMTP 真实发信 | ✅ | `smtp.qq.com:465`，需显式 TLS（已在 `mailer.js` 修好） |
-| 二期真实站点 | 🟡 16/26 页，优先官网 6/8 | 见第七节及逐站证据，未达到整体目标 |
+| 二期真实站点 | 🟡 22/26 页，优先官网 7/8 | 见第七节及逐站证据，未达到整体目标 |
 | WorkBuddy 云环境 | ✅ | 2026-10-22 已开通并发布上线，云端免密钥大模型接入邮件解析兜底（D09 第一阶段） |
 
 ## 九、云服务与线上版（2026-10-22 接入）
@@ -151,6 +151,8 @@ ALLOWED_EMAILS=你的邮箱@qq.com
 ## 十、二期优化（本地待验收，未发布线上）
 
 二期代码、验证结果、未验收项和风险见 [二期交付报告](docs/PHASE2-DELIVERY.md)，操作步骤见 [本地验收清单](docs/PHASE2-ACCEPTANCE.md)。真实站点覆盖以 [适配证据](docs/SITE-ADAPTER-EVIDENCE.md) 为准，离线用例不代表真实站点验收。
+
+用户已确认真实数据库只在其 Mac，云工作区没有该副本。本轮验收禁止真发邮件，强制 `MAIL_MODE=outbox`。可用独立工具导出去凭据副本，保留台账/邮件/待确认业务数据且不复制原密钥；详见 [真实数据隔离验收](docs/REAL-DATA-ACCEPTANCE.md)。
 
 | 二期配置 / 决策 | 默认值 | 说明 |
 |---|---|---|

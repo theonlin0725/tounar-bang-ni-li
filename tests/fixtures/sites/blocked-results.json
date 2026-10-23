@@ -1,0 +1,56 @@
+{
+  "checked_at": "2026-10-23T12:11:33.417980+00:00",
+  "mode": "public pages only; no login or verification bypass",
+  "entries": [
+    {
+      "site": "baidu",
+      "url": "https://talent.baidu.com/jobs/list",
+      "checked_at": "2026-10-23T12:08:23.978Z",
+      "status": "blank_navigation",
+      "observed": "Required wappass script is reachable. Both headless and ordinary headed Chromium navigate to about:blank. Public Page bundle registers a detector listener that performs this navigation. No detector modification or bypass attempted.",
+      "script": "https://talent-offical-static-prod.cdn.bcebos.com/hcm-recruitment/talent-offical-static-prod/client/static/js/Page.695b8d85.chunk.js",
+      "failed_resource_hosts": [
+        "dmpstatic.cdn.bcebos.com",
+        "hm.baidu.com"
+      ],
+      "headed_recheck": {
+        "browser": "official Chromium 156, headless:false, local Xvfb",
+        "http_status": 200,
+        "final_url": "about:blank",
+        "body_length": 0
+      }
+    },
+    {
+      "site": "boss",
+      "url": "https://www.zhipin.com/job_detail/04a603d14962268503V_0t6_FlNV.html",
+      "checked_at": "2026-10-23T06:58:00.925Z",
+      "status": "verification_required",
+      "http_status": 200,
+      "final_url": "https://www.zhipin.com/web/passport/zp/security.html",
+      "probe_passed": false,
+      "snapshot_saved": false,
+      "observed": "The homepage exposed two job links; both detail navigations reached the site security page. A fresh probe rejects it with exit code 2 and no snapshot.",
+      "headed_recheck": {
+        "checked_at": "2026-10-23T12:08:34.914Z",
+        "browser": "official Chromium 156, headless:false, local Xvfb",
+        "http_status": 200,
+        "final_url": "https://www.zhipin.com/web/user/",
+        "body_length": 0
+      }
+    },
+    {
+      "site": "pinduoduo",
+      "url": "https://careers.pinduoduo.com/",
+      "status": "optional_alternative_replaced",
+      "observed": "Official entry remained proxy CONNECT 403. The task permits any two outside-whitelist companies; Airbnb is now the second verified company alongside miHoYo. This failed attempt is excluded from the 26-page target."
+    }
+  ],
+  "additional_limits": [
+    {
+      "site": "airbnb",
+      "url": "https://careers.airbnb.com/positions/8231416/",
+      "status": "title_exceeds_prompt_limit",
+      "observed": "61-character title rejected under the task-required 2–60 character limit. Final real tryrun returned no event and exit 2. Not included in the 22 successful snapshots; two other public details satisfy the requested per-site samples."
+    }
+  ]
+}

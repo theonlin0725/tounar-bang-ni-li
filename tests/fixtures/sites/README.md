@@ -1,6 +1,6 @@
 # 真实岗位快照
 
-本轮已取得 8 站 16 个真实岗位快照，均在正常 TLS 下完成 probe / 生产脚本试跑，详见 `live-results.json`。完整 13 站 26 页仍未完成；禁止把错误页或合成页冒充真实岗位。
+本轮已取得 11 站 22 个真实岗位快照，均在正常 TLS 下完成 probe / 生产脚本试跑，详见 `live-results.json`。新增牛客、阿里、Airbnb 各两页；牛客/阿里校准，Airbnb 使用通用规则；快照删除招聘者姓名/在线状态卡片。完整 13 站 26 页仍未完成；失败入口记录在 `blocked-results.json`，禁止把错误页或合成页冒充真实岗位。
 
 公开页面在正常 TLS 校验下成功渲染后，用 `probe:site` / `plugin:tryrun` 的 `--snapshot` 保存到 `<site>/<job>.html`，核查已删除表单、脚本状态、联系方式和个人信息。然后向 `cases.json` 加入条目：
 

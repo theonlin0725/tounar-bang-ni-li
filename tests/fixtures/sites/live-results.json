@@ -762,5 +762,285 @@
     "blocked_resource_hosts": [
       "wl.jd.com"
     ]
+  },
+  {
+    "site": "nowcoder",
+    "url": "https://www.nowcoder.com/jobs/detail/453952",
+    "checked_at": "2026-10-23T07:11:12.605Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T07:10:59.435Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "nowcoder",
+      "adapter_version": "1.0.0-verified-jobs-detail+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "拼多多集团-PDD",
+        "job_title": "服务端开发工程师",
+        "site_job_id": "453952",
+        "job_url": "https://www.nowcoder.com/jobs/detail/453952",
+        "jd_summary": "1、负责业务和平台的架构设计和研发工作，解决各类有挑战的技术问题，为产品和业务的发展提供强有力的支撑； 2、依照软件开发流程，根据产品和项目计划，完成所负责模块",
+        "location": "上海",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "company_card",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "牛客"
+      }
+    },
+    "blocked_resource_hosts": [
+      "hm.baidu.com",
+      "gw-c.nowcoder.com",
+      "arms-retcode.aliyuncs.com"
+    ]
+  },
+  {
+    "site": "nowcoder",
+    "url": "https://www.nowcoder.com/jobs/detail/457913",
+    "checked_at": "2026-10-23T07:11:14.270Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T07:11:00.035Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "nowcoder",
+      "adapter_version": "1.0.0-verified-jobs-detail+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "华为南京研究所",
+        "job_title": "【27届校招】通用软件工程师 北京南京上海",
+        "site_job_id": "457913",
+        "job_url": "https://www.nowcoder.com/jobs/detail/457913",
+        "jd_summary": "1、负责产品／平台的软件需求分析、架构设计、代码开发、单元测试、集成测试、静态检查、本地构成、测试环境搭建、问题定位、资料开发等工作；2、负责相关系统／模块的代",
+        "location": "北京",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "company_card",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "牛客"
+      }
+    },
+    "blocked_resource_hosts": [
+      "hm.baidu.com",
+      "gw-c.nowcoder.com",
+      "arms-retcode.aliyuncs.com"
+    ]
+  },
+  {
+    "site": "alibaba",
+    "url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017",
+    "checked_at": "2026-10-23T12:09:54.505Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T12:09:39.832Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "alibaba",
+      "adapter_version": "1.0.0-verified-holding-detail+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "阿里巴巴",
+        "job_title": "ATH-AI创新事业部-Qoder 产品经理-AI Coding 方向",
+        "site_job_id": "100004023017",
+        "job_url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017",
+        "jd_summary": "1、商业化方向：负责 AI Coding 及智能体产品的商业化体系建设，包括产品版本定义、商品设计、定价策略、售卖链路及商业化运营；结合模型调用成本与用户使用场",
+        "location": "杭州",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "res2.wx.qq.com",
+      "xux-web-config.oss-accelerate.aliyuncs.com",
+      "d.alicdn.com",
+      "aes.cn-wulanchabu.log.aliyuncs.com"
+    ]
+  },
+  {
+    "site": "alibaba",
+    "url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100025060002",
+    "checked_at": "2026-10-23T12:09:53.291Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T12:09:39.547Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "alibaba",
+      "adapter_version": "1.0.0-verified-holding-detail+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "阿里巴巴",
+        "job_title": "晓天衡宇-大模型标注评测工程师-金融/法律/医疗",
+        "site_job_id": "100025060002",
+        "job_url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100025060002",
+        "jd_summary": "1. 负责金融 / 法律 / 医疗方向 AI 训练数据（SFT / RL 阶段）的标注管理与质检工作；与算法及产品团队协作，理解 RM 训练和 rollout ",
+        "location": "杭州",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "res2.wx.qq.com",
+      "xux-web-config.oss-accelerate.aliyuncs.com",
+      "d.alicdn.com",
+      "aes.cn-wulanchabu.log.aliyuncs.com"
+    ]
+  },
+  {
+    "site": "airbnb",
+    "url": "https://careers.airbnb.com/positions/7789554/",
+    "checked_at": "2026-10-23T12:10:42.917Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T12:10:30.703Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "generic",
+      "adapter_version": "1.2.0-scored+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "job_title": "Associate Legal Counsel, Japan",
+        "site_job_id": "7789554",
+        "job_url": "https://careers.airbnb.com/positions/7789554/",
+        "jd_summary": "Act as an effective and trusted partner to the fast-paced and high-performing Ai",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "low",
+          "job_title": "medium",
+          "site_job_id": "medium",
+          "jd_summary": "medium",
+          "location": "low",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "unavailable",
+          "job_title": "heading_near_apply",
+          "site_job_id": "url_identifier",
+          "jd_summary": "jd_heading_section",
+          "location": "unavailable",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "网页"
+      }
+    },
+    "blocked_resource_hosts": [
+      "cmp.osano.com",
+      "boards.greenhouse.io",
+      "www.googletagmanager.com"
+    ]
+  },
+  {
+    "site": "airbnb",
+    "url": "https://careers.airbnb.com/positions/7995153/",
+    "checked_at": "2026-10-23T12:10:43.567Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T12:10:31.202Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "generic",
+      "adapter_version": "1.2.0-scored+capture-3",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "job_title": "Business Development Manager",
+        "site_job_id": "7995153",
+        "job_url": "https://careers.airbnb.com/positions/7995153/",
+        "jd_summary": "Prospect and onboard new, high quality professional hosts in your assigned terri",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "low",
+          "job_title": "medium",
+          "site_job_id": "medium",
+          "jd_summary": "medium",
+          "location": "low",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "unavailable",
+          "job_title": "heading_near_apply",
+          "site_job_id": "url_identifier",
+          "jd_summary": "jd_heading_section",
+          "location": "unavailable",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "网页"
+      }
+    },
+    "blocked_resource_hosts": [
+      "cmp.osano.com",
+      "boards.greenhouse.io",
+      "www.googletagmanager.com"
+    ]
   }
 ]

@@ -194,7 +194,7 @@
   }
 
   // 投递按钮信号：页面上存在「投递/申请/Apply」类按钮，是岗位详情页的强信号
-  const APPLY_SIGNAL = /^(投递|投个简历|立即投递|投递简历|申请|立即申请|申请职位|申请岗位|我要申请|网申|报名|立即报名|apply|apply now|apply for|sign up)/i;
+  const APPLY_SIGNAL = /^(投递|投个简历|立即投递|投递简历|申请|立即申请|申请职位|申请岗位|我要申请|网申|报名|立即报名|apply|apply now|apply for|sign up|application$)/i;
   function findApplySignal() {
     let nodes;
     try { nodes = document.querySelectorAll(['a', 'button', '[role="button"]', 'input[type="submit"]', 'input[type="button"]', ...(adapter.applySelectors || [])].join(',')); } catch { return false; }
@@ -203,6 +203,9 @@
       const el = nodes[i];
       if (!visible(el)) continue;
       const text = ((el.tagName === 'INPUT' ? el.value : textOf(el)) || '').replace(/\s+/g, '');
+      // An Application tab can open the form on an actual job detail page.
+      // The same word on account/software dashboards is not an apply signal.
+      if (/^application$/i.test(text) && !(adapter.jobUrlPatterns || []).some(pattern => pattern.test(location.href))) continue;
       if (text && text.length <= 15 && APPLY_SIGNAL.test(text.trim())) return true;
       const hint = `${el.id || ''} ${el.className || ''}`;
       if (/apply|deliver|toudi/i.test(hint) && text && text.length <= 15) return true;
@@ -296,9 +299,9 @@
       // A broad draft selector cannot outrank a scoped heading or structured posting.
       if(validTitle(textOf(node)))add('job_title',textOf(node),verifiedAdapter?88:65,'site_selector');
     }
-    if(aggregator){for(const n of nodesFor(adapter.selectors.company))if(!n.querySelector('h1,h2,form')&&textOf(n).length<=60)add('company_name',textOf(n),85,'company_card');}
+    if(aggregator){for(const n of nodesFor(adapter.selectors.company))if(!n.querySelector('h1,h2,form')&&textOf(n).length<=60)add('company_name',textOf(n),verifiedAdapter?92:85,'company_card');}
     else for(const n of nodesFor(adapter.selectors.company))add('company_name',textOf(n),verifiedAdapter?89:67,'site_selector');
-    const jdHeading=/^(职位描述|岗位描述|岗位职责|工作职责|任职要求|岗位要求|职位要求|工作内容|Job Description|Responsibilities|Requirements)\s*[:：]?$/i;
+    const jdHeading=/^(职位描述|岗位描述|岗位职责|工作职责|任职要求|岗位要求|职位要求|工作内容|Job Description|Responsibilities|Requirements|What you['’]ll do|What you will do|About the role|Your responsibilities|A typical day|Your qualifications|Your expertise)\s*[:：]?$/i;
     for(const n of nodesFor(['h2','h3','h4','strong','dt','[class*="title"]'])){
       if(!jdHeading.test(textOf(n)))continue;
       const chunks=[];let section=n,next=n.nextElementSibling;
@@ -378,7 +381,7 @@
       event_type: eventType,
       source_method: 'plugin',
       site_key: adapter.key,
-      adapter_version: adapter.version+'+capture-2',
+      adapter_version: adapter.version+'+capture-3',
       schema_version: 'C1',
       occurred_at: occurredAt || nowIso(),
       observed_at: nowIso(),

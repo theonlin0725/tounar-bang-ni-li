@@ -133,6 +133,8 @@ try {
   // ---------- 3. 配对（popup 真实操作 + 网页会话 API 批准） ----------
   let popup = await openPopup(context, extId);
   await popup.fill('#server-url', server.base);
+  await popup.evaluate(() => refresh());
+  check('E2E-01 地址编辑期间后台刷新不覆盖输入', await popup.inputValue('#server-url') === server.base);
   await popup.click('#save-server');
   await popup.click('#start-pairing');
   const pairingCode = await waitFor(async () => {

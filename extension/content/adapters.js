@@ -3,7 +3,7 @@
  *
  * D02 已冻结（2026-10-22）：优先支持白名单 =
  *   腾讯 / 字节跳动 / 阿里巴巴 / 美团 / 京东 / 小米 / 百度 / 网易（priority: 1）。
- * BOSS直聘/牛客为扩展期草案（priority: 2）；实习僧的公开实习详情已验证，其他页面仍未验收。
+ * BOSS直聘为扩展期草案（priority: 2）；牛客/实习僧的公开详情已验证，其他页面仍未验收。
  * 聊天/沟通页面一律不采集；只认 Web 岗位详情页 + 确证的成功提交。
  *
  * Honest scope: selector rules below are best-effort drafts unless site_verified
@@ -42,7 +42,7 @@
   const HOST_COMPANY = {
     'join.qq.com': '腾讯', 'careers.tencent.com': '腾讯', 'hr.tencent.com': '腾讯',
     'jobs.bytedance.com': '字节跳动', 'job.bytedance.com': '字节跳动',
-    'talent.alibaba.com': '阿里巴巴', 'campus.alibaba.com': '阿里巴巴',
+    'talent-holding.alibaba.com': '阿里巴巴', 'talent.alibaba.com': '阿里巴巴', 'campus.alibaba.com': '阿里巴巴',
     'campus.meituan.com': '美团', 'zhaopin.meituan.com': '美团', 'hr.meituan.com': '美团',
     'campus.jd.com': '京东', 'zhaopin.jd.com': '京东',
     'campus.xiaomi.com': '小米', 'hr.xiaomi.com': '小米',
@@ -152,17 +152,17 @@
       key: 'alibaba',
       company_name: '阿里巴巴',
       priority: 1,
-      label: '阿里巴巴校园招聘',
-      version: '0.1.0-draft',
+      label: '阿里巴巴招聘',
+      version: '1.0.0-verified-holding-detail',
       channel: '企业官网',
-      hosts: ['talent.alibaba.com', 'campus.alibaba.com'],
-      jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobDetail/i],
+      hosts: ['talent-holding.alibaba.com', 'talent.alibaba.com', 'campus.alibaba.com'],
+      jobUrlPatterns: [/\/off-campus\/position-detail/i, /\/position\//i, /\/job\//i, /jobDetail/i],
       listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['.position-title', '[class*="job-title"]', 'h1'],
-        company: ['.company-name'],
-        jd: ['.position-desc', '[class*="detail"]'],
-        location: ['.position-address', '[class*="location"]'],
+        title: ['.SQ8sqdO4BspxKg3a0aUzT .bXVhSIL-ovT-82dSXA2yw'],
+        company: [],
+        jd: ['.deep-campus-position-detail .content-block .main.block-info'],
+        location: ['.SQ8sqdO4BspxKg3a0aUzT ._3fmnZBH2dYKBwZACjRtKEk > div:last-child'],
         success: ['[class*="success"]', '[class*="message"]']
       },
       statusPage: {
@@ -172,8 +172,15 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function alibabaRefine(job) {
+        job.location = String(document.querySelector('.SQ8sqdO4BspxKg3a0aUzT ._3fmnZBH2dYKBwZACjRtKEk > div:last-child')?.innerText || '').trim();
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/off-campus/position-detail?positionId={id}'],
+      verifiedUrlPatterns: [/^https:\/\/talent-holding\.alibaba\.com\/off-campus\/position-detail\?(?=[^#]*\bpositionId=\d+)/i],
+      notes: '阿里集团官方社招两页公开详情校准；CSS 模块类名可能随部署变化。旧域名、校招、登录及投递未验证。'
     },
     {
       key: 'meituan',
@@ -378,16 +385,16 @@
       key: 'nowcoder',
       priority: 2,
       label: '牛客网',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-jobs-detail',
       channel: '牛客',
       hosts: ['www.nowcoder.com', 'nowcoder.com'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i, /\/detail\//i],
       listUrlPatterns: [/\/job\/center/i, /\/search/i],
       selectors: {
-        title: ['.job-title', '.title', 'h1'],
-        company: ['.company-name', '[class*="company"]'],
-        jd: ['.job-desc', '.detail-content'],
-        location: ['.job-location', '[class*="location"]'],
+        title: ['.job-detail-wrap h1.title'],
+        company: ['.job-detail-right-wrap .company-card > .fs-20'],
+        jd: ['.job-detail-infos > .pre-line'],
+        location: ['.job-detail-wrap .info .extra > .el-tooltip'],
         success: ['[class*="success"]', '[class*="message"]']
       },
       statusPage: {
@@ -397,8 +404,17 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function nowcoderRefine(job) {
+        job.location = String(document.querySelector('.job-detail-wrap .info .extra > .el-tooltip')?.innerText || '').trim();
+        // A graduation requirement is not an explicit recruitment batch.
+        // Preserve the visible title; do not infer city from the company card.
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/jobs/detail/{id}'],
+      verifiedUrlPatterns: [/^https:\/\/(?:www\.)?nowcoder\.com\/jobs\/detail\/\d+\/?(?:[?#]|$)/i],
+      notes: '公开详情 453952、457913 已核验；只取公司卡片名称节点，排除行业/融资/岗位数。城市来自岗位信息，不取公司所在地。登录、投递与旧失效详情 470178 未验收。'
     },
     {
       key: 'shixiseng',

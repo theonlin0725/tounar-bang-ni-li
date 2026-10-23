@@ -23,15 +23,33 @@ export async function captureRegression(check){
       check('P4-快照保留渲染字号并删除站点CSS与可执行链接',snapshot.includes('font-size:31px')&&!snapshot.includes('<style')&&!snapshot.includes('javascript:'));
       await context.close();
     }
+    {
+      const html='<div class="job-detail-wrap"><h1>服务端工程师</h1><button>立即申请</button><div class="tw-bg-white plr-4 pb-4"><a>FixtureRecruiter 1分钟前在线</a></div></div><div class="company-card">FixtureCompany</div>';
+      const {page,context}=await pageFor('https://www.nowcoder.com/jobs/detail/10014',html);
+      const snapshot=await sanitizedSnapshot(page);
+      check('P4-真实牛客快照去除招聘者身份且保留岗位与公司',!snapshot.includes('FixtureRecruiter')&&snapshot.includes('服务端工程师')&&snapshot.includes('FixtureCompany'));
+      await context.close();
+    }
     const realCases=JSON.parse(fs.readFileSync(root+'/tests/fixtures/sites/cases.json','utf8'));
     if(!realCases.length)console.log('未运行真实站点快照回归：0 个有效样本（详见站点证据报告）');
     for(const fixture of realCases){
       const {page,context}=await pageFor(fixture.url,fs.readFileSync(path.join(root,'tests/fixtures/sites',fixture.file),'utf8'));
       const p=await capture(page);
-      check('P4-真实快照离线回归 '+fixture.site+' '+fixture.file,Object.entries(fixture.expected).every(([key,value])=>(p[key]||'')===value));
+      check('P4-真实快照离线回归 '+fixture.site+' '+fixture.file,Object.entries(fixture.expected).every(([key,value])=>(p[key]||'')===value)&&(!['nowcoder','shixiseng'].includes(fixture.site)||p.field_confidence.company_name==='high'));
       await context.close();
     }
+    {
+      const {page,context}=await pageFor('https://unknown.example/positions/10017/','<main><h1>Associate Principal, Procurement Innovation Supplier Programs</h1><button>Application</button></main>');
+      await page.waitForTimeout(4500);check('P4-遵守任务书60字标题上限（真实61字符标题留空）',await page.evaluate(()=>window.__captured.length)===0);await context.close();
+    }
     const semantic=fs.readFileSync(root+'/tests/fixtures/synthetic-capture/semantic-job.html','utf8');
+    {
+      const html='<main><h1>Operations Analyst</h1><button>Application</button><p><span><strong>A Typical Day:</strong></span></p><ul><li>Review operational performance and improve customer support processes.</li></ul><p><strong>Your Expertise:</strong></p><p>Experience in data analysis.</p></main>';
+      const {page,context}=await pageFor('https://unknown.example/positions/10016/',html);const p=await capture(page);
+      check('P4-英文详情的Application标签与语义职责正文可通用识别',p.job_title==='Operations Analyst'&&p.jd_summary==='Review operational performance and improve customer support processes.'&&!p.company_name);await context.close();
+      const other=await pageFor('https://unknown.example/account',html);await other.page.waitForTimeout(4500);
+      check('P4-账户页面的Application标签不是岗位信号',await other.page.evaluate(()=>window.__captured.length)===0);await other.context.close();
+    }
     {
       const {page,context}=await pageFor('https://unknown.example/job/10001',semantic);const p=await capture(page);
       check('P4-语义标题与JD排除导航，字段带把握度',p.job_title==='产品经理'&&p.company_name==='优质科技'&&p.location==='北京'&&p.jd_summary.startsWith('负责产品规划')&&p.field_confidence.job_title==='medium');
@@ -56,6 +74,11 @@ export async function captureRegression(check){
     {
       const {page,context}=await pageFor('https://unknown.example/job/10004','<title>运营经理</title><meta property="og:site_name" content="神秘公司"><main><p>只有一段很长的导航和页面正文，不是职位描述。</p><button>申请</button></main>');
       await page.waitForTimeout(4500);check('P4-仅低把握meta/标题不发假岗位',await page.evaluate(()=>window.__captured.length)===0);await context.close();
+    }
+    {
+      const html='<main><h1>软件工程师</h1><button>立即申请</button><div class="job-detail-right-wrap"><div class="company-card"><div class="fs-20">测试公司</div></div></div></main>';
+      const {page,context}=await pageFor('https://www.nowcoder.com/other-detail/10015',html);const p=await capture(page);
+      check('P4-聚合平台未验证路径的公司卡片不升为高把握',p.company_name==='测试公司'&&p.field_confidence.company_name==='medium');await context.close();
     }
     {
       const {page,context}=await pageFor('https://unknown.example/job/10009','<div class="modal-globalSites"><h1>Welcome to Mi.com</h1></div><main><button>申请职位</button></main>');

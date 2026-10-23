@@ -27,6 +27,10 @@ export async function sanitizedSnapshot(page) {
       node.setAttribute('style',['display','visibility','font-size','font-weight','white-space'].map(key=>`${key}:${style.getPropertyValue(key)}`).join(';'));
     }
     for(const node of copy.querySelectorAll('script,style,noscript,svg,canvas,iframe,form,input,textarea,select,object,embed,link,base,meta[http-equiv]'))node.remove();
+    if (/(^|\.)nowcoder\.com$/.test(location.hostname)) {
+      // Public recruiter identities are unrelated to job field regression.
+      for (const node of copy.querySelectorAll('.job-detail-wrap > .tw-bg-white.plr-4.pb-4')) node.remove();
+    }
     const comments=document.createTreeWalker(copy,NodeFilter.SHOW_COMMENT);
     const remove=[];while(comments.nextNode())remove.push(comments.currentNode);
     for(const node of remove)node.remove();

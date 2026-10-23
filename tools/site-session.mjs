@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 import { resolveChromiumExecutable } from '../tests/e2e/browser.mjs';
 import { sanitizedSnapshot } from './site-snapshot.mjs';
 import { sanitizeUrl } from '../server/src/util.js';
+import { pageIssue, reportUrl } from './site-page-state.mjs';
 
 export function option(name) {
   const index = process.argv.indexOf(name);
@@ -33,10 +34,19 @@ export async function siteSession(url, inspect) {
   });
   try {
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    if (!response?.ok() || !/^https?:/.test(page.url())) throw new Error('页面响应无效：HTTP ' + response?.status());
+    if (!response?.ok()) throw new Error('invalid_http_response');
     await page.waitForTimeout(5000);
     const body = (await page.locator('body').innerText()).trim();
-    if (!body || /^(?:加载中[，,]?\s*请稍候[。.…]*|upstream connect error|Access Denied|访问链接出错)/i.test(body)) throw new Error('页面为空、仍在加载或返回错误内容；不保存岗位快照');
+    const issue = pageIssue({ url: page.url(), status: response.status(), title: await page.title(), body });
+    if (issue) {
+      const report = { requested_url: sanitizeUrl(url), url: reportUrl(page.url()), http_status: response.status(),
+        checked_at: new Date().toISOString(), passed: false, snapshotEligible: false, reason: issue,
+        failed_resources: [...failures].map(([url, error]) => ({ url, error })) };
+      writeJson(option('--report'), report);
+      console.log(JSON.stringify(report, null, 1));
+      process.exitCode = 2;
+      return;
+    }
     const result = await inspect(page);
     const report = { url: sanitizeUrl(page.url()), http_status: response.status(), checked_at: new Date().toISOString(), ...result,
       failed_resources: [...failures].map(([url, error]) => ({ url, error })) };

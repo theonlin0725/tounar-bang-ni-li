@@ -1,6 +1,9 @@
 /* Popup（classic）。所有状态来自 service worker + chrome.storage。 */
 const $ = (id) => document.getElementById(id);
 let pollTimer = null;
+let serverUrlEdited = false;
+let refreshSequence = 0;
+$('server-url').addEventListener('input', () => { serverUrlEdited = true; });
 
 function send(message) {
   return new Promise((resolve) => {
@@ -16,10 +19,12 @@ function show(el, visible) {
 }
 
 async function refresh() {
+  const sequence = ++refreshSequence;
   const status = await send({ type: 'get_status' });
-  if (!status.ok) return;
+  if (!status.ok || sequence !== refreshSequence) return;
   const s = status.settings;
-  $('server-url').value = s.serverUrl || '';
+  // Background health/pairing refreshes must not overwrite an unsaved address.
+  if (!serverUrlEdited) $('server-url').value = s.serverUrl || '';
   $('health').textContent = status.health?.ok
     ? `后台可达 · ${new Date().toLocaleTimeString('zh-CN')}`
     : `后台不可达${status.health?.error ? `（${status.health.error}）` : ''}`;
@@ -101,7 +106,13 @@ async function ensureContentScript(origins) {
 $('save-server').addEventListener('click', async () => {
   const url = $('server-url').value.trim();
   if (!/^https?:\/\//.test(url)) { alert('请输入以 http(s):// 开头的后台地址'); return; }
-  await send({ type: 'set_server_url', serverUrl: url });
+  const result = await send({ type: 'set_server_url', serverUrl: url });
+  if (!result.ok) {
+    $('health').textContent = result.error?.message || '后台地址保存失败，请重试';
+    $('health').className = 'error';
+    return;
+  }
+  if ($('server-url').value.trim() === url) serverUrlEdited = false;
   await refresh();
 });
 

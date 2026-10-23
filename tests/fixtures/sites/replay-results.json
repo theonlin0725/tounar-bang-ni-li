@@ -3,6 +3,186 @@
   "mode": "offline replay of real sanitized DOM",
   "rows": [
     {
+      "site": "airbnb",
+      "file": "airbnb/7789554.html",
+      "url": "https://careers.airbnb.com/positions/7789554/",
+      "captured_at": "2026-10-23T12:10:42.917Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "Airbnb",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "job_title": {
+          "expected": "Associate Legal Counsel, Japan",
+          "actual": "Associate Legal Counsel, Japan",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "Tokyo, Japan",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "Act as an effective and trusted partner to the fast-paced and high-performing Ai",
+          "actual": "Act as an effective and trusted partner to the fast-paced and high-performing Ai",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "7789554",
+          "actual": "7789554",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://careers.airbnb.com/positions/7789554/",
+          "actual": "https://careers.airbnb.com/positions/7789554/",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "airbnb",
+      "file": "airbnb/7995153.html",
+      "url": "https://careers.airbnb.com/positions/7995153/",
+      "captured_at": "2026-10-23T12:10:43.567Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "Airbnb",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "job_title": {
+          "expected": "Business Development Manager",
+          "actual": "Business Development Manager",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "Berlin, Germany",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "Prospect and onboard new, high quality professional hosts in your assigned terri",
+          "actual": "Prospect and onboard new, high quality professional hosts in your assigned terri",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "7995153",
+          "actual": "7995153",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://careers.airbnb.com/positions/7995153/",
+          "actual": "https://careers.airbnb.com/positions/7995153/",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "alibaba",
+      "file": "alibaba/100004023017.html",
+      "url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017",
+      "captured_at": "2026-10-23T12:09:54.505Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "阿里巴巴",
+          "actual": "阿里巴巴",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "ATH-AI创新事业部-Qoder 产品经理-AI Coding 方向",
+          "actual": "ATH-AI创新事业部-Qoder 产品经理-AI Coding 方向",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "杭州",
+          "actual": "杭州",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1、商业化方向：负责 AI Coding 及智能体产品的商业化体系建设，包括产品版本定义、商品设计、定价策略、售卖链路及商业化运营；结合模型调用成本与用户使用场",
+          "actual": "1、商业化方向：负责 AI Coding 及智能体产品的商业化体系建设，包括产品版本定义、商品设计、定价策略、售卖链路及商业化运营；结合模型调用成本与用户使用场",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "100004023017",
+          "actual": "100004023017",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017",
+          "actual": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "alibaba",
+      "file": "alibaba/100025060002.html",
+      "url": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100025060002",
+      "captured_at": "2026-10-23T12:09:53.291Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "阿里巴巴",
+          "actual": "阿里巴巴",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "晓天衡宇-大模型标注评测工程师-金融/法律/医疗",
+          "actual": "晓天衡宇-大模型标注评测工程师-金融/法律/医疗",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "杭州",
+          "actual": "杭州",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 负责金融 / 法律 / 医疗方向 AI 训练数据（SFT / RL 阶段）的标注管理与质检工作；与算法及产品团队协作，理解 RM 训练和 rollout ",
+          "actual": "1. 负责金融 / 法律 / 医疗方向 AI 训练数据（SFT / RL 阶段）的标注管理与质检工作；与算法及产品团队协作，理解 RM 训练和 rollout ",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "100025060002",
+          "actual": "100025060002",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100025060002",
+          "actual": "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100025060002",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
       "site": "bytedance",
       "file": "bytedance/7694918252576835845.html",
       "url": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
@@ -447,6 +627,96 @@
         "job_url": {
           "expected": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
           "actual": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "nowcoder",
+      "file": "nowcoder/453952.html",
+      "url": "https://www.nowcoder.com/jobs/detail/453952",
+      "captured_at": "2026-10-23T07:11:12.605Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "拼多多集团-PDD",
+          "actual": "拼多多集团-PDD",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "服务端开发工程师",
+          "actual": "服务端开发工程师",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海",
+          "actual": "上海",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1、负责业务和平台的架构设计和研发工作，解决各类有挑战的技术问题，为产品和业务的发展提供强有力的支撑； 2、依照软件开发流程，根据产品和项目计划，完成所负责模块",
+          "actual": "1、负责业务和平台的架构设计和研发工作，解决各类有挑战的技术问题，为产品和业务的发展提供强有力的支撑； 2、依照软件开发流程，根据产品和项目计划，完成所负责模块",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "453952",
+          "actual": "453952",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://www.nowcoder.com/jobs/detail/453952",
+          "actual": "https://www.nowcoder.com/jobs/detail/453952",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "nowcoder",
+      "file": "nowcoder/457913.html",
+      "url": "https://www.nowcoder.com/jobs/detail/457913",
+      "captured_at": "2026-10-23T07:11:14.270Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "华为南京研究所",
+          "actual": "华为南京研究所",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "【27届校招】通用软件工程师 北京南京上海",
+          "actual": "【27届校招】通用软件工程师 北京南京上海",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "北京",
+          "actual": "北京",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1、负责产品／平台的软件需求分析、架构设计、代码开发、单元测试、集成测试、静态检查、本地构成、测试环境搭建、问题定位、资料开发等工作；2、负责相关系统／模块的代",
+          "actual": "1、负责产品／平台的软件需求分析、架构设计、代码开发、单元测试、集成测试、静态检查、本地构成、测试环境搭建、问题定位、资料开发等工作；2、负责相关系统／模块的代",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "457913",
+          "actual": "457913",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://www.nowcoder.com/jobs/detail/457913",
+          "actual": "https://www.nowcoder.com/jobs/detail/457913",
           "verdict": "correct"
         }
       },
