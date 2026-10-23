@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS application_field_sources (
   owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   field TEXT NOT NULL,
   source_method TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
   event_id TEXT,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (application_id, field)

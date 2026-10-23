@@ -42,7 +42,7 @@
   const HOST_COMPANY = {
     'join.qq.com': '腾讯', 'careers.tencent.com': '腾讯', 'hr.tencent.com': '腾讯',
     'jobs.bytedance.com': '字节跳动', 'job.bytedance.com': '字节跳动',
-    'talent.alibaba.com': '阿里巴巴', 'campus.alibaba.com': '阿里巴巴',
+    'talent.alibaba.com': '阿里巴巴', 'campus.alibaba.com': '阿里巴巴', 'campus-talent.alibaba.com': '阿里巴巴',
     'campus.meituan.com': '美团', 'zhaopin.meituan.com': '美团', 'hr.meituan.com': '美团',
     'campus.jd.com': '京东', 'zhaopin.jd.com': '京东',
     'campus.xiaomi.com': '小米', 'hr.xiaomi.com': '小米',
@@ -52,6 +52,15 @@
     'www.nowcoder.com': null, 'nowcoder.com': null,
     'www.shixiseng.com': null, 'shixiseng.com': null
   };
+
+  function textOfFirst(selector) {
+    try {
+      const node = document.querySelector(selector);
+      return node ? String(node.innerText || node.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    } catch {
+      return '';
+    }
+  }
 
   function companyForHost(hostname) {
     const host = String(hostname || '').toLowerCase().replace(/^www\./, '');
@@ -67,17 +76,25 @@
       key: 'tencent',
       priority: 1,
       label: '腾讯招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
+      company: '腾讯',
       hosts: ['join.qq.com', 'careers.tencent.com', 'hr.tencent.com'],
-      jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobdesc/i],
-      listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
+      jobUrlPatterns: [/post_detail\.html/i, /post\.html\?.*postid=/i, /\/position\//i, /\/job\//i, /jobdesc/i],
+      listUrlPatterns: [/\/post\.html\/?(\?|$)/i, /\/position\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['.job-title', '.position-title', 'h1[class*="title"]'],
+        title: ['.detailBanner .bannerItemText', '.job-title', '.position-title', 'h1[class*="title"]'],
         company: ['.company-name'],
-        jd: ['.job-desc', '.position-desc', '[class*="detail-content"]'],
-        location: ['.job-location', '.position-address'],
+        jd: ['.post_detail .detail_text', '.detail_text', '.job-desc', '.position-desc'],
+        location: ['.job-location', '.position-address', '.detailBanner .site'],
+        info: ['.detailBanner'],
         success: ['.apply-success', '.submit-success', '[class*="applyResult"]']
+      },
+      refine: function tencentRefine(job) {
+        const banner = textOfFirst('.detailBanner');
+        const batch = banner.match(/(20\d{2})\s*届?\s*(校园招聘|校招|应届毕业生)/);
+        if (batch) job.recruitment_batch = `${batch[1]} ${/校园招聘|校招/.test(batch[2]) ? '校园招聘' : '应届生'}`;
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/user\/apply/i, /\/my\/deliver/i, /\/apply\/record/i],
@@ -93,8 +110,9 @@
       key: 'bytedance',
       priority: 1,
       label: '字节跳动招聘',
-      version: '1.0.0-verified-campus',
+      version: '1.1.0-verified-campus',
       channel: '企业官网',
+      company: '字节跳动',
       hosts: ['jobs.bytedance.com', 'job.bytedance.com'],
       jobUrlPatterns: [
         /\/campus\/position\/\d+\/detail/i,
@@ -142,17 +160,42 @@
       key: 'alibaba',
       priority: 1,
       label: '阿里巴巴校园招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-campus',
       channel: '企业官网',
-      hosts: ['talent.alibaba.com', 'campus.alibaba.com'],
-      jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobDetail/i],
-      listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
+      company: '阿里巴巴',
+      hosts: ['talent.alibaba.com', 'campus.alibaba.com', 'campus-talent.alibaba.com'],
+      jobUrlPatterns: [/\/campus\/position\/\d+/i, /\/position\/\d+/i, /jobDetail/i],
+      listUrlPatterns: [/\/campus\/position\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['.position-title', '[class*="job-title"]', 'h1'],
+        title: ['div[class*="CampusPositionDetail--name--"]', '[class*="PositionDetail--name"]', 'h1'],
         company: ['.company-name'],
-        jd: ['.position-desc', '[class*="detail"]'],
-        location: ['.position-address', '[class*="location"]'],
+        jd: ['[class*="CampusPositionDetail--bodyContent"] [class*="CampusPositionDetail--content--"]', '[class*="CampusPositionDetail--bodyContent"]', '[class*="CampusPositionDetail--jobDescription"]', '[class*="jobDescription"]'],
+        location: ['[class*="CampusPositionDetail--basicInfo"]', '[class*="basicInfo"]'],
+        info: ['[class*="CampusPositionDetail--basicInfo"]', '[class*="basicInfo"]'],
         success: ['[class*="success"]', '[class*="message"]']
+      },
+      refine: function alibabaRefine(job) {
+        job.company_name = '阿里巴巴';
+        const info = textOfFirst('[class*="CampusPositionDetail--basicInfo"]') || '';
+        const loc = info.replace(/^.*?更新于\s*[\d-]+\s*/, '').split(/\s+(?:分享职位|加入意向单|基础信息)/)[0].trim();
+        if (loc && /\//.test(loc)) job.location = loc;
+        const batch = info.match(/(20\d{2})\s*届\s*([^\s]{1,10})/);
+        if (batch) job.recruitment_batch = `${batch[1]}届${batch[2].replace(/^(校园招聘|校招).*/, '应届生')}`;
+        /* 详情页有多个 bodyContent：第一个是「基础信息」，第二个才是「职位描述」。
+           只选正文含「职位描述」的那块，避免把毕业时间/笔试方向当成 JD。 */
+        const descriptionBlock = Array.from(document.querySelectorAll('[class*="CampusPositionDetail--bodyContent"]'))
+          .find((node) => /职位描述/.test(String(node.innerText || node.textContent || '').slice(0, 80)));
+        const descriptionText = descriptionBlock
+          ? String(descriptionBlock.innerText || descriptionBlock.textContent || '').replace(/\s+/g, ' ').trim().replace(/^职位描述\s*/, '')
+          : '';
+        if (descriptionText) {
+          job.jd_summary = descriptionText;
+          job.field_confidence = { ...(job.field_confidence || {}), jd_summary: 0.92 };
+        }
+        job.field_confidence = { ...(job.field_confidence || {}), company_name: 0.96 };
+        if (job.location) job.field_confidence.location = 0.9;
+        if (job.recruitment_batch) job.field_confidence.recruitment_batch = 0.86;
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/applied/i, /\/application/i, /\/my\//i],
@@ -168,17 +211,26 @@
       key: 'meituan',
       priority: 1,
       label: '美团招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
+      company: '美团',
       hosts: ['campus.meituan.com', 'zhaopin.meituan.com', 'hr.meituan.com'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
+        title: ['.position_detail_sticky .title', '.positin_detail_wrapper_t .title', '[class*="job-title"]', '.title', 'h1'],
         company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        jd: ['.positin_detail_wrapper_b', '.positin_detail_info', '[class*="job-desc"]'],
+        location: ['.position_detail_sticky', '.positin_detail_wrapper_t', '[class*="location"]'],
+        info: ['.position_detail_sticky', '.positin_detail_wrapper_t'],
         success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function meituanRefine(job) {
+        const info = textOfFirst('.position_detail_sticky') || textOfFirst('.positin_detail_wrapper_t');
+        const loc = info.match(/工作地点[:：]\s*([^\s]+(?:、[^\s]+)*)/);
+        if (loc) { job.location = loc[1]; job.field_confidence.location = 0.9; }
+        if (/校园招聘/.test(info)) { job.recruitment_batch = '校园招聘'; job.field_confidence.recruitment_batch = 0.8; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/apply/i, /\/my\//i, /\/record/i],
@@ -194,17 +246,26 @@
       key: 'jd',
       priority: 1,
       label: '京东招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
+      company: '京东',
       hosts: ['campus.jd.com', 'zhaopin.jd.com'],
-      jobUrlPatterns: [/\/job\//i, /\/position\//i],
+      jobUrlPatterns: [/details\?id=/i, /\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
+        title: ['[class*="positionTop"] p:first-child span', '[class*="job-title"]', '.title', 'h1'],
         company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        jd: ['[class*="contentBox"]', '[class*="job-desc"]', '[class*="detail"]'],
+        location: ['[class*="itemContent"]', '[class*="location"]'],
+        info: ['[class*="positionTop"]'],
         success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function jdRefine(job) {
+        if (job.location) {
+          job.location = job.location.split('/')[0].trim();
+          job.field_confidence.location = 0.88;
+        }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/apply/i, /\/my\//i],
@@ -220,17 +281,25 @@
       key: 'xiaomi',
       priority: 1,
       label: '小米招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
-      hosts: ['campus.xiaomi.com', 'hr.xiaomi.com'],
+      company: '小米',
+      hosts: ['campus.xiaomi.com', 'hr.xiaomi.com', 'xiaomi.jobs.f.mioffice.cn'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
+        title: ['.job-title', '.job-header .job-title', '[class*="job-title"]', 'h1'],
         company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        jd: ['.block-content', '[class*="job-desc"]', '[class*="detail"]'],
+        location: ['.job-info', '[class*="location"]'],
+        info: ['.job-info'],
         success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function xiaomiRefine(job) {
+        const info = textOfFirst('.job-info');
+        const loc = info.match(/^([^\s]+?)(?:校招|社招|正式|实习)/);
+        if (loc) { job.location = loc[1]; job.field_confidence.location = 0.86; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/apply/i, /\/my\//i],
@@ -246,17 +315,25 @@
       key: 'baidu',
       priority: 1,
       label: '百度招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
+      company: '百度',
       hosts: ['talent.baidu.com'],
-      jobUrlPatterns: [/\/job\//i, /\/position\//i, /detail/i],
-      listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
+      jobUrlPatterns: [/\/jobs\/detail\//i, /\/job\//i, /\/position\//i, /detail/i],
+      listUrlPatterns: [/\/jobs\/(?:list|social-list)/i, /\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
+        title: ['[class*="detail-title"] span', '[class*="detail-title"]', '[class*="job-title"]', 'h1'],
         company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        jd: ['[class*="post-content-desc"]', '[class*="job-desc"]'],
+        location: ['[class*="post-subtitle-item"]', '[class*="location"]'],
+        info: ['[class*="post-subtitle"]'],
         success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function baiduRefine(job) {
+        const info = textOfFirst('[class*="post-subtitle__"]') || textOfFirst('[class*="post-subtitle"]');
+        const city = info.match(/(北京|上海|广州|深圳|杭州|南京|苏州|成都|武汉|西安|长沙|天津|重庆|合肥|厦门|福州|济南|青岛|郑州|大连|珠海|东莞|佛山|宁波|无锡|香港)(?:市)?/);
+        if (city) { job.location = city[1]; job.field_confidence.location = 0.88; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/apply/i, /\/my\//i],
@@ -272,17 +349,25 @@
       key: 'netease',
       priority: 1,
       label: '网易招聘',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '企业官网',
+      company: '网易',
       hosts: ['campus.163.com', 'hr.163.com'],
-      jobUrlPatterns: [/\/job\//i, /\/position\//i],
-      listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
+      jobUrlPatterns: [/\/job\//i, /\/position\//i, /job-detail/i],
+      listUrlPatterns: [/\/job\/?(\?|$)/i, /job-list/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
+        title: ['.job-detail-header-c .posi-name .f-toe', '.posi-name .f-toe', '.f-title .f-toe', '.f-title', 'h1'],
         company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        jd: ['.job-de-de-left .content', '.content-more-left', '[class*="job-desc"]'],
+        location: ['.posi-sc-name', '.tag[title]', '[class*="location"]'],
+        info: ['.posi-sc-name'],
         success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function neteaseRefine(job) {
+        const info = textOfFirst('.posi-sc-name');
+        const city = info.match(/(北京|上海|广州|深圳|杭州|南京|苏州|成都|武汉|西安|长沙|天津|重庆|合肥|厦门|福州|济南|青岛|郑州|大连|珠海|东莞|佛山|宁波|无锡|香港)/);
+        if (city) { job.location = city[1]; job.field_confidence.location = 0.86; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/apply/i, /\/my\//i],
@@ -298,8 +383,9 @@
       key: 'boss',
       priority: 2,
       label: 'BOSS直聘（仅岗位详情）',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: 'BOSS直聘',
+      platform: true,
       hosts: ['www.zhipin.com', 'zhipin.com'],
       jobUrlPatterns: [/\/job_detail\//i, /\/job\//i],
       listUrlPatterns: [/\/web\/geek\/jobs/i, /\/search/i],
@@ -318,17 +404,30 @@
       key: 'nowcoder',
       priority: 2,
       label: '牛客网',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '牛客',
+      platform: true,
       hosts: ['www.nowcoder.com', 'nowcoder.com'],
-      jobUrlPatterns: [/\/job\//i, /\/position\//i, /\/detail\//i],
-      listUrlPatterns: [/\/job\/center/i, /\/search/i],
+      jobUrlPatterns: [/\/jobs\/detail\/\d+/i, /\/job\//i, /\/position\//i],
+      listUrlPatterns: [/\/jobs\/(?:school|intern|fulltime|recommend)/i, /\/job\/center/i, /\/search/i],
       selectors: {
-        title: ['.job-title', '.title', 'h1'],
-        company: ['.company-name', '[class*="company"]'],
-        jd: ['.job-desc', '.detail-content'],
-        location: ['.job-location', '[class*="location"]'],
+        title: ['h1', '.job-title', '.title'],
+        company: ['a[href*="/jobs/hr/"] .tw-whitespace-pre-wrap', '.company-name', '[class*="company"]'],
+        jd: ['.job-detail-infos .ptb-2.pre-line', '.job-detail-word .ptb-2.pre-line', '.job-detail-infos', '.job-detail-word', '.job-desc', '.detail-content'],
+        location: ['.extra', '.job-location', '[class*="location"]'],
+        info: ['.extra', '.job-detail-infos'],
         success: ['[class*="success"]', '[class*="message"]']
+      },
+      refine: function nowcoderRefine(job) {
+        const companyEl = document.querySelector('a[href*="/jobs/hr/"] .tw-whitespace-pre-wrap');
+        if (companyEl) {
+          const company = String(companyEl.innerText || companyEl.textContent || '').replace(/\s+/g, ' ').split(/[·•|｜]/)[0].trim();
+          if (company) { job.company_name = company; job.field_confidence.company_name = 0.9; }
+        }
+        const info = textOfFirst('.extra');
+        const city = info.match(/(北京|上海|广州|深圳|杭州|南京|苏州|成都|武汉|西安|长沙|天津|重庆|合肥|厦门|福州|济南|青岛|郑州|大连|珠海|东莞|佛山|宁波|无锡|香港)/);
+        if (city) { job.location = city[1]; job.field_confidence.location = 0.86; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/my\/apply/i, /\/apply\/record/i, /\/deliver/i],
@@ -344,17 +443,25 @@
       key: 'shixiseng',
       priority: 2,
       label: '实习僧',
-      version: '0.1.0-draft',
+      version: '0.2.0-draft',
       channel: '实习僧',
+      platform: true,
       hosts: ['www.shixiseng.com', 'shixiseng.com'],
-      jobUrlPatterns: [/\/intern\//i, /\/job\//i],
+      jobUrlPatterns: [/\/intern\/[A-Za-z0-9_-]+/i, /\/job\//i],
       listUrlPatterns: [/\/interns/i, /\/search/i],
       selectors: {
         title: ['.new_job_name', '.job-title', 'h1'],
         company: ['.com-name', '.company-name'],
-        jd: ['.job_detail', '.job-detail'],
+        jd: ['.con-job', '.job_detail', '.job-detail'],
         location: ['.job_position', '[class*="location"]'],
+        info: ['.job-header', '.job_msg'],
         success: ['[class*="success"]', '[class*="message"]']
+      },
+      refine: function shixisengRefine(job) {
+        const info = textOfFirst('.job-header');
+        const city = info.match(/(北京|上海|广州|深圳|杭州|南京|苏州|成都|武汉|西安|长沙|天津|重庆|合肥|厦门|福州|济南|青岛|郑州|大连|珠海|东莞|佛山|宁波|无锡|香港)/);
+        if (city) { job.location = city[1]; job.field_confidence.location = 0.84; }
+        return job;
       },
       statusPage: {
         urlPatterns: [/\/resume\/apply/i, /\/applied/i, /\/my\//i],

@@ -13,7 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { runPlugin, fieldSummary, FIELDS, safeName, ROOT } from './lib/plugin-runner.mjs';
 
 const url = process.argv[2];
 if (!url) {
@@ -21,47 +21,34 @@ if (!url) {
   process.exit(1);
 }
 
-const ROOT = process.cwd();
-const adapters = fs.readFileSync(path.join(ROOT, 'extension/content/adapters.js'), 'utf8');
-const tracker = fs.readFileSync(path.join(ROOT, 'extension/content/tracker.js'), 'utf8');
-
-const b = await chromium.launch({ channel: 'chrome' });
-const p = await b.newPage({
-  viewport: { width: 1440, height: 1000 },
-  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const result = await runPlugin(url, {
+  screenshotPath: path.join(ROOT, '.tmp', `tryrun-${safeName(new URL(url).hostname)}.png`)
 });
+const job = result.payload || {};
+const fields = fieldSummary(job);
+const filled = FIELDS.filter((key) => job[key]);
 
-await p.addInitScript(`
-  window.__captured = [];
-  window.chrome = window.chrome || {};
-  window.chrome.runtime = {
-    sendMessage: (msg, cb) => {
-      try { window.__captured.push(msg); } catch (e) {}
-      if (cb) cb({ ok: true, queued: 1 });
-    },
-    lastError: null
-  };
-`);
-await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch((e) => console.log('goto:', e.message));
-await p.addScriptTag({ content: adapters });
-await p.addScriptTag({ content: tracker });
-await p.waitForTimeout(6000);
+console.log(JSON.stringify({
+  adapter: result.adapter,
+  adapterVersion: result.adapter_version,
+  jobDetected: result.site_job_id_detected,
+  jobTitle: result.detected_title,
+  detectionScore: result.detection_score,
+  visibleMs: result.visible_ms,
+  viewSent: result.view_sent ? '1' : '0',
+  visibility: result.visibility,
+  pageErrors: result.page_errors,
+  fields,
+  detection: result.detection,
+  events: result.event ? [result.event] : []
+}, null, 1));
 
-const out = await p.evaluate(() => ({
-  adapter: document.documentElement.getAttribute('data-tounar-adapter'),
-  adapterVersion: document.documentElement.getAttribute('data-tounar-adapter-version'),
-  jobDetected: document.documentElement.getAttribute('data-tounar-job-detected'),
-  visibleMs: document.documentElement.getAttribute('data-tounar-visible-ms'),
-  viewSent: document.documentElement.getAttribute('data-tounar-view-sent'),
-  events: window.__captured.map((m) => m?.event).filter(Boolean)
-}));
-console.log(JSON.stringify(out, null, 1));
+console.log(`\n自动采集命中 ${filled.length}/${FIELDS.length} 项字段：${filled.join('、') || '（无）'}`);
+for (const key of FIELDS) {
+  const item = fields[key];
+  if (item.value) console.log(`- ${key}: ${String(item.value).slice(0, 100)}${item.confidence != null ? `（把握度 ${Math.round(item.confidence * 100)}%）` : ''}`);
+}
+if (result.page_errors.length) console.log('页面错误:', result.page_errors.slice(0, 4));
+console.log('截图:', path.join('.tmp', `tryrun-${safeName(new URL(url).hostname)}.png`));
 
-const job = out.events?.[0]?.payload || {};
-const filled = ['company_name', 'job_title', 'job_url', 'jd_summary'].filter((k) => job[k]);
-console.log(`\n自动采集命中 ${filled.length}/4 项核心字段：${filled.join('、') || '（无）'}`);
-
-const host = new URL(p.url()).hostname;
-fs.mkdirSync('.tmp', { recursive: true });
-await p.screenshot({ path: path.join('.tmp', `tryrun-${host}.png`), fullPage: false });
-await b.close();
+if (!result.view_sent) process.exitCode = 2;

@@ -57,6 +57,21 @@ function migrate(instance) {
   ]) {
     try { instance.exec(sql); } catch { /* 列已存在（schema.sql 新版本已建） */ }
   }
+  /* P4（2026-10-23）：字段把握度。只增列并给旧来源一个保守默认值，
+     让新的高把握插件字段有机会纠正旧的兜底错值；用户手改仍是最高权重。 */
+  try {
+    instance.exec('ALTER TABLE application_field_sources ADD COLUMN confidence REAL NOT NULL DEFAULT 0');
+  } catch { /* 列已存在 */ }
+  if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_p4_field_confidence'").get()) {
+    instance.exec(`UPDATE application_field_sources
+      SET confidence = CASE source_method
+        WHEN 'manual' THEN 1.0
+        WHEN 'mail' THEN 0.9
+        WHEN 'review' THEN 0.85
+        ELSE 0.7 END
+      WHERE confidence = 0`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_p4_field_confidence', '1')").run();
+  }
   const stageAnchorBackfill = instance.prepare("SELECT value FROM meta WHERE key = 'migration_p3_stage_followup_anchor'").get();
   if (!stageAnchorBackfill) {
     instance.exec(`UPDATE applications SET stage_followup_anchor = CASE
@@ -137,6 +152,13 @@ export function getApplication(ownerId, applicationId) {
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
 }
 
+export function defaultFieldConfidence(sourceMethod) {
+  if (sourceMethod === 'manual') return 1;
+  if (sourceMethod === 'mail') return 0.9;
+  if (sourceMethod === 'review') return 0.85;
+  return 0.7;
+}
+
 export function markApplicationChanged(ownerId, applicationId, eventId, sourceMethod, fields, options = {}) {
   const app = one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
   if (!app) return null;
@@ -174,12 +196,15 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
       options.reason || null
     );
   for (const field of changed) {
+    const confidence = Number(options.fieldConfidence?.[field]);
     getDb().prepare(`INSERT INTO application_field_sources
-      (application_id, owner_id, field, source_method, event_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      (application_id, owner_id, field, source_method, confidence, event_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(application_id, field) DO UPDATE SET source_method=excluded.source_method,
-        event_id=excluded.event_id, updated_at=excluded.updated_at`)
-      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso());
+        confidence=excluded.confidence, event_id=excluded.event_id, updated_at=excluded.updated_at`)
+      .run(applicationId, ownerId, field, sourceMethod,
+        Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : defaultFieldConfidence(sourceMethod),
+        eventId || null, nowIso());
   }
   bumpRevision();
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);

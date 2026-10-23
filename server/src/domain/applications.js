@@ -1,5 +1,7 @@
 import { config } from '../config.js';
-import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
+import {
+  all, bumpRevision, defaultFieldConfidence, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction
+} from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
   clipText, daysBetweenShanghai, isDueForReview, isSafeHttpUrl, maxIso, newId, normalizeCompanyKey,
@@ -223,7 +225,7 @@ export function createReviewForEvent(event, {
   return one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [id, event.owner_id]);
 }
 
-function addInitialHistory(ownerId, applicationId, eventId, status, sourceMethod, fields) {
+function addInitialHistory(ownerId, applicationId, eventId, status, sourceMethod, fields, fieldConfidence = {}) {
   run(`INSERT INTO application_history
     (id, owner_id, application_id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason)
     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 'created')`,
@@ -231,9 +233,13 @@ function addInitialHistory(ownerId, applicationId, eventId, status, sourceMethod
     JSON.stringify(Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, { from: null, to: v }]))),
     nowIso(), sourceMethod]);
   for (const field of Object.keys(fields)) {
+    const raw = Number(fieldConfidence?.[field]);
+    const confidence = Number.isFinite(raw)
+      ? Math.max(0, Math.min(1, raw))
+      : defaultFieldConfidence(sourceMethod);
     run(`INSERT OR REPLACE INTO application_field_sources
-      (application_id, owner_id, field, source_method, event_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)`, [applicationId, ownerId, field, sourceMethod, eventId, nowIso()]);
+      (application_id, owner_id, field, source_method, confidence, event_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`, [applicationId, ownerId, field, sourceMethod, confidence, eventId, nowIso()]);
   }
 }
 
@@ -290,39 +296,74 @@ export function createApplication({ ownerId, fields, eventId, sourceMethod, stat
   const keys = Object.keys(appFields);
   run(`INSERT INTO applications (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`,
     keys.map((k) => appFields[k]));
-  addInitialHistory(ownerId, id, eventId, status, sourceMethod, appFields);
+  addInitialHistory(ownerId, id, eventId, status, sourceMethod, appFields, fields.field_confidence || {});
   bumpRevision();
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [id, ownerId]);
 }
 
+function fieldConfidenceOf(fields, key, sourceMethod) {
+  const raw = Number(fields.field_confidence?.[key]);
+  if (Number.isFinite(raw)) return Math.max(0, Math.min(1, raw));
+  return defaultFieldConfidence(sourceMethod);
+}
+
+/* P4：后到的字段只有在「来源不是用户手改」且把握度明显更高时才覆盖。
+   company/title 风险最高，门槛抬到 0.8；其余字段 0.7。低把握字段宁可留空。 */
+function mayReplaceField(app, key, incomingConfidence) {
+  if (app[key] == null || app[key] === '') return true;
+  const source = one(`SELECT source_method, confidence FROM application_field_sources
+    WHERE application_id = ? AND owner_id = ? AND field = ?`, [app.id, app.owner_id, key]);
+  if (!source) return false;
+  if (source.source_method === 'manual') return false;
+  const current = Number(source.confidence);
+  const currentConfidence = Number.isFinite(current) && current > 0
+    ? current : defaultFieldConfidence(source.source_method);
+  const floor = ['company_name', 'job_title'].includes(key) ? 0.8 : 0.7;
+  return incomingConfidence >= floor && incomingConfidence > currentConfidence + 0.05;
+}
+
 function fillMissingFields(app, fields, eventId, sourceMethod) {
   const updates = {};
-  const fillable = ['jd_summary', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
-    'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at', 'round_label', 'interview_round'];
+  const confidences = {};
+  const fillable = ['company_name', 'job_title', 'jd_summary', 'job_url', 'canonical_job_url', 'status_url', 'location',
+    'recruitment_batch', 'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at',
+    'round_label', 'interview_round'];
   for (const key of fillable) {
-    if (app[key] == null || app[key] === '') {
-      let value = fields[key];
-      if (key === 'jd_summary' && value) value = clipText(value, 80);
-      if (key === 'job_url') value = sanitizeUrl(value);
-      if (key === 'canonical_job_url' && !value && fields.job_url) value = canonicalJobUrl(fields.job_url);
-      if (key === 'status_url') value = sanitizeUrl(value);
-      if (key === 'deadline_at') value = parseIso(value);
-      if (key === 'interview_scheduled_at') value = parseIso(value);
-      if (value != null && value !== '') updates[key] = value;
+    let value = fields[key];
+    const confidence = fieldConfidenceOf(fields, key, sourceMethod);
+    if (!mayReplaceField(app, key, confidence)) continue;
+    if (key === 'company_name' && value) value = normalizeWhitespace(value, 200);
+    if (key === 'job_title' && value) value = normalizeWhitespace(value, 200);
+    if (key === 'jd_summary' && value) value = clipText(value, 80);
+    if (key === 'job_url') value = sanitizeUrl(value);
+    if (key === 'canonical_job_url' && !value && fields.job_url) value = canonicalJobUrl(fields.job_url);
+    if (key === 'status_url') value = sanitizeUrl(value);
+    if (key === 'deadline_at') value = parseIso(value);
+    if (key === 'interview_scheduled_at') value = parseIso(value);
+    if (value != null && value !== '' && value !== app[key]) {
+      updates[key] = value;
+      confidences[key] = confidence;
     }
+  }
+  if (updates.company_name) {
+    updates.company_key = normalizeCompanyKey(updates.company_name);
   }
   if (!updates.canonical_job_url && fields.job_url && !app.canonical_job_url) {
     const canonical = canonicalJobUrl(fields.job_url);
-    if (canonical) updates.canonical_job_url = canonical;
+    if (canonical && mayReplaceField(app, 'canonical_job_url', fieldConfidenceOf(fields, 'job_url', sourceMethod))) {
+      updates.canonical_job_url = canonical;
+      confidences.canonical_job_url = fieldConfidenceOf(fields, 'job_url', sourceMethod);
+    }
   }
-  if (fields.location && !app.location) updates.location = clipText(fields.location, 100);
-  if (fields.recruitment_batch && !app.recruitment_batch) updates.recruitment_batch = clipText(fields.recruitment_batch, 100);
-  if (fields.status_url && !app.status_url) {
-    updates.status_url = sanitizeUrl(fields.status_url);
+  if (updates.status_url) {
     updates.status_url_scope = fields.status_url_scope || 'application';
+    confidences.status_url_scope = confidences.status_url;
   }
   if (!Object.keys(updates).length) return app;
-  return markApplicationChanged(app.owner_id, app.id, eventId, sourceMethod, updates, { reason: '字段补全' });
+  return markApplicationChanged(app.owner_id, app.id, eventId, sourceMethod, updates, {
+    reason: '字段补全 / 高把握纠正',
+    fieldConfidence: confidences
+  });
 }
 
 function ensureSource(app, method, eventId) {
@@ -486,7 +527,7 @@ function processView(event) {
     job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
     recruitment_batch: p.recruitment_batch, channel: p.channel, status_url: p.status_url,
     status_url_scope: p.status_url_scope, first_viewed_at: event.occurred_at,
-    last_viewed_at: event.observed_at
+    last_viewed_at: event.observed_at, field_confidence: p.field_confidence
   };
   const candidates = findCandidates(event.owner_id, {
     ...fields, canonical_job_url: canonicalJobUrl(p.job_url)
@@ -561,7 +602,8 @@ function processSubmitted(event) {
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
     job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
     recruitment_batch: p.recruitment_batch, channel: p.channel || '企业官网',
-    applied_at: eventAppliedAt(event), applied_at_precision: 'exact'
+    applied_at: eventAppliedAt(event), applied_at_precision: 'exact',
+    field_confidence: p.field_confidence
   };
   const check = isFormalComplete(fields);
   const candidates = findCandidates(event.owner_id, { ...fields, canonical_job_url: canonicalJobUrl(p.job_url) });
@@ -648,7 +690,7 @@ function processSiteStatus(event) {
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
     job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
     recruitment_batch: p.recruitment_batch, status_url: p.status_url, status_url_scope: p.status_url_scope,
-    applied_at: eventAppliedAt(event)
+    applied_at: eventAppliedAt(event), field_confidence: p.field_confidence
   };
   // P2：官网投递记录页和邮件共用同一套匹配（身份键 → 公司+岗位相似 → 公司唯一进行中），
   // 不再要求必须有 site_application_id 才能对上记录。

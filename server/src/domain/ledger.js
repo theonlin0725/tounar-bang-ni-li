@@ -190,7 +190,7 @@ export function applicationDetail(ownerId, applicationId) {
   const history = all(`SELECT id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason
     FROM application_history WHERE owner_id = ? AND application_id = ?
     ORDER BY changed_at DESC LIMIT 100`, [ownerId, applicationId]);
-  const sources = all(`SELECT field, source_method, event_id, updated_at FROM application_field_sources
+  const sources = all(`SELECT field, source_method, confidence, event_id, updated_at FROM application_field_sources
     WHERE owner_id = ? AND application_id = ? ORDER BY field`, [ownerId, applicationId]);
   const reviews = all(`SELECT id, kind, reason_code, summary, status, version, created_at
     FROM review_items WHERE owner_id = ? AND (
