@@ -112,6 +112,15 @@ node server/scripts/prepare-deploy-bundle.js \
   （邮箱 IMAP 凭据已经在库里、用 master.key 加密，不需要额外注入）。
 - 这一步我没替你做，因为契约第 10 节把「真实凭据」列为待你决定。
 
+## 7.5 发布后的实测补充（2026-10-23 晚）
+
+- 线上已发布：`https://bangnili.app.workbuddy.host`，沙箱 `e51f4e64…`，分享码 `SMDT7CDZYS`。
+- 实测确认：真实库上去了（用户 2 / 台账 6 / 待确认 22）、真实 SMTP 在发信（验证码真到了邮箱）、IMAP 同步跑过。
+- 平台要求 sharecode：裸地址新浏览器 403。已加 `SHARE_CODE` 支持（邮件链接自动附加、插件地址可带码）。
+  主工作区 `.env` 已写入 `SHARE_CODE`，**下次重新发布生效**。
+- 平台无持久卷：重发布会回到上传时的 `data/` 快照，发布后的新写入不保留。
+- 详细记录：[DEPLOY-LIVE-VERIFICATION.md](DEPLOY-LIVE-VERIFICATION.md)。
+
 ## 8. 还差什么
 
 | 事项 | 状态 |
