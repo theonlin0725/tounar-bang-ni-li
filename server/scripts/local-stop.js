@@ -3,7 +3,7 @@
  * 停止 npm run local:acceptance 起的本地验收服务。
  *
  * 只杀“确实由本仓库验收目录启动的 node server/src/index.js”：
- *   1. 在 ~/tounar-acceptance/*/state.json 里找匹配的实例（可按 --port / --data-dir 过滤）；
+ *   1. 在 ~/tounar-acceptance 下各副本的 state.json 里找匹配的实例（可按 --port / --data-dir 过滤）；
  *   2. 用 ps 核对 pid 的命令行含 server/src/index.js，避免 pid 复用误杀；
  *   3. SIGTERM → 等待退出 → 再确认端口已释放。
  * 不会动其它端口上的未知进程。

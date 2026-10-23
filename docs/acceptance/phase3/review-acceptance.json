@@ -1,0 +1,703 @@
+{
+  "generated_at": "2026-10-23T13:37:43.139Z",
+  "base": "http://127.0.0.1:4311",
+  "data_dir": "/Users/mingenlin/tounar-acceptance/20261023-133740",
+  "email": "1191240794@qq.com",
+  "before_counts": {
+    "filtered_total": 5,
+    "total_applied": 1,
+    "pending_review": 20
+  },
+  "items": [
+    {
+      "id": "rev_RwcHsX3IcZ19xWMx",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：中国电信天翼云邀请你参加在线笔试",
+      "company_guess": "中国电信天翼云",
+      "subject": "中国电信天翼云邀请你参加在线笔试",
+      "from_domain": "batchmail.nowcoder.net",
+      "mail_received_at": "2026-10-22T09:46:35.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_EW0lnfw9ntERQ7r4",
+      "kind": "ambiguous_match",
+      "reason_code": "COMPANY_TITLE_ONLY",
+      "summary": "只有公司+岗位候选，不能自动合并",
+      "company_guess": null,
+      "subject": null,
+      "from_domain": null,
+      "mail_received_at": null,
+      "category": null,
+      "status_suggestion": "pending",
+      "classification_confidence": null,
+      "matching_confidence": null,
+      "total_confidence": null,
+      "candidates": [
+        {
+          "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+          "company_name": "腾讯",
+          "job_title": "岗位详情"
+        }
+      ],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "confirm",
+      "result": null
+    },
+    {
+      "id": "rev_DFnPH1-d3G_Aw6Xm",
+      "kind": "ambiguous_match",
+      "reason_code": "COMPANY_TITLE_ONLY",
+      "summary": "只有公司+岗位候选，不能自动合并",
+      "company_guess": null,
+      "subject": null,
+      "from_domain": null,
+      "mail_received_at": null,
+      "category": null,
+      "status_suggestion": "pending",
+      "classification_confidence": null,
+      "matching_confidence": null,
+      "total_confidence": null,
+      "candidates": [
+        {
+          "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+          "company_name": "腾讯",
+          "job_title": "岗位详情"
+        }
+      ],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "confirm",
+      "result": null
+    },
+    {
+      "id": "rev_scuxdZiklzGPjhDK",
+      "kind": "ambiguous_match",
+      "reason_code": "COMPANY_TITLE_ONLY",
+      "summary": "只有公司+岗位候选，不能自动合并",
+      "company_guess": null,
+      "subject": null,
+      "from_domain": null,
+      "mail_received_at": null,
+      "category": null,
+      "status_suggestion": "pending",
+      "classification_confidence": null,
+      "matching_confidence": null,
+      "total_confidence": null,
+      "candidates": [
+        {
+          "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+          "company_name": "腾讯",
+          "job_title": "岗位详情"
+        }
+      ],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "confirm",
+      "result": null
+    },
+    {
+      "id": "rev_VsrsHEis1WSawv56",
+      "kind": "ambiguous_match",
+      "reason_code": "COMPANY_TITLE_ONLY",
+      "summary": "只有公司+岗位候选，不能自动合并",
+      "company_guess": null,
+      "subject": null,
+      "from_domain": null,
+      "mail_received_at": null,
+      "category": null,
+      "status_suggestion": "pending",
+      "classification_confidence": null,
+      "matching_confidence": null,
+      "total_confidence": null,
+      "candidates": [
+        {
+          "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+          "company_name": "腾讯",
+          "job_title": "岗位详情"
+        }
+      ],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "confirm",
+      "result": null
+    },
+    {
+      "id": "rev_LeegDuByXYu9udbe",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：【面试通知】您已成功预约招商银行面试",
+      "company_guess": "",
+      "subject": "【面试通知】您已成功预约招商银行面试",
+      "from_domain": "message.cmbchina.com",
+      "mail_received_at": "2026-10-22T08:38:10.000Z",
+      "category": "interview",
+      "status_suggestion": "interview",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "needs_review",
+      "result": null
+    },
+    {
+      "id": "rev_54gEotjRfKigHlhC",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：招商银行广州分行2027校园招聘面试通知",
+      "company_guess": "招商银行广州分行2027",
+      "subject": "招商银行广州分行2027校园招聘面试通知",
+      "from_domain": "message.cmbchina.com",
+      "mail_received_at": "2026-10-22T08:30:51.000Z",
+      "category": "interview",
+      "status_suggestion": "interview",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_X94-2zRWNbc8HQTK",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：中国电子云校园招聘AI面试邀请",
+      "company_guess": "中国电子云校园招聘AI",
+      "subject": "中国电子云校园招聘AI面试邀请",
+      "from_domain": "mail.mokahr.com",
+      "mail_received_at": "2026-10-17T03:04:05.000Z",
+      "category": "interview",
+      "status_suggestion": "interview",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_51vT3CLP7nw2t4vT",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：中国农业银行2027年度校园招聘统一笔试通知",
+      "company_guess": "中国农业银行2027年度",
+      "subject": "中国农业银行2027年度校园招聘统一笔试通知",
+      "from_domain": "mail3.e-testing.com.cn",
+      "mail_received_at": "2026-10-16T11:19:18.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_yNFkIcu-QYuYOVYO",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：招商银行2027校园招聘统一笔试【提醒】",
+      "company_guess": "",
+      "subject": "招商银行2027校园招聘统一笔试【提醒】",
+      "from_domain": "mail3.e-testing.com.cn",
+      "mail_received_at": "2026-10-16T10:04:08.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "needs_review",
+      "result": null
+    },
+    {
+      "id": "rev_8TBSVgdmmQMDacIH",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：Re: 香港中文大学-林铭恩-关于笔试时间安排的询问",
+      "company_guess": null,
+      "subject": "Re: 香港中文大学-林铭恩-关于笔试时间安排的询问",
+      "from_domain": "cmbchina.com",
+      "mail_received_at": "2026-10-15T01:40:25.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "dismiss",
+      "result": null
+    },
+    {
+      "id": "rev_-KtWAZMTyZudLHFl",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：招商银行2027校园招聘统一笔试【通知】",
+      "company_guess": "",
+      "subject": "招商银行2027校园招聘统一笔试【通知】",
+      "from_domain": "mail3.e-testing.com.cn",
+      "mail_received_at": "2026-10-14T09:28:44.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "needs_review",
+      "result": null
+    },
+    {
+      "id": "rev_eT-mTLoWMvKOvmWv",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：【2027欧莱雅中国管理培训生】恭喜你通过第一轮筛选，请查收线上测评链接",
+      "company_guess": "2027欧莱雅中国管理培训生",
+      "subject": "【2027欧莱雅中国管理培训生】恭喜你通过第一轮筛选，请查收线上测评链接",
+      "from_domain": "service.hrtps.com",
+      "mail_received_at": "2026-10-12T09:29:48.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_Hhqdtm5MPvNAdhRc",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：图拉斯2027届校园招聘-性格测评及信息登记表填写通知（如已完成可忽略）",
+      "company_guess": "图拉斯2027届",
+      "subject": "图拉斯2027届校园招聘-性格测评及信息登记表填写通知（如已完成可忽略）",
+      "from_domain": "mail.hire.feishu.cn",
+      "mail_received_at": "2026-10-09T02:10:16.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_cxfuaAZYYVxlGoMr",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：【安克创新校招测评】2027届校园招聘",
+      "company_guess": "安克创新校招",
+      "subject": "【安克创新校招测评】2027届校园招聘",
+      "from_domain": "mail.feishu.cn",
+      "mail_received_at": "2026-10-08T07:26:01.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_UBCAW-yL59fWGjgi",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：请参加小红书校招在线测评",
+      "company_guess": "请参加小红书校招在线",
+      "subject": "请参加小红书校招在线测评",
+      "from_domain": "italent.cn",
+      "mail_received_at": "2026-10-08T09:11:03.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_1_kPLloWoF6PEedU",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：广联达2027校招测评邀请函",
+      "company_guess": "广联达2027校招测评",
+      "subject": "广联达2027校招测评邀请函",
+      "from_domain": "mail.mokahr.com",
+      "mail_received_at": "2026-10-08T04:13:11.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_RPatw92GrSxYZC81",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：中国电子云校园招聘测评邀请",
+      "company_guess": "中国电子云校园招聘测评",
+      "subject": "中国电子云校园招聘测评邀请",
+      "from_domain": "mail.mokahr.com",
+      "mail_received_at": "2026-09-28T10:05:17.000Z",
+      "category": "assessment",
+      "status_suggestion": "assessment",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_go9Hvk0zY0F-lmZ7",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：【网易游戏雷火】面试邀请函",
+      "company_guess": "网易游戏雷火",
+      "subject": "【网易游戏雷火】面试邀请函",
+      "from_domain": "service.netease.com",
+      "mail_received_at": "2026-09-22T06:44:39.000Z",
+      "category": "interview",
+      "status_suggestion": "interview",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    },
+    {
+      "id": "rev_OIoc2Sm63m_9zdrM",
+      "kind": "mail_progress",
+      "reason_code": "MAIL_MATCH_UNCONFIRMED",
+      "summary": "招聘邮件更新候选：【网易游戏】雷火事业群面试时间收集",
+      "company_guess": "网易游戏",
+      "subject": "【网易游戏】雷火事业群面试时间收集",
+      "from_domain": "service.netease.com",
+      "mail_received_at": "2026-09-22T06:43:23.000Z",
+      "category": "interview",
+      "status_suggestion": "interview",
+      "classification_confidence": 0.88,
+      "matching_confidence": null,
+      "total_confidence": 0.88,
+      "candidates": [],
+      "version": 1,
+      "action": "pending_user",
+      "recommendation": "create",
+      "result": null
+    }
+  ],
+  "actions": [
+    {
+      "id": "rev_RwcHsX3IcZ19xWMx",
+      "action": "create",
+      "label": "中国电信天翼云 在线笔试",
+      "changes": {
+        "company_name": "中国电信天翼云【验收】",
+        "job_title": "在线笔试线索【验收】",
+        "status": "assessment"
+      },
+      "started_at": "2026-10-23T13:37:43.141Z",
+      "before_ledger": {
+        "filtered_total": 5,
+        "total_applied": 1,
+        "pending_review": 20
+      },
+      "resolve_status": 200,
+      "resolve_body": {
+        "review_status": "resolved",
+        "application_id": "app_BuQFME2Y99Octpdw",
+        "application_status": "assessment",
+        "applied_at": "2026-10-22T09:46:35.000Z",
+        "applied_at_precision": "inferred_before"
+      },
+      "after_ledger": {
+        "filtered_total": 6,
+        "total_applied": 2,
+        "pending_review": 19
+      },
+      "final_review_status": "resolved",
+      "resolution": {
+        "resolution": "created",
+        "application_id": "app_BuQFME2Y99Octpdw",
+        "undo_until": "2026-10-23T13:37:53.149Z",
+        "before": null,
+        "after_version": 1
+      },
+      "finished_at": "2026-10-23T13:37:43.158Z",
+      "history": [
+        {
+          "from": null,
+          "to": "assessment"
+        }
+      ]
+    },
+    {
+      "id": "rev_X94-2zRWNbc8HQTK",
+      "action": "create",
+      "label": "中国电子云 AI 面试",
+      "changes": {
+        "company_name": "中国电子云【验收】",
+        "job_title": "AI 面试线索【验收】",
+        "status": "interview"
+      },
+      "started_at": "2026-10-23T13:37:43.160Z",
+      "before_ledger": {
+        "filtered_total": 6,
+        "total_applied": 2,
+        "pending_review": 19
+      },
+      "resolve_status": 200,
+      "resolve_body": {
+        "review_status": "resolved",
+        "application_id": "app_TP8b5EIKYMQhXR42",
+        "application_status": "interview",
+        "applied_at": "2026-10-17T03:04:05.000Z",
+        "applied_at_precision": "inferred_before"
+      },
+      "after_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 18
+      },
+      "final_review_status": "resolved",
+      "resolution": {
+        "resolution": "created",
+        "application_id": "app_TP8b5EIKYMQhXR42",
+        "undo_until": "2026-10-23T13:37:53.169Z",
+        "before": null,
+        "after_version": 1
+      },
+      "finished_at": "2026-10-23T13:37:43.180Z",
+      "history": [
+        {
+          "from": null,
+          "to": "interview"
+        }
+      ]
+    },
+    {
+      "id": "rev_VsrsHEis1WSawv56",
+      "action": "link",
+      "label": "腾讯岗位浏览 → 关联已有台账",
+      "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+      "started_at": "2026-10-23T13:37:43.182Z",
+      "before_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 18
+      },
+      "target_application": {
+        "id": "app_RJ0CfVWVNS1Y0Tvk",
+        "company": "腾讯",
+        "title": "岗位详情",
+        "version": 2
+      },
+      "resolve_status": 200,
+      "resolve_body": {
+        "review_status": "resolved",
+        "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+        "application_status": "pending",
+        "applied_at": null,
+        "applied_at_precision": "unknown"
+      },
+      "after_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 17
+      },
+      "final_review_status": "resolved",
+      "resolution": {
+        "resolution": "linked",
+        "application_id": "app_RJ0CfVWVNS1Y0Tvk",
+        "undo_until": "2026-10-23T13:37:53.194Z",
+        "before": {
+          "id": "app_RJ0CfVWVNS1Y0Tvk",
+          "owner_id": "usr_XXiHSmOWycML2ca2",
+          "company_name": "腾讯",
+          "company_key": "腾讯",
+          "job_title": "岗位详情",
+          "site_key": "tencent",
+          "site_job_id": null,
+          "site_application_id": null,
+          "recruitment_batch": null,
+          "location": null,
+          "jd_summary": "腾讯校园招聘 3 首页 青云计划 岗位投递 招聘动态 了解腾讯 求职攻略 登录 投递简历 关注腾讯招聘 公司 关于腾讯 腾讯公益 客服中心 法律信息 服务协议",
+          "channel": "企业官网",
+          "job_url": "https://join.qq.com/post_detail.html?postid=1282707398326592512",
+          "canonical_job_url": "https://join.qq.com/post_detail.html?postid=1282707398326592512",
+          "status_url": null,
+          "status_url_scope": null,
+          "status": "pending",
+          "has_applied": 0,
+          "applied_at": null,
+          "applied_at_precision": "unknown",
+          "first_viewed_at": "2026-10-22T09:38:44.843Z",
+          "last_viewed_at": "2026-10-22T09:42:23.851Z",
+          "form_started_at": null,
+          "last_status_changed_at": "2026-10-22T09:38:44.843Z",
+          "last_progress_at": "2026-10-22T09:38:44.843Z",
+          "last_site_observed_at": null,
+          "last_reviewed_at": null,
+          "deadline_at": null,
+          "deadline_precision": null,
+          "interview_round": null,
+          "round_label": null,
+          "interview_scheduled_at": null,
+          "last_interview_completed_at": null,
+          "source_methods_json": "[\"plugin\"]",
+          "latest_event_id": "evt_6mjkHdXsLOJi8d5z",
+          "version": 2,
+          "created_at": "2026-10-22T09:38:44.843Z",
+          "updated_at": "2026-10-22T09:42:24.180Z",
+          "archived_at": null,
+          "archive_reason": null,
+          "last_b_notified_at": null,
+          "last_a_notified_at": null,
+          "deletion_generation": 0,
+          "stage_received_at": null,
+          "stage_anchor_at": null,
+          "stage_last_notified_anchor": null
+        },
+        "after_version": 3
+      },
+      "finished_at": "2026-10-23T13:37:43.205Z",
+      "history": [
+        {
+          "from": "pending",
+          "to": "pending"
+        },
+        {
+          "from": "pending",
+          "to": "pending"
+        },
+        {
+          "from": null,
+          "to": "pending"
+        }
+      ]
+    },
+    {
+      "id": "rev_8TBSVgdmmQMDacIH",
+      "action": "dismiss_then_undo",
+      "label": "Re: 笔试时间询问（人工回复，非通知）",
+      "started_at": "2026-10-23T13:37:43.206Z",
+      "before_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 17
+      },
+      "resolve_status": 200,
+      "resolve_body": {
+        "review_status": "dismissed"
+      },
+      "after_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 16
+      },
+      "undo_status": 200,
+      "undo_body": null,
+      "after_undo_ledger": {
+        "filtered_total": 7,
+        "total_applied": 3,
+        "pending_review": 17
+      },
+      "final_dismiss_status": 200,
+      "final_review_status": "dismissed",
+      "resolution": {
+        "resolution": "dismissed",
+        "reason": null,
+        "undo_until": "2026-10-23T13:37:53.239Z",
+        "before": null,
+        "after_version": null
+      },
+      "finished_at": "2026-10-23T13:37:43.241Z"
+    }
+  ],
+  "checks": [
+    {
+      "name": "create 两条（带【验收】标记）",
+      "ok": true
+    },
+    {
+      "name": "link 一条到已有台账",
+      "ok": true
+    },
+    {
+      "name": "dismiss 后 10 秒内撤销成功",
+      "ok": true
+    },
+    {
+      "name": "过期版本提交返回 409 VERSION_CONFLICT",
+      "ok": true
+    },
+    {
+      "name": "待确认计数下降",
+      "ok": true
+    },
+    {
+      "name": "台账条数增加",
+      "ok": true
+    }
+  ],
+  "conflict_check": {
+    "id": "rev_EW0lnfw9ntERQ7r4",
+    "sent_version": 8,
+    "current_version": 1,
+    "status": 409,
+    "code": "VERSION_CONFLICT"
+  },
+  "after_counts": {
+    "filtered_total": 7,
+    "total_applied": 3,
+    "pending_review": 16
+  }
+}

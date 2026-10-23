@@ -64,6 +64,8 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
     const link = reminder.text.match(/\/r\/(rl_[A-Za-z0-9_-]+)/);
     assert.ok(link, `提醒邮件应包含 /r/ 链接：${reminder.text.slice(0, 200)}`);
     assert.ok(!/auth_code|授权码|密码/.test(reminder.text) || true);
+    // 文案回归：不能被拼成「面试中邀请」「笔试中邀请」
+    assert.ok(!/面试中邀请|笔试中邀请/.test(reminder.text), reminder.text.slice(0, 300));
     // 重跑：同业务日批次复用，不重复发信
     const again = await server.tick({ force: true, reminders: true });
     const second = again.json.data.result.reminders.find((r) => r.batch_id === result.batch_id);

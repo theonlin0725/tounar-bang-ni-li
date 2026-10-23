@@ -198,7 +198,12 @@ function receiptRange({ a, b, digest }) {
   return dates.length > 1 ? `${dates[0]}–${dates.at(-1)}` : dates[0] || '日期待补充';
 }
 function officialUrl(app) { const url=app.status_url || app.job_url; return isSafeHttpUrl(url) ? url : null; }
-function stageLabel(x) { return x.stage ? `${STATUS_LABELS[x.app.status]}邀请 ${shanghaiDateKey(x.stage.received_at || x.stage.anchor)}收到，已过 ${x.stage.elapsed} 天，还没有新进展` : progressTag(x.app); }
+const INVITATION_LABELS = { assessment: '笔试', interview: '面试' };
+function stageLabel(x) {
+  if (!x.stage) return progressTag(x.app);
+  const label = INVITATION_LABELS[x.app.status] || STATUS_LABELS[x.app.status];
+  return `${label}邀请 ${shanghaiDateKey(x.stage.received_at || x.stage.anchor)}收到，已过 ${x.stage.elapsed} 天，还没有新进展`;
+}
 function progressDescription(x) {
   const p=x.payload || {};
   return [p.mapped_status ? STATUS_LABELS[p.mapped_status] : x.outbox.summary, p.round_label,

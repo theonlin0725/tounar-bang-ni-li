@@ -38,6 +38,12 @@ function parseArgs(argv) {
     if (name === 'no-start') { out.noStart = true; continue; }
     const value = argv[i + 1];
     if (value == null || value.startsWith('--')) throw new Error(`${key} 需要一个值`);
+    if (name === 'env') {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(value)) throw new Error(`--env 需要 KEY=VALUE，收到：${value}`);
+      (out.env ||= []).push(value);
+      i += 1;
+      continue;
+    }
     out[name] = value;
     i += 1;
   }
@@ -156,7 +162,7 @@ if (!fs.existsSync(sourceDb)) {
 const sourceDataDir = path.dirname(sourceDb);
 const keyFile = path.join(sourceDataDir, 'master.key');
 const tickFile = path.join(sourceDataDir, 'internal-tick.token');
-const envFile = path.resolve(args.env || path.join(sourceDir, '.env'));
+const envFile = path.resolve(args['env-file'] || path.join(sourceDir, '.env'));
 if (!fs.existsSync(keyFile)) {
   fail(`缺少同源密钥：${keyFile}`,
     '没有 master.key 就无法解密库里已保存的邮箱凭据，真实 IMAP/SMTP 会不可用；请确认备份目录结构。');
@@ -209,6 +215,7 @@ const manifest = {
   node: process.versions.node,
   counts: businessCounts,
   sha256: { 'tounar.sqlite': sha256File(dbFile) },
+  env_overrides: (args.env || []).map((pair) => pair.slice(0, pair.indexOf('='))),
   note: '真实业务数据副本（含个人信息），不是匿名库；只用于本机验收。'
 };
 fs.writeFileSync(path.join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
@@ -239,6 +246,30 @@ const childEnv = {
 if (mailModeFlag === 'smtp' && !childEnv.SMTP_URL) {
   fail('要求 --mail-mode=smtp，但源 .env 里没有 SMTP_URL。', '改用默认 outbox，或在原 .env 配置 SMTP_URL 后重试。');
 }
+// 额外覆盖（比如验收期放宽验证码频控：--env OTP_RESEND_SECONDS=0）。
+// 只影响这个一次性副本，不写入原 .env。
+for (const pair of args.env || []) {
+  const eq = pair.indexOf('=');
+  childEnv[pair.slice(0, eq)] = pair.slice(eq + 1);
+}
+
+// 给 CLI 脚本（run-reminders / run-mail-sync）用的环境文件：
+// 不加这个，CLI 会用默认 PORT=4310 生成提醒链接，链接就指错端口。
+const envLines = [
+  `DATA_DIR=${targetDir}`,
+  `DB_PATH=${dbFile}`,
+  'HOST=127.0.0.1',
+  `PORT=${port}`,
+  `APP_BASE_URL=http://127.0.0.1:${port}`,
+  `MAIL_MODE=${mailModeFlag}`,
+  'ENABLE_SCHEDULER=false',
+  'CLOUD_LLM_ENABLED=false',
+  `ALLOWED_EMAILS=${childEnv.ALLOWED_EMAILS}`,
+  `MAIL_FROM=${childEnv.MAIL_FROM}`
+];
+if (mailModeFlag === 'smtp') envLines.push(`SMTP_URL=${childEnv.SMTP_URL}`);
+const acceptanceEnv = path.join(targetDir, 'acceptance.env');
+fs.writeFileSync(acceptanceEnv, envLines.join('\n') + '\n', { mode: 0o600 });
 
 const statePath = path.join(targetDir, 'state.json');
 if (args.noStart) {
@@ -293,7 +324,8 @@ console.log(`   发信模式：${mailModeFlag}${mailModeFlag === 'outbox' ? '（
 console.log(`   进程：pid ${child.pid}（脱离当前会话，关掉终端也不会停）`);
 console.log(`   日志：${logFile}`);
 console.log(`   停止：npm run local:stop`);
-console.log(`   验证码：DATA_DIR="${targetDir}" npm run otp:latest`);
+console.log(`   验证码：node --env-file="${acceptanceEnv}" server/scripts/latest-otp.js`);
+console.log(`   CLI（提醒/同步）：node --env-file="${acceptanceEnv}" server/scripts/run-reminders.js`);
 if (mailModeFlag === 'outbox') {
   console.log('\n   插件后台地址填：' + `http://127.0.0.1:${port}`);
 }
