@@ -49,6 +49,9 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   port: intEnv('PORT', 4310),
   appBaseUrl: (process.env.APP_BASE_URL || `http://127.0.0.1:${intEnv('PORT', 4310)}`).replace(/\/$/, ''),
+  // 托管平台要求分享码时（如 WorkBuddy 的 ?sharecode=…），邮件/深链会自动带上。
+  // 不设置则完全不影响本机与普通域名。
+  shareCode: process.env.SHARE_CODE || '',
   appEnv: process.env.APP_ENV || 'development',
   allowedEmails,
   masterKey: Buffer.from(masterKeyHex, 'hex'),

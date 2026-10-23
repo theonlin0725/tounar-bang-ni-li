@@ -11,7 +11,7 @@ process.env.MAIL_MODE = 'outbox';
 const db = await import('../src/db.js');
 const apps = await import('../src/domain/applications.js');
 const ledger = await import('../src/domain/ledger.js');
-const { newId, nowIso } = await import('../src/util.js');
+const { newId, nowIso, appendShareCode } = await import('../src/util.js');
 const reviews = await import('../src/domain/reviews.js');
 const matching = await import('../src/domain/mailMatching.js');
 const {config}=await import('../src/config.js');
@@ -26,6 +26,12 @@ function mailEvent(payload = {}, mailOwner = owner) {
   db.run(`INSERT INTO events (id,owner_id,client_event_id,source_method,event_type,occurred_at,observed_at,received_at,schema_version,evidence_level,payload_hash,payload_json) VALUES (?,?,?,'mail','mail_progress_detected',?,?,?,'C1','strong','test',?)`,[id,mailOwner,id,event.occurred_at,event.occurred_at,event.received_at,JSON.stringify(payload)]);
   return event;
 }
+it('P0: 平台分享码会正确附加到链接', () => {
+  assert.equal(appendShareCode('https://x.test/?app=1', 'CODE'), 'https://x.test/?app=1&sharecode=CODE');
+  assert.equal(appendShareCode('https://x.test/', 'CODE'), 'https://x.test/?sharecode=CODE');
+  assert.equal(appendShareCode('https://x.test/r/abc', 'A B'), 'https://x.test/r/abc?sharecode=A%20B');
+  assert.equal(appendShareCode('https://x.test/', ''), 'https://x.test/');
+});
 it('P0: 邮件复核保留原信 ID，列表和详情返回同一收信时间', () => {
   const connection = newId('conn'), mail = newId('mail');
   db.run(`INSERT INTO mail_connections (id,owner_id,email,mode,scan_since,consent_version,created_at,updated_at) VALUES (?,?,'phase2@qq.com','headers_only',?,'test',?,?)`,[connection,owner,nowIso(),nowIso(),nowIso()]);

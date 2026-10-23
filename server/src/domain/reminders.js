@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { all, bumpRevision, dataRevision, getApplication, one, run, transaction } from '../db.js';
 import {
   AppError, STATUS_LABELS, daysBetweenShanghai, decryptSecret, encryptSecret, escapeHtml, isDueForReview,
-  newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods, stageFollowupState, isSafeHttpUrl
+  appendShareCode, newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods, stageFollowupState, isSafeHttpUrl
 } from '../util.js';
 import { getPreferences } from './applications.js';
 import { sendMail } from '../mailer.js';
@@ -13,7 +13,7 @@ function tokenHash(token) {
 }
 
 function appUrl(pathname = '/') {
-  return config.appBaseUrl + pathname;
+  return appendShareCode(config.appBaseUrl + pathname, config.shareCode);
 }
 
 export function createReminderLink(ownerId, applicationId) {

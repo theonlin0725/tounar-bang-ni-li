@@ -2,6 +2,22 @@
 (function () {
   const DEFAULT_TIMEOUT_MS = 8000;
 
+  /* 线上平台需要 sharecode 才能访问时，允许把后台地址写成
+   * https://域名/?sharecode=XXXX —— 这里把它拆出来，后续每个请求自动带上，
+   * 免得插件请求被平台的 403「链接不完整」拦掉。 */
+  function splitServer(raw) {
+    const url = new URL(raw);
+    const share = url.searchParams.get('sharecode');
+    url.search = '';
+    url.hash = '';
+    return { base: url.toString().replace(/\/$/, ''), share };
+  }
+
+  function withShare(url, share) {
+    if (!share) return url;
+    return url + (url.includes('?') ? '&' : '?') + 'sharecode=' + encodeURIComponent(share);
+  }
+
   /** 把 fetch 的笼统失败拆成用户能自查的原因：地址格式 / 超时 / 连不上。 */
   function describeUrl(base) {
     let parsed;
@@ -13,15 +29,16 @@
   }
 
   async function request(path, { method = 'GET', body, token, serverUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-    const base = String(serverUrl || '').replace(/\/$/, '');
-    if (!base) throw { code: 'NO_SERVER', message: '尚未设置后台地址' };
-    const badUrl = describeUrl(base);
+    const raw = String(serverUrl || '').trim();
+    if (!raw) throw { code: 'NO_SERVER', message: '尚未设置后台地址' };
+    const badUrl = describeUrl(raw);
     if (badUrl) throw badUrl;
+    const { base, share } = splitServer(raw);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
-      response = await fetch(base + path, {
+      response = await fetch(withShare(base + path, share), {
         method,
         headers: {
           'Content-Type': 'application/json',

@@ -15,6 +15,13 @@ export const STATUS_LABELS = {
 };
 export const STATUS_RANK = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 };
 
+/* 平台分享码：给链接补上 sharecode 查询参数（已有查询串用 &，没有用 ?）。 */
+export function appendShareCode(url, code) {
+  const text = String(url || '');
+  if (!code || !text) return text;
+  return text + (text.includes('?') ? '&' : '?') + 'sharecode=' + encodeURIComponent(String(code));
+}
+
 export function nowIso() {
   return new Date().toISOString();
 }
