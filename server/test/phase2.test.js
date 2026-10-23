@@ -171,6 +171,8 @@ it('P4: 修复脚本 dry-run 不写库，需审阅计划才能执行；保留备
 it('P4: URL保留SPA岗位路由，同时去掉认证与追踪信息',async()=>{
   const {canonicalJobUrl}=await import('../src/util.js');
   assert.equal(canonicalJobUrl('https://user:pass@example.com/?token=x#/job/12345?utm_source=mail&auth=secret'),'https://example.com/#/job/12345');
+  assert.equal(canonicalJobUrl('https://example.com/job;jsessionid=fixture-session/12345?jsessionid=fixture-query'),'https://example.com/job/12345');
+  assert.equal(canonicalJobUrl('https://example.com/#/job/12345;sessionid=fixture-route'),'https://example.com/#/job/12345');
   assert.notEqual(canonicalJobUrl('https://example.com/#/job/12345'),canonicalJobUrl('https://example.com/#/job/12346'));
 });
 it('P3: 笔试推进面试后旧回看作废，较晚预约重新锚定',()=>{

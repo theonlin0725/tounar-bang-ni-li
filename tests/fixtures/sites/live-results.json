@@ -1,0 +1,766 @@
+[
+  {
+    "site": "xiaomi",
+    "url": "https://hr.xiaomi.com/job/view/714",
+    "checked_at": "2026-10-23T03:06:03.316Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:05:48.832Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "xiaomi",
+      "adapter_version": "1.0.0-verified-legacy-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "小米",
+        "job_title": "天线工程师",
+        "site_job_id": "714",
+        "job_url": "https://hr.xiaomi.com/job/view/714",
+        "jd_summary": "1. 按时保量完成小米项目的天线设计及验证工作； 2. 对于项目中问题点能够给出一定分析和解决意见； 3. 数据处理，给出有意义的报告和结论； 4. 天线相关的",
+        "location": "Peking",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "api2.order.mi.com",
+      "api2.service.order.mi.com",
+      "a.stat.xiaomi.com"
+    ]
+  },
+  {
+    "site": "xiaomi",
+    "url": "https://hr.xiaomi.com/job/view/800",
+    "checked_at": "2026-10-23T03:06:02.123Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:05:49.300Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "xiaomi",
+      "adapter_version": "1.0.0-verified-legacy-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "小米",
+        "job_title": "Android Multimedia系统工程师（小米电视）",
+        "site_job_id": "800",
+        "job_url": "https://hr.xiaomi.com/job/view/800",
+        "jd_summary": "1.具备良好的自我驱动能力，具有强烈的责任感，有挑战自我、学习新知的意愿与能力； 2.具备扎实的c/c++/java编程基础，熟悉基本的数据结构及算法； 3.熟",
+        "location": "Peking",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "api2.order.mi.com",
+      "api2.service.order.mi.com",
+      "a.stat.xiaomi.com"
+    ]
+  },
+  {
+    "site": "shixiseng",
+    "url": "https://www.shixiseng.com/intern/inn_lri5lbntavwi",
+    "checked_at": "2026-10-23T03:06:15.329Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:05:53.724Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "shixiseng",
+      "adapter_version": "1.0.0-verified-intern+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "简单心理",
+        "job_title": "企业用户运营/项目运营",
+        "site_job_id": "inn_lri5lbntavwi",
+        "job_url": "https://www.shixiseng.com/intern/inn_lri5lbntavwi",
+        "jd_summary": "岗位职责： 1、负责企业EAP客服电话接听、咨询预约操作解答、咨询设置解答、辅助答疑等； 2、及时记录用户问题，跟进问题解决至闭环； 3、协助EAP部其他项目工",
+        "location": "北京",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "medium",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "company_card",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "实习僧"
+      }
+    },
+    "blocked_resource_hosts": [
+      "sxsimg.xiaoyuanzhao.com",
+      "turing.captcha.qcloud.com",
+      "apigateway.shixiseng.com",
+      "hm.baidu.com",
+      "operation.shixiseng.com"
+    ]
+  },
+  {
+    "site": "shixiseng",
+    "url": "https://www.shixiseng.com/intern/inn_bliwylwige4t",
+    "checked_at": "2026-10-23T03:06:37.617Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:20.258Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "shixiseng",
+      "adapter_version": "1.0.0-verified-intern+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "技实邦达",
+        "job_title": "数据采集",
+        "site_job_id": "inn_bliwylwige4t",
+        "job_url": "https://www.shixiseng.com/intern/inn_bliwylwige4t",
+        "jd_summary": "岗位职责: 1.对采集到的原始数据进行筛选、整理与标准化标注，剔除无效或异常数据，确保输入数据的高质量与准确性。 2.实时观察机器人在训练中的表现，记录异常行为",
+        "location": "泰安",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "medium",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "company_card",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "实习僧"
+      }
+    },
+    "blocked_resource_hosts": [
+      "apigateway.shixiseng.com",
+      "operation.shixiseng.com",
+      "turing.captcha.qcloud.com",
+      "hm.baidu.com"
+    ]
+  },
+  {
+    "site": "bytedance",
+    "url": "https://jobs.bytedance.com/campus/position/7699119731313821957/detail",
+    "checked_at": "2026-10-23T03:06:34.024Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:17.956Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "bytedance",
+      "adapter_version": "1.0.0-verified-campus+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "字节跳动",
+        "job_title": "AI Agent产品经理 - 巨量AI工作台",
+        "site_job_id": "7699119731313821957",
+        "job_url": "https://jobs.bytedance.com/campus/position/7699119731313821957/detail",
+        "jd_summary": "团队介绍：我们正在打造面向企业的巨量AI工作台，从商家在字节跳动生态的经营与营销场景切入，通过主Agent与机会洞察、数据分析、创意制作、直播运营、广告投放等数",
+        "location": "上海、北京",
+        "recruitment_batch": "2027 校园招聘",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "high"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "verified_refine"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "verify.snssdk.com",
+      "mcs-bd-my.larkoffice.com",
+      "mon-va.byteoversea.com",
+      "starling.zijieapi.com",
+      "sf16-short-va.bytedapm.com",
+      "mcs.zijieapi.com",
+      "lf3-static.bytednsdoc.com"
+    ]
+  },
+  {
+    "site": "bytedance",
+    "url": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
+    "checked_at": "2026-10-23T03:06:44.656Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:30.231Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "bytedance",
+      "adapter_version": "1.0.0-verified-campus+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "字节跳动",
+        "job_title": "营销激励产品经理（广告策略方向） - 抖音生活服务",
+        "site_job_id": "7694918252576835845",
+        "job_url": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
+        "jd_summary": "团队介绍：抖音生活服务依托抖音POI （Point of Interest）、短视频、直播、搜索等，以“激发线下生意，丰富美好生活”为使命，致力于成为最值得信赖",
+        "location": "上海、北京",
+        "recruitment_batch": "2027 校园招聘",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "high"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "verified_refine"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "verify.snssdk.com",
+      "mcs-bd-my.larkoffice.com",
+      "mon-va.byteoversea.com",
+      "starling.zijieapi.com",
+      "sf16-short-va.bytedapm.com",
+      "mcs.zijieapi.com",
+      "lf3-static.bytednsdoc.com"
+    ]
+  },
+  {
+    "site": "tencent",
+    "url": "https://careers.tencent.com/jobdesc.html?postId=2099730961662128128",
+    "checked_at": "2026-10-23T03:06:55.697Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:43.054Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "tencent",
+      "adapter_version": "1.0.0-verified-jobdesc+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "腾讯",
+        "job_title": "在研UE5项目-战斗动画设计师",
+        "site_job_id": "2099730961662128128",
+        "job_url": "https://careers.tencent.com/jobdesc.html?postId=2099730961662128128",
+        "jd_summary": "1.独立负责游戏中主角及怪物的核心战斗动作设计与制作，确保动作风格符合写实要求，并完成最终引擎实现； 2.根据游戏设定与策划需求，设计并优化角色动作，提升战斗表",
+        "location": "上海",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "pingjs.qq.com",
+      "oth.str.beacon.qq.com",
+      "otheve.beacon.qq.com",
+      "hr-robot.sdc.qq.com",
+      "h.trace.qq.com"
+    ]
+  },
+  {
+    "site": "tencent",
+    "url": "https://careers.tencent.com/jobdesc.html?postId=1942052496046424064",
+    "checked_at": "2026-10-23T03:06:58.956Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:46.412Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "tencent",
+      "adapter_version": "1.0.0-verified-jobdesc+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "腾讯",
+        "job_title": "《三角洲行动》-系统策划（烽火地带模式）",
+        "site_job_id": "1942052496046424064",
+        "job_url": "https://careers.tencent.com/jobdesc.html?postId=1942052496046424064",
+        "jd_summary": "1.负责三角洲行动烽火地带模式相关玩法系统的设计，包括但不限于主流程、目标成长系统等； 2.在设计过程中，明确设计目的，重点关注逻辑规则、表格设计和玩法体验； ",
+        "location": "深圳",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "pingjs.qq.com",
+      "otheve.beacon.qq.com",
+      "oth.str.beacon.qq.com",
+      "h.trace.qq.com"
+    ]
+  },
+  {
+    "site": "meituan",
+    "url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697320043&highlightType=campus",
+    "checked_at": "2026-10-23T03:07:12.043Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:06:56.660Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "meituan",
+      "adapter_version": "1.0.0-verified-web-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "美团",
+        "job_title": "AI全栈工程师",
+        "site_job_id": "4697320043",
+        "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697320043&highlightType=campus",
+        "jd_summary": "岗位职责 岗位职责 1. 参与 AI 应用的全栈开发：负责 AI 产品功能的前端界面（Web/小程序）与后端服务的设计与实现，保障高可用与用户体验； 2. 大模",
+        "location": "北京市、上海市、成都市、深圳市",
+        "recruitment_batch": "应届-校园招聘",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "high"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "verified_refine"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "lx.meituan.net",
+      "catfront.dianping.com",
+      "root-certs-verify-digicert.meituan.com",
+      "root-certs-verify-globalsign.meituan.com",
+      "logan.sankuai.com"
+    ]
+  },
+  {
+    "site": "meituan",
+    "url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697280304&highlightType=campus",
+    "checked_at": "2026-10-23T03:07:20.689Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:07:06.570Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "meituan",
+      "adapter_version": "1.0.0-verified-web-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "美团",
+        "job_title": "AI后端开发工程师",
+        "site_job_id": "4697280304",
+        "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697280304&highlightType=campus",
+        "jd_summary": "岗位职责 1. 负责各类后台服务和业务系统的需求分析、系统设计、开发实现； 2. 参与后端模块、数据平台、基础服务等的开发工作，探索大模型能力（如LLM API",
+        "location": "北京市、上海市、成都市",
+        "recruitment_batch": "应届-校园招聘",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "high"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "verified_refine"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "lx.meituan.net",
+      "catfront.dianping.com",
+      "root-certs-verify-digicert.meituan.com",
+      "root-certs-verify-globalsign.meituan.com",
+      "logan.sankuai.com"
+    ]
+  },
+  {
+    "site": "mihoyo",
+    "url": "https://jobs.mihoyo.com/#/position/9707",
+    "checked_at": "2026-10-23T03:07:24.625Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:07:08.878Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "generic",
+      "adapter_version": "1.2.0-scored+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "job_title": "资深Unreal工具开发（关卡PCG方向）",
+        "site_job_id": "9707",
+        "job_url": "https://jobs.mihoyo.com/#/position/9707",
+        "jd_summary": "1. 解决策划、美术处理关卡原型摸索过程中的资源制作问题； 2. 深度参与关卡制作流程梳理与标准制定，基于编辑器工具持续优化策划、美术日常制作效率； 3. 根据",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "low",
+          "job_title": "medium",
+          "site_job_id": "medium",
+          "jd_summary": "medium",
+          "location": "low",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "unavailable",
+          "job_title": "heading_near_apply",
+          "site_job_id": "url_identifier",
+          "jd_summary": "jd_heading_section",
+          "location": "unavailable",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "网页"
+      }
+    },
+    "blocked_resource_hosts": [
+      "ee-sentry.app.mihoyo.com",
+      "south-gate.mihoyo.com"
+    ]
+  },
+  {
+    "site": "mihoyo",
+    "url": "https://jobs.mihoyo.com/#/position/9705",
+    "checked_at": "2026-10-23T03:07:35.621Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:07:21.350Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "generic",
+      "adapter_version": "1.2.0-scored+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "job_title": "资深Unreal工具开发（构建方向）-预研项目",
+        "site_job_id": "9705",
+        "job_url": "https://jobs.mihoyo.com/#/position/9705",
+        "jd_summary": "岗位职责 1. 游戏打包相关的管线与工具开发 -根据项目需求，设计适配于多平台的包体资源管理方案； -深入引擎打包逻辑以及工具链底层，持续优化打包效率； -开发",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "low",
+          "job_title": "medium",
+          "site_job_id": "medium",
+          "jd_summary": "medium",
+          "location": "low",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "unavailable",
+          "job_title": "heading_near_apply",
+          "site_job_id": "url_identifier",
+          "jd_summary": "jd_heading_section",
+          "location": "unavailable",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "网页"
+      }
+    },
+    "blocked_resource_hosts": [
+      "ee-sentry.app.mihoyo.com",
+      "south-gate.mihoyo.com"
+    ]
+  },
+  {
+    "site": "netease",
+    "url": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+    "checked_at": "2026-10-23T03:10:58.586Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:10:40.247Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "netease",
+      "adapter_version": "1.0.0-verified-job-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "网易",
+        "job_title": "法务实习生（维权诉讼）",
+        "site_job_id": "79495",
+        "job_url": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+        "jd_summary": "1、归纳、整理维权材料，核查授权文件，证据链溯源，协助完成证据梳理工作； 2、法律法规调研，包括案例检索、法规查找整理，形成调研报告初稿； 3、监测、排查竞品侵",
+        "location": "杭州市",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "res2.wx.qq.com",
+      "s6.music.126.net",
+      "ehr-api.netease.com"
+    ]
+  },
+  {
+    "site": "netease",
+    "url": "https://hr.163.com/job-detail.html?id=78226&lang=zh",
+    "checked_at": "2026-10-23T03:11:23.607Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:11:09.114Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "netease",
+      "adapter_version": "1.0.0-verified-job-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "网易",
+        "job_title": "海外产品运营实习生（网易画加）",
+        "site_job_id": "78226",
+        "job_url": "https://hr.163.com/job-detail.html?id=78226&lang=zh",
+        "jd_summary": "1. 运营 Draw.Market 海外社媒账号矩阵（X /Facebook 等），策划选题并执行内容发布 2. 协助搜寻和联络海外美术领域的 KOC / 画师",
+        "location": "广州市",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "res2.wx.qq.com",
+      "s6.music.126.net",
+      "ehr-api.netease.com"
+    ]
+  },
+  {
+    "site": "jd",
+    "url": "https://zhaopin.jd.com/web/job-info-detail?requementId=226996",
+    "checked_at": "2026-10-23T03:21:42.240Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:21:29.228Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "jd",
+      "adapter_version": "1.0.0-verified-job-info-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "京东",
+        "job_title": "产品运营",
+        "site_job_id": "226996",
+        "job_url": "https://zhaopin.jd.com/web/job-info-detail?requementId=226996",
+        "jd_summary": "1. 制定搜索商详交易链路运营策略，优化转化漏斗关键环节，提升到商成交的转化效率； 2. 独立梳理业务需求并设计产品方案，协同产研团队推进开发与上线验证，确保运",
+        "location": "北京市",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "wl.jd.com"
+    ]
+  },
+  {
+    "site": "jd",
+    "url": "https://zhaopin.jd.com/web/job-info-detail?requementId=225873",
+    "checked_at": "2026-10-23T03:22:03.289Z",
+    "http_status": 200,
+    "probe_checked_at": "2026-10-23T03:21:49.873Z",
+    "probe_http_status": 200,
+    "event": {
+      "event_type": "job_viewed",
+      "site_key": "jd",
+      "adapter_version": "1.0.0-verified-job-info-detail+capture-2",
+      "evidence_level": "strong",
+      "evidence_code": "visible-dwell-3000ms",
+      "payload": {
+        "company_name": "京东",
+        "job_title": "解决方案",
+        "site_job_id": "225873",
+        "job_url": "https://zhaopin.jd.com/web/job-info-detail?requementId=225873",
+        "jd_summary": "1. 研究家电家居客户需求与供应链现状，输出客户拓展策略与定制化解决方案； 2. 设计并推动端到端供应链解决方案落地，联动内部资源保障项目交付与客户满意度； 3",
+        "location": "上海市",
+        "field_confidence": {
+          "job_url": "high",
+          "company_name": "high",
+          "job_title": "medium",
+          "site_job_id": "high",
+          "jd_summary": "medium",
+          "location": "high",
+          "recruitment_batch": "low"
+        },
+        "field_sources": {
+          "job_url": "canonical_url",
+          "company_name": "adapter_company",
+          "job_title": "site_selector",
+          "site_job_id": "verified_refine",
+          "jd_summary": "verified_site_selector",
+          "location": "verified_refine",
+          "recruitment_batch": "unavailable"
+        },
+        "channel": "企业官网"
+      }
+    },
+    "blocked_resource_hosts": [
+      "wl.jd.com"
+    ]
+  }
+]

@@ -151,14 +151,16 @@ export function sanitizeUrl(value) {
   const u = new URL(value);
   u.hostname = u.hostname.toLowerCase();
   u.username = ''; u.password = '';
+  u.pathname = u.pathname.replace(/;(?:jsessionid|phpsessid|sessionid|sid)=[^/;?#]*/gi, '');
   for (const key of [...u.searchParams.keys()]) {
-    if (TRACKING_PARAMS.has(key.toLowerCase()) || key.toLowerCase().startsWith('utm_') || /^(sid|session|sessionid|token|access_token|auth|authorization|code|state|email|phone)$/i.test(key)) {
+    if (TRACKING_PARAMS.has(key.toLowerCase()) || key.toLowerCase().startsWith('utm_') || /^(sid|session|sessionid|jsessionid|phpsessid|token|access_token|auth|authorization|code|state|email|phone)$/i.test(key)) {
       u.searchParams.delete(key);
     }
   }
   if (/^#!?\//.test(u.hash)) {
     const route = new URL(u.hash.replace(/^#!/, '#').slice(1), u.origin);
-    for (const key of [...route.searchParams.keys()]) if (TRACKING_PARAMS.has(key.toLowerCase()) || /^(utm_|sid$|session|token$|access_token$|auth|code$|state$|email$|phone$)/i.test(key)) route.searchParams.delete(key);
+    route.pathname = route.pathname.replace(/;(?:jsessionid|phpsessid|sessionid|sid)=[^/;?#]*/gi, '');
+    for (const key of [...route.searchParams.keys()]) if (TRACKING_PARAMS.has(key.toLowerCase()) || /^(utm_|sid$|session|jsessionid$|phpsessid$|token$|access_token$|auth|code$|state$|email$|phone$)/i.test(key)) route.searchParams.delete(key);
     u.hash = '#' + route.pathname + route.search;
   } else u.hash = '';
   return u.toString();

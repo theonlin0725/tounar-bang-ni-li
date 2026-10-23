@@ -3,7 +3,7 @@
  *
  * D02 已冻结（2026-10-22）：优先支持白名单 =
  *   腾讯 / 字节跳动 / 阿里巴巴 / 美团 / 京东 / 小米 / 百度 / 网易（priority: 1）。
- * BOSS直聘/牛客/实习僧 为扩展期草案（priority: 2），待「全招聘站点」迭代再验证启用。
+ * BOSS直聘/牛客为扩展期草案（priority: 2）；实习僧的公开实习详情已验证，其他页面仍未验收。
  * 聊天/沟通页面一律不采集；只认 Web 岗位详情页 + 确证的成功提交。
  *
  * Honest scope: selector rules below are best-effort drafts unless site_verified
@@ -68,16 +68,16 @@
       company_name: '腾讯',
       priority: 1,
       label: '腾讯招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-jobdesc',
       channel: '企业官网',
       hosts: ['join.qq.com', 'careers.tencent.com', 'hr.tencent.com'],
       jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobdesc/i],
       listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['.job-title', '.position-title', 'h1[class*="title"]'],
-        company: ['.company-name'],
-        jd: ['.job-desc', '.position-desc', '[class*="detail-content"]'],
-        location: ['.job-location', '.position-address'],
+        title: ['.job-text-wrapper > .job-recruit-title'],
+        company: [],
+        jd: ['.duty.work-module .duty-text'],
+        location: ['.job-text-wrapper > .job-recruit-location'],
         success: ['.apply-success', '.submit-success', '[class*="applyResult"]']
       },
       statusPage: {
@@ -87,8 +87,15 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function tencentRefine(job) {
+        job.location = String(document.querySelector('.job-text-wrapper > .job-recruit-location')?.innerText || '').trim();
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/jobdesc.html?postId={id}'],
+      verifiedUrlPatterns: [/^https:\/\/careers\.tencent\.com\/jobdesc\.html\?(?=[^#]*\bpostId=\d+)/i],
+      notes: '真实官网 jobdesc 两页的浏览字段见 tests/fixtures/sites/tencent；Workday 外跳、join.qq.com 和投递登录态未验证。'
     },
     {
       key: 'bytedance',
@@ -138,6 +145,7 @@
       site_verified: true,
       verified_at: '2026-10-22',
       verified_paths: ['/campus/position/{id}/detail'],
+      verifiedUrlPatterns: [/^https:\/\/jobs\.bytedance\.com\/campus\/position\/\d+\/detail(?:[?#]|$)/i],
       notes: '选择器已于 2026-10-22 用真实页面（jobs.bytedance.com/campus/position/7699119731313821957/detail，AI Agent产品经理 - 巨量AI工作台）验证：span.job-title 取标题、.job-info 取「城市 类型 职能 批次 职位 ID」、.block-content 取 JD 正文（职位描述/职位要求两段）。页面为纯前端渲染 SPA，服务端 HTML 无内容，依赖 content script 轮询重试。投递记录页需登录态，仍未验证。'
     },
     {
@@ -172,16 +180,16 @@
       company_name: '美团',
       priority: 1,
       label: '美团招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-web-detail',
       channel: '企业官网',
       hosts: ['campus.meituan.com', 'zhaopin.meituan.com', 'hr.meituan.com'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
-        company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        title: ['.position_detail_sticky_left .postion_name > .title'],
+        company: [],
+        jd: ['.positin_detail_info_item'],
+        location: ['.position_detail_sticky_left .split_line_box_item'],
         success: ['[class*="success"]', '[class*="result"]']
       },
       statusPage: {
@@ -191,24 +199,34 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function meituanRefine(job) {
+        const place = String(document.querySelector('.position_detail_sticky_left .split_line_box_item')?.innerText || '').trim();
+        const locationMatch = place.match(/^工作地点[:：]\s*(.+)$/);
+        if (locationMatch) job.location = locationMatch[1];
+        job.recruitment_batch = String(document.querySelector('.position_detail_sticky_left .postion_name > .tag')?.innerText || '').trim();
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/web/position/detail?jobUnionId={id}'],
+      verifiedUrlPatterns: [/^https:\/\/zhaopin\.meituan\.com\/web\/position\/detail\?(?=[^#]*\bjobUnionId=\d+)/i],
+      notes: '真实官网两页浏览字段见 tests/fixtures/sites/meituan；其他招聘域名和投递登录态未验证。'
     },
     {
       key: 'jd',
       company_name: '京东',
       priority: 1,
       label: '京东招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-job-info-detail',
       channel: '企业官网',
       hosts: ['campus.jd.com', 'zhaopin.jd.com'],
-      jobUrlPatterns: [/\/job\//i, /\/position\//i],
+      jobUrlPatterns: [/\/job\//i, /\/position\//i, /\/web\/job-info-detail/i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
-        company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        title: ['.post-top > h1.post-name'],
+        company: [],
+        jd: ['.main-content > h2.f-title + .part'],
+        location: ['.post-top .post-info > span'],
         success: ['[class*="success"]', '[class*="result"]']
       },
       statusPage: {
@@ -218,24 +236,36 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function jdRefine(job) {
+        for (const node of document.querySelectorAll('.post-top .post-info > span')) {
+          const place = String(node.innerText || '').match(/^工作地点[:：]\s*(.+)$/);
+          if (place) job.location = place[1].trim();
+        }
+        const id = new URLSearchParams(location.search).get('requementId');
+        if (id && /^\d+$/.test(id)) job.site_job_id = id;
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/web/job-info-detail?requementId={id}'],
+      verifiedUrlPatterns: [/^https:\/\/zhaopin\.jd\.com\/web\/job-info-detail\?(?=[^#]*\brequementId=\d+)/i],
+      notes: '真实社会招聘详情 226996、225873 见 tests/fixtures/sites/jd；旧 job_list 入口需登录，campus.jd.com 与投递登录态未验证。'
     },
     {
       key: 'xiaomi',
       company_name: '小米',
       priority: 1,
       label: '小米招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-legacy-detail',
       channel: '企业官网',
       hosts: ['campus.xiaomi.com', 'hr.xiaomi.com'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
-        company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        title: ['.job-information tr:first-child td:nth-child(2)'],
+        company: [],
+        jd: ['.job-information .details-list'],
+        location: ['.job-information tr:first-child td:nth-child(4)'],
         success: ['[class*="success"]', '[class*="result"]']
       },
       statusPage: {
@@ -245,8 +275,22 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function xiaomiRefine(job) {
+        const cells = document.querySelectorAll('.job-information td');
+        for (const cell of cells) {
+          const label = String(cell.innerText || '').trim();
+          const value = String(cell.nextElementSibling?.innerText || '').trim();
+          if (/^工作地点[:：]$/.test(label)) job.location = value;
+        }
+        const id = location.pathname.match(/^\/job\/view\/(\d+)\/?$/);
+        if (id) job.site_job_id = id[1];
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/job/view/{id}'],
+      verifiedUrlPatterns: [/^https:\/\/hr\.xiaomi\.com\/job\/view\/\d+\/?(?:[?#]|$)/i],
+      notes: '真实公开页 /job/view/714、/800 的表格岗位字段已核验，快照见 tests/fixtures/sites/xiaomi。仅此旧版详情路径通过验证；页面来自旧招聘库，不代表岗位仍开放。campus.xiaomi.com、投递和登录态均未验证。'
     },
     {
       key: 'baidu',
@@ -280,16 +324,16 @@
       company_name: '网易',
       priority: 1,
       label: '网易招聘',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-job-detail',
       channel: '企业官网',
       hosts: ['campus.163.com', 'hr.163.com'],
       jobUrlPatterns: [/\/job\//i, /\/position\//i],
       listUrlPatterns: [/\/job\/?(\?|$)/i, /\/search/i],
       selectors: {
-        title: ['[class*="job-title"]', '.title', 'h1'],
-        company: ['[class*="company"]'],
-        jd: ['[class*="job-desc"]', '[class*="detail"]'],
-        location: ['[class*="location"]'],
+        title: ['.job-detail-header-c .posi-name > span'],
+        company: [],
+        jd: ['.job-de-de-left > .content'],
+        location: ['.job-detail-header-c .posi-sc-name'],
         success: ['[class*="success"]', '[class*="result"]']
       },
       statusPage: {
@@ -299,8 +343,16 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function neteaseRefine(job) {
+        const parts = String(document.querySelector('.job-detail-header-c .posi-sc-name')?.innerText || '').split('|').map(part => part.trim());
+        if (parts.length >= 2) job.location = parts[1];
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/job-detail.html?id={id}&lang=zh'],
+      verifiedUrlPatterns: [/^https:\/\/hr\.163\.com\/job-detail\.html\?(?=[^#]*\bid=\d+)/i],
+      notes: '真实中文详情 79495、78226 见 tests/fixtures/sites/netease；英语入口、campus.163.com 和投递登录态未验证。'
     },
     {
       key: 'boss',
@@ -352,11 +404,12 @@
       key: 'shixiseng',
       priority: 2,
       label: '实习僧',
-      version: '0.1.0-draft',
+      version: '1.0.0-verified-intern',
       channel: '实习僧',
       hosts: ['www.shixiseng.com', 'shixiseng.com'],
       jobUrlPatterns: [/\/intern\//i, /\/job\//i],
       listUrlPatterns: [/\/interns/i, /\/search/i],
+      applySelectors: ['.resume_apply'],
       selectors: {
         title: ['.new_job_name', '.job-title', 'h1'],
         company: ['.com-name', '.company-name'],
@@ -371,8 +424,17 @@
         statusSelector: '[class*="status"], [class*="state"], td:nth-child(3)',
         linkSelector: 'a[href]'
       },
-      site_verified: false,
-      notes: '选择器为草案；未经真实登录态验证（G04）。'
+      refine: function shixisengRefine(job) {
+        const id = location.pathname.match(/^\/intern\/(inn_[a-z0-9]+)\/?$/i);
+        if (id) job.site_job_id = id[1];
+        job.location = String(document.querySelector('.job_position')?.innerText || '').trim();
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-10-23',
+      verified_paths: ['/intern/{inn_id}'],
+      verifiedUrlPatterns: [/^https:\/\/(?:www\.)?shixiseng\.com\/intern\/inn_[a-z0-9]+\/?(?:[?#]|$)/i],
+      notes: '公开实习详情 inn_lri5lbntavwi、inn_bliwylwige4t 已核验，快照见 tests/fixtures/sites/shixiseng。仅浏览态，投递/登录态未验证。字体反爬字符未解码，含乱码字段应留空。'
     }
   ];
 

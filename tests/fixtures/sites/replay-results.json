@@ -1,0 +1,726 @@
+{
+  "code_ref": "working-tree",
+  "mode": "offline replay of real sanitized DOM",
+  "rows": [
+    {
+      "site": "bytedance",
+      "file": "bytedance/7694918252576835845.html",
+      "url": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
+      "captured_at": "2026-10-23T03:06:44.656Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "字节跳动",
+          "actual": "字节跳动",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "营销激励产品经理（广告策略方向） - 抖音生活服务",
+          "actual": "营销激励产品经理（广告策略方向） - 抖音生活服务",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海、北京",
+          "actual": "上海、北京",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "2027 校园招聘",
+          "actual": "2027 校园招聘",
+          "verdict": "correct"
+        },
+        "jd_summary": {
+          "expected": "团队介绍：抖音生活服务依托抖音POI （Point of Interest）、短视频、直播、搜索等，以“激发线下生意，丰富美好生活”为使命，致力于成为最值得信赖",
+          "actual": "团队介绍：抖音生活服务依托抖音POI （Point of Interest）、短视频、直播、搜索等，以“激发线下生意，丰富美好生活”为使命，致力于成为最值得信赖",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "7694918252576835845",
+          "actual": "7694918252576835845",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
+          "actual": "https://jobs.bytedance.com/campus/position/7694918252576835845/detail",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "bytedance",
+      "file": "bytedance/7699119731313821957.html",
+      "url": "https://jobs.bytedance.com/campus/position/7699119731313821957/detail",
+      "captured_at": "2026-10-23T03:06:34.024Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "字节跳动",
+          "actual": "字节跳动",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "AI Agent产品经理 - 巨量AI工作台",
+          "actual": "AI Agent产品经理 - 巨量AI工作台",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海、北京",
+          "actual": "上海、北京",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "2027 校园招聘",
+          "actual": "2027 校园招聘",
+          "verdict": "correct"
+        },
+        "jd_summary": {
+          "expected": "团队介绍：我们正在打造面向企业的巨量AI工作台，从商家在字节跳动生态的经营与营销场景切入，通过主Agent与机会洞察、数据分析、创意制作、直播运营、广告投放等数",
+          "actual": "团队介绍：我们正在打造面向企业的巨量AI工作台，从商家在字节跳动生态的经营与营销场景切入，通过主Agent与机会洞察、数据分析、创意制作、直播运营、广告投放等数",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "7699119731313821957",
+          "actual": "7699119731313821957",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://jobs.bytedance.com/campus/position/7699119731313821957/detail",
+          "actual": "https://jobs.bytedance.com/campus/position/7699119731313821957/detail",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "jd",
+      "file": "jd/225873.html",
+      "url": "https://zhaopin.jd.com/web/job-info-detail?requementId=225873",
+      "captured_at": "2026-10-23T03:22:03.289Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "京东",
+          "actual": "京东",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "解决方案",
+          "actual": "解决方案",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海市",
+          "actual": "上海市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 研究家电家居客户需求与供应链现状，输出客户拓展策略与定制化解决方案； 2. 设计并推动端到端供应链解决方案落地，联动内部资源保障项目交付与客户满意度； 3",
+          "actual": "1. 研究家电家居客户需求与供应链现状，输出客户拓展策略与定制化解决方案； 2. 设计并推动端到端供应链解决方案落地，联动内部资源保障项目交付与客户满意度； 3",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "225873",
+          "actual": "225873",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://zhaopin.jd.com/web/job-info-detail?requementId=225873",
+          "actual": "https://zhaopin.jd.com/web/job-info-detail?requementId=225873",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "jd",
+      "file": "jd/226996.html",
+      "url": "https://zhaopin.jd.com/web/job-info-detail?requementId=226996",
+      "captured_at": "2026-10-23T03:21:42.240Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "京东",
+          "actual": "京东",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "产品运营",
+          "actual": "产品运营",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "北京市",
+          "actual": "北京市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 制定搜索商详交易链路运营策略，优化转化漏斗关键环节，提升到商成交的转化效率； 2. 独立梳理业务需求并设计产品方案，协同产研团队推进开发与上线验证，确保运",
+          "actual": "1. 制定搜索商详交易链路运营策略，优化转化漏斗关键环节，提升到商成交的转化效率； 2. 独立梳理业务需求并设计产品方案，协同产研团队推进开发与上线验证，确保运",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "226996",
+          "actual": "226996",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://zhaopin.jd.com/web/job-info-detail?requementId=226996",
+          "actual": "https://zhaopin.jd.com/web/job-info-detail?requementId=226996",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "meituan",
+      "file": "meituan/4697280304.html",
+      "url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697280304&highlightType=campus",
+      "captured_at": "2026-10-23T03:07:20.689Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "美团",
+          "actual": "美团",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "AI后端开发工程师",
+          "actual": "AI后端开发工程师",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "北京市、上海市、成都市",
+          "actual": "北京市、上海市、成都市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "应届-校园招聘",
+          "actual": "应届-校园招聘",
+          "verdict": "correct"
+        },
+        "jd_summary": {
+          "expected": "岗位职责 1. 负责各类后台服务和业务系统的需求分析、系统设计、开发实现； 2. 参与后端模块、数据平台、基础服务等的开发工作，探索大模型能力（如LLM API",
+          "actual": "岗位职责 1. 负责各类后台服务和业务系统的需求分析、系统设计、开发实现； 2. 参与后端模块、数据平台、基础服务等的开发工作，探索大模型能力（如LLM API",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "4697280304",
+          "actual": "4697280304",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697280304&highlightType=campus",
+          "actual": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697280304&highlightType=campus",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "meituan",
+      "file": "meituan/4697320043.html",
+      "url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697320043&highlightType=campus",
+      "captured_at": "2026-10-23T03:07:12.043Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "美团",
+          "actual": "美团",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "AI全栈工程师",
+          "actual": "AI全栈工程师",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "北京市、上海市、成都市、深圳市",
+          "actual": "北京市、上海市、成都市、深圳市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "应届-校园招聘",
+          "actual": "应届-校园招聘",
+          "verdict": "correct"
+        },
+        "jd_summary": {
+          "expected": "岗位职责 岗位职责 1. 参与 AI 应用的全栈开发：负责 AI 产品功能的前端界面（Web/小程序）与后端服务的设计与实现，保障高可用与用户体验； 2. 大模",
+          "actual": "岗位职责 岗位职责 1. 参与 AI 应用的全栈开发：负责 AI 产品功能的前端界面（Web/小程序）与后端服务的设计与实现，保障高可用与用户体验； 2. 大模",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "4697320043",
+          "actual": "4697320043",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697320043&highlightType=campus",
+          "actual": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4697320043&highlightType=campus",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "mihoyo",
+      "file": "mihoyo/9705.html",
+      "url": "https://jobs.mihoyo.com/#/position/9705",
+      "captured_at": "2026-10-23T03:07:35.621Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "米哈游",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "job_title": {
+          "expected": "资深Unreal工具开发（构建方向）-预研项目",
+          "actual": "资深Unreal工具开发（构建方向）-预研项目",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "岗位职责 1. 游戏打包相关的管线与工具开发 -根据项目需求，设计适配于多平台的包体资源管理方案； -深入引擎打包逻辑以及工具链底层，持续优化打包效率； -开发",
+          "actual": "岗位职责 1. 游戏打包相关的管线与工具开发 -根据项目需求，设计适配于多平台的包体资源管理方案； -深入引擎打包逻辑以及工具链底层，持续优化打包效率； -开发",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "9705",
+          "actual": "9705",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://jobs.mihoyo.com/#/position/9705",
+          "actual": "https://jobs.mihoyo.com/#/position/9705",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "mihoyo",
+      "file": "mihoyo/9707.html",
+      "url": "https://jobs.mihoyo.com/#/position/9707",
+      "captured_at": "2026-10-23T03:07:24.625Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "米哈游",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "job_title": {
+          "expected": "资深Unreal工具开发（关卡PCG方向）",
+          "actual": "资深Unreal工具开发（关卡PCG方向）",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 解决策划、美术处理关卡原型摸索过程中的资源制作问题； 2. 深度参与关卡制作流程梳理与标准制定，基于编辑器工具持续优化策划、美术日常制作效率； 3. 根据",
+          "actual": "1. 解决策划、美术处理关卡原型摸索过程中的资源制作问题； 2. 深度参与关卡制作流程梳理与标准制定，基于编辑器工具持续优化策划、美术日常制作效率； 3. 根据",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "9707",
+          "actual": "9707",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://jobs.mihoyo.com/#/position/9707",
+          "actual": "https://jobs.mihoyo.com/#/position/9707",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "netease",
+      "file": "netease/78226.html",
+      "url": "https://hr.163.com/job-detail.html?id=78226&lang=zh",
+      "captured_at": "2026-10-23T03:11:23.607Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "网易",
+          "actual": "网易",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "海外产品运营实习生（网易画加）",
+          "actual": "海外产品运营实习生（网易画加）",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "广州市",
+          "actual": "广州市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 运营 Draw.Market 海外社媒账号矩阵（X /Facebook 等），策划选题并执行内容发布 2. 协助搜寻和联络海外美术领域的 KOC / 画师",
+          "actual": "1. 运营 Draw.Market 海外社媒账号矩阵（X /Facebook 等），策划选题并执行内容发布 2. 协助搜寻和联络海外美术领域的 KOC / 画师",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "78226",
+          "actual": "78226",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://hr.163.com/job-detail.html?id=78226&lang=zh",
+          "actual": "https://hr.163.com/job-detail.html?id=78226&lang=zh",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "netease",
+      "file": "netease/79495.html",
+      "url": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+      "captured_at": "2026-10-23T03:10:58.586Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "网易",
+          "actual": "网易",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "法务实习生（维权诉讼）",
+          "actual": "法务实习生（维权诉讼）",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "杭州市",
+          "actual": "杭州市",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1、归纳、整理维权材料，核查授权文件，证据链溯源，协助完成证据梳理工作； 2、法律法规调研，包括案例检索、法规查找整理，形成调研报告初稿； 3、监测、排查竞品侵",
+          "actual": "1、归纳、整理维权材料，核查授权文件，证据链溯源，协助完成证据梳理工作； 2、法律法规调研，包括案例检索、法规查找整理，形成调研报告初稿； 3、监测、排查竞品侵",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "79495",
+          "actual": "79495",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+          "actual": "https://hr.163.com/job-detail.html?id=79495&lang=zh",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "shixiseng",
+      "file": "shixiseng/inn_bliwylwige4t.html",
+      "url": "https://www.shixiseng.com/intern/inn_bliwylwige4t",
+      "captured_at": "2026-10-23T03:06:37.617Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "技实邦达",
+          "actual": "技实邦达",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "数据采集",
+          "actual": "数据采集",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "泰安",
+          "actual": "泰安",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "岗位职责: 1.对采集到的原始数据进行筛选、整理与标准化标注，剔除无效或异常数据，确保输入数据的高质量与准确性。 2.实时观察机器人在训练中的表现，记录异常行为",
+          "actual": "岗位职责: 1.对采集到的原始数据进行筛选、整理与标准化标注，剔除无效或异常数据，确保输入数据的高质量与准确性。 2.实时观察机器人在训练中的表现，记录异常行为",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "inn_bliwylwige4t",
+          "actual": "inn_bliwylwige4t",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://www.shixiseng.com/intern/inn_bliwylwige4t",
+          "actual": "https://www.shixiseng.com/intern/inn_bliwylwige4t",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "shixiseng",
+      "file": "shixiseng/inn_lri5lbntavwi.html",
+      "url": "https://www.shixiseng.com/intern/inn_lri5lbntavwi",
+      "captured_at": "2026-10-23T03:06:15.329Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "简单心理",
+          "actual": "简单心理",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "企业用户运营/项目运营",
+          "actual": "企业用户运营/项目运营",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "北京",
+          "actual": "北京",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "岗位职责： 1、负责企业EAP客服电话接听、咨询预约操作解答、咨询设置解答、辅助答疑等； 2、及时记录用户问题，跟进问题解决至闭环； 3、协助EAP部其他项目工",
+          "actual": "岗位职责： 1、负责企业EAP客服电话接听、咨询预约操作解答、咨询设置解答、辅助答疑等； 2、及时记录用户问题，跟进问题解决至闭环； 3、协助EAP部其他项目工",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "inn_lri5lbntavwi",
+          "actual": "inn_lri5lbntavwi",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://www.shixiseng.com/intern/inn_lri5lbntavwi",
+          "actual": "https://www.shixiseng.com/intern/inn_lri5lbntavwi",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "tencent",
+      "file": "tencent/1942052496046424064.html",
+      "url": "https://careers.tencent.com/jobdesc.html?postId=1942052496046424064",
+      "captured_at": "2026-10-23T03:06:58.956Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "腾讯",
+          "actual": "腾讯",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "《三角洲行动》-系统策划（烽火地带模式）",
+          "actual": "《三角洲行动》-系统策划（烽火地带模式）",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "深圳",
+          "actual": "深圳",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1.负责三角洲行动烽火地带模式相关玩法系统的设计，包括但不限于主流程、目标成长系统等； 2.在设计过程中，明确设计目的，重点关注逻辑规则、表格设计和玩法体验； ",
+          "actual": "1.负责三角洲行动烽火地带模式相关玩法系统的设计，包括但不限于主流程、目标成长系统等； 2.在设计过程中，明确设计目的，重点关注逻辑规则、表格设计和玩法体验； ",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "1942052496046424064",
+          "actual": "1942052496046424064",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://careers.tencent.com/jobdesc.html?postId=1942052496046424064",
+          "actual": "https://careers.tencent.com/jobdesc.html?postId=1942052496046424064",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "tencent",
+      "file": "tencent/2099730961662128128.html",
+      "url": "https://careers.tencent.com/jobdesc.html?postId=2099730961662128128",
+      "captured_at": "2026-10-23T03:06:55.697Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "腾讯",
+          "actual": "腾讯",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "在研UE5项目-战斗动画设计师",
+          "actual": "在研UE5项目-战斗动画设计师",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "上海",
+          "actual": "上海",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1.独立负责游戏中主角及怪物的核心战斗动作设计与制作，确保动作风格符合写实要求，并完成最终引擎实现； 2.根据游戏设定与策划需求，设计并优化角色动作，提升战斗表",
+          "actual": "1.独立负责游戏中主角及怪物的核心战斗动作设计与制作，确保动作风格符合写实要求，并完成最终引擎实现； 2.根据游戏设定与策划需求，设计并优化角色动作，提升战斗表",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "2099730961662128128",
+          "actual": "2099730961662128128",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://careers.tencent.com/jobdesc.html?postId=2099730961662128128",
+          "actual": "https://careers.tencent.com/jobdesc.html?postId=2099730961662128128",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "xiaomi",
+      "file": "xiaomi/714.html",
+      "url": "https://hr.xiaomi.com/job/view/714",
+      "captured_at": "2026-10-23T03:06:03.316Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "小米",
+          "actual": "小米",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "天线工程师",
+          "actual": "天线工程师",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "Peking",
+          "actual": "Peking",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1. 按时保量完成小米项目的天线设计及验证工作； 2. 对于项目中问题点能够给出一定分析和解决意见； 3. 数据处理，给出有意义的报告和结论； 4. 天线相关的",
+          "actual": "1. 按时保量完成小米项目的天线设计及验证工作； 2. 对于项目中问题点能够给出一定分析和解决意见； 3. 数据处理，给出有意义的报告和结论； 4. 天线相关的",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "714",
+          "actual": "714",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://hr.xiaomi.com/job/view/714",
+          "actual": "https://hr.xiaomi.com/job/view/714",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    },
+    {
+      "site": "xiaomi",
+      "file": "xiaomi/800.html",
+      "url": "https://hr.xiaomi.com/job/view/800",
+      "captured_at": "2026-10-23T03:06:02.123Z",
+      "event_type": "job_viewed",
+      "fields": {
+        "company_name": {
+          "expected": "小米",
+          "actual": "小米",
+          "verdict": "correct"
+        },
+        "job_title": {
+          "expected": "Android Multimedia系统工程师（小米电视）",
+          "actual": "Android Multimedia系统工程师（小米电视）",
+          "verdict": "correct"
+        },
+        "location": {
+          "expected": "Peking",
+          "actual": "Peking",
+          "verdict": "correct"
+        },
+        "recruitment_batch": {
+          "expected": "",
+          "actual": "",
+          "verdict": "empty"
+        },
+        "jd_summary": {
+          "expected": "1.具备良好的自我驱动能力，具有强烈的责任感，有挑战自我、学习新知的意愿与能力； 2.具备扎实的c/c++/java编程基础，熟悉基本的数据结构及算法； 3.熟",
+          "actual": "1.具备良好的自我驱动能力，具有强烈的责任感，有挑战自我、学习新知的意愿与能力； 2.具备扎实的c/c++/java编程基础，熟悉基本的数据结构及算法； 3.熟",
+          "verdict": "correct"
+        },
+        "site_job_id": {
+          "expected": "800",
+          "actual": "800",
+          "verdict": "correct"
+        },
+        "job_url": {
+          "expected": "https://hr.xiaomi.com/job/view/800",
+          "actual": "https://hr.xiaomi.com/job/view/800",
+          "verdict": "correct"
+        }
+      },
+      "regression": true
+    }
+  ]
+}
