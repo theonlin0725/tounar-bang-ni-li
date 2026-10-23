@@ -9,6 +9,7 @@ export async function phase2Web(check) {
   try{
     const login=await server.login('demo@tounar.local'), cookie=login.cookie;
     const app=(await server.request('/api/v1/applications/manual',{method:'POST',cookie,headers:{'Idempotency-Key':'phase2-app'},body:{company_name:'二期测试公司',job_title:'产品经理',has_applied:true,status:'applied',applied_at:'2026-10-01T02:00:00Z',jd_summary:'产品设计',job_url:'https://example.com/jobs/p2'}})).json.data;
+    const app2=(await server.request('/api/v1/applications/manual',{method:'POST',cookie,headers:{'Idempotency-Key':'phase2-app2'},body:{company_name:'二期手工公司',job_title:'手工前的岗位',has_applied:true,status:'applied',applied_at:'2026-10-02T02:00:00Z',jd_summary:'手工修改测试',job_url:'https://example.com/jobs/p2b'}})).json.data;
     const db=new DatabaseSync(server.dir+'/tounar.sqlite');const owner=db.prepare('SELECT owner_id FROM applications WHERE id=?').get(app.id).owner_id;
     const add=(id,candidates=[])=>db.prepare(`INSERT INTO review_items (id,owner_id,kind,reason_code,summary,evidence_json,suggested_changes_json,candidates_json,created_at) VALUES (?,?,'mail_progress','MAIL_MATCH_UNCONFIRMED','二期邮件进展',?,?,?,?)`).run(id,owner,JSON.stringify({confidence:0.85,subject_excerpt:'测试面邀',from_domain:'example.com'}),JSON.stringify({status:'interview'}),JSON.stringify(candidates),new Date().toISOString());
     add('p2-no-candidate');
@@ -27,6 +28,17 @@ export async function phase2Web(check) {
     await card.locator('[data-test=review-dismiss]').click();await page.click('[data-test=confirm-ok]');await card.waitFor({state:'detached'});
     add('p2-batch',[{application_id:app.id,company_name:'二期测试公司',job_title:'产品经理'}]);await page.click('[data-test=reviews-refresh]');await page.locator('[data-review-id=p2-batch]').waitFor();await page.click('[data-test=reviews-batch]');await page.click('[data-test=confirm-ok]');await page.locator('[data-review-id=p2-batch]').waitFor({state:'detached'});
     check('P1-批量确认逐条提交并更新台账',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
+    // 人工修改：待确认里必须能直接改公司/岗位并写回已有台账
+    add('p2-manual',[{application_id:app2.id,company_name:'二期手工公司',job_title:'手工前的岗位'}]);
+    await page.click('[data-test=reviews-refresh]');
+    const manual=page.locator('[data-review-id=p2-manual]');await manual.waitFor();
+    await manual.locator('[data-test=review-change]').click();
+    await manual.locator('[data-test=review-create-title]').fill('手工改过的岗位');
+    await manual.locator('[data-test=review-switch-status]').click();
+    await manual.waitFor({state:'detached'});
+    check('P1-待确认可人工改公司/岗位并写回台账',db.prepare('SELECT job_title FROM applications WHERE id=?').get(app2.id).job_title==='手工改过的岗位');
+    // 归档掉辅助记录，后面的台账计数/行数断言仍按单条记录算
+    db.prepare('UPDATE applications SET archived_at=? WHERE id=?').run(new Date().toISOString(),app2.id);
     await page.goto('/?app='+app.id);await page.waitForSelector('[data-test=detail-company]');
     check('P0-台账详情深链',await page.locator('[data-test=detail-company]').textContent()==='二期测试公司');
     await page.goto('/'); await page.waitForSelector('[data-test=ledger-row]');

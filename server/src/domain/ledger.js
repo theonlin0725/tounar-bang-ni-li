@@ -148,7 +148,7 @@ export function reviewList(ownerId, query = {}) {
   const rows = all(`SELECT r.*, m.received_at AS mail_received_at
     FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
     WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
-    ORDER BY r.created_at DESC, r.id DESC LIMIT ? OFFSET ?`, status === 'all' ? [ownerId, limit + 1, offset] : [ownerId, status, limit + 1, offset]);
+    ORDER BY COALESCE(m.received_at, r.created_at) DESC, r.id DESC LIMIT ? OFFSET ?`, status === 'all' ? [ownerId, limit + 1, offset] : [ownerId, status, limit + 1, offset]);
   return {
     data: rows.slice(0, limit).map((row) => ({
       id: row.id,

@@ -353,6 +353,21 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
   if (mergedChanges.last_interview_completed_at) updates.last_interview_completed_at = parseIso(mergedChanges.last_interview_completed_at);
   if (mergedChanges.interview_round) updates.interview_round = Number(mergedChanges.interview_round);
   if (mergedChanges.round_label) updates.round_label = clipText(mergedChanges.round_label, 40);
+  // 同名邮件的轮次规则（2026-10-23 用户拍板）：同一公司+岗位又收到一封更晚的面试邮件，
+  // 视为进入下一轮（一面→二面），用时间而不是标题区分。
+  if (normalizeStatus(mergedChanges.status) === 'interview' && !mergedChanges.interview_round && !mergedChanges.round_label) {
+    const mail = review.source_mail_id
+      ? one('SELECT received_at FROM mail_messages WHERE id = ? AND owner_id = ?', [review.source_mail_id, ownerId])
+      : null;
+    const receivedAt = parseIso(mail?.received_at);
+    // 用「本阶段原信收到的日期」作锚点，而不是 last_progress_at（人工确认会把它改成现在）。
+    const lastProgress = parseIso(app.stage_received_at) || parseIso(app.last_progress_at) || parseIso(app.last_status_changed_at);
+    if (receivedAt && (!lastProgress || receivedAt > lastProgress)) {
+      const next = Math.max(1, Number(app.interview_round || 0) + 1);
+      updates.interview_round = next;
+      updates.round_label = `第${next}面`;
+    }
+  }
   const targetStatus = normalizeStatus(mergedChanges.status);
   if ((targetStatus && APPLIED_STATUSES.has(targetStatus)) && !app.applied_at && !updates.applied_at && !config.d12AllowMissingAppliedAt) {
     throw new AppError(422, 'D12_NOT_FROZEN', '请补充投递时间后提交');

@@ -89,9 +89,10 @@ export async function renderReviews(container,{gen,onChanged}={}) {
     const status=h('select',{class:'tn-select','data-test':'review-status-select'});for(const s of STATUS_ORDER)status.append(h('option',{value:s,text:STATUS_LABELS[s]}));status.value=pre.status||'applied';
     const time=h('input',{class:'tn-input',type:'datetime-local','data-test':'review-switch-at',value:localInput(pre.applied_at||(r.mail_inferred_applied_at_enabled?r.mail_received_at:null))});
     const timeWrap=h('label',{},r.mail_inferred_applied_at_enabled?'投递时间（北京时间；默认据原信推断，可修改）':'实际投递时间（北京时间）',time);
-    const company=h('input',{class:'tn-input',value:pre.company_name||'',placeholder:'公司名','data-test':'review-create-company'}), title=h('input',{class:'tn-input',value:pre.job_title||'',placeholder:'岗位名','data-test':'review-create-title'});
-    const newFields=h('div',{hidden:true},company,title);
-    async function targetChanged(){selected=select.value;newFields.hidden=selected!=='__new__';const request=++searchSeq;
+    const company=h('input',{class:'tn-input',value:pre.company_name||cs[0]?.company_name||'',placeholder:'公司名（可手改）','data-test':'review-create-company'}), title=h('input',{class:'tn-input',value:pre.job_title||cs[0]?.job_title||'',placeholder:'岗位名（可手改）','data-test':'review-create-title'});
+    // 人工修改：公司和岗位始终可编辑；选中已有记录时改动会写回该记录，未选记录时按这两项新建。
+    const newFields=h('div',{},h('label',{},'公司',company),h('label',{},'岗位',title));
+    async function targetChanged(){selected=select.value;const request=++searchSeq;
       try{let a=selected&&selected!=='__new__'?(await api.get(`/api/v1/applications/${encodeURIComponent(selected)}`)).data:null;if(active()&&request===searchSeq)timeWrap.hidden=!!a?.applied_at||!NEEDS_TIME.has(status.value);}
       catch(e){if(active())err.textContent=humanError(e);}
     }
@@ -113,9 +114,13 @@ export async function renderReviews(container,{gen,onChanged}={}) {
         if(fresh.version!==r.version)throw {status:409};
         const changes={};if(custom){changes.status=status.value;
           if(!timeWrap.hidden&&time.value){changes.applied_at=new Date(time.value+':00+08:00').toISOString();changes.applied_at_precision=r.mail_inferred_applied_at_enabled&&r.mail_received_at&&time.value===localInput(r.mail_received_at)?'inferred_before':'exact';}
-          if(selected==='__new__'){changes.company_name=company.value.trim();changes.job_title=title.value.trim();action='create';}
+          const c=company.value.trim(),t=title.value.trim();
+          if(c&&c!==(pre.company_name||''))changes.company_name=c;
+          if(t&&t!==(pre.job_title||''))changes.job_title=t;
+          if(selected==='__new__'||(!selected&&c&&t)){changes.company_name=c;changes.job_title=t;action='create';}
         }
-        if(action!=='dismiss'&&action!=='create'&&!selected){edit.hidden=false;throw new Error('请先搜索并选择一条本人记录');}
+        if(action==='create'&&(!changes.company_name||!changes.job_title))throw new Error('新建需要公司名和岗位名');
+        if(action!=='dismiss'&&action!=='create'&&!selected){edit.hidden=false;throw new Error('请先搜索选择一条本人记录；或填写公司/岗位后按邮件新建');}
         await submit(r,{action,target:action==='dismiss'||action==='create'?null:selected,changes});failures.delete(r.id);await load();
       }catch(e){if(active()){const text=humanError(e);err.append(h('p',{class:'tn-inline-msg err',text}));if(e.status===409){toast(text,'err');await load();}}}
       finally{working=false;[confirm,change,dismiss,save,create].forEach(b=>b.disabled=false);}

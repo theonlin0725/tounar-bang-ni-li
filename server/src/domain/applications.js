@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { findProgressCandidates, companyIdentity } from './mailMatching.js';
+import { findProgressCandidates, companyIdentity, stageOfStatus } from './mailMatching.js';
 import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
@@ -673,11 +673,12 @@ export function processMailEvent(event) {
     const p = event.payload || {};
     const source = event.source_method === 'plugin' ? 'plugin' : 'mail';
     const fields = { ...p, company_name: p.company_name || companyIdentity(null, p.from_domain), site_key: p.site_key || event.site_key };
-    const candidates = findProgressCandidates(event.owner_id, fields, { source });
+    const status = normalizeStatus(p.mapped_status) || mapStatusText(p.status_text);
+    const stage = stageOfStatus(status);
+    const candidates = findProgressCandidates(event.owner_id, fields, { source, stage });
     const classification = Math.max(0, Math.min(1, Number(p.confidence ?? (source === 'plugin' && event.evidence_level === 'strong' ? 0.88 : 0)) || 0));
     const match = candidates.length === 1 ? candidates[0].confidence : 0.5;
     const total = classification * match;
-    const status = normalizeStatus(p.mapped_status) || mapStatusText(p.status_text);
     if (!status) {
       if (source === 'plugin') return { state: 'pending', review: createReviewForEvent(event, {
         kind: 'status_conflict', reasonCode: 'STATUS_UNMAPPED', summary: '官网状态暂无法识别，请确认', fields,
@@ -696,7 +697,12 @@ export function processMailEvent(event) {
       kind: 'mail_progress', reasonCode: 'MAIL_MATCH_UNCONFIRMED', summary: '请确认这条招聘进展属于哪条申请',
       ...details, suggested, fields, evidence, progressCandidates: candidates
     }) });
-    if (candidates.length !== 1) return review(candidates.length > 1 ? { kind:'ambiguous_match', reasonCode:'MULTIPLE_APPLICATION_CANDIDATES', summary:'有多条可能的申请，请明确选择' } : {});
+    if (candidates.length !== 1) {
+      if (candidates.length > 1) return review({ kind:'ambiguous_match', reasonCode:'MULTIPLE_APPLICATION_CANDIDATES', summary:'有多条可能的申请，请明确选择' });
+      if (stage) return review({ kind:'mail_progress', reasonCode:'STAGE_SPLIT_REQUIRED',
+        summary: `这封是${stage === 'interview' ? '面试' : '笔试/测评'}进展；已有记录属于另一个阶段，建议单独建一条，不要合并` });
+      return review({});
+    }
     const terminal = TERMINAL.has(status);
     if (total < (terminal ? config.autoTerminalConfidence : config.autoProgressConfidence) || (terminal && !config.autoTerminalFromMail)) {
       return review({ kind: terminal ? 'terminal_candidate' : 'mail_progress', reasonCode: terminal ? 'TERMINAL_LOW_CONFIDENCE' : 'MAIL_LOW_CONFIDENCE', summary: '系统把握度不足，等待人工确认' });

@@ -26,7 +26,12 @@ export function similarJob(a,b) {
   if(x.length<2||y.length<2)return false;
   return x===y || (Math.min(x.length,y.length)/Math.max(x.length,y.length)>=0.75 && (x.includes(y)||y.includes(x)));
 }
-export function findProgressCandidates(ownerId, fields, { source='mail' }={}) {
+// 阶段规则（2026-10-23 用户拍板）：笔试/测评与面试是两条独立进展，不能合并成一条记录。
+// 匹配时优先找「同一阶段」的记录；只有另一阶段的记录时，交给人工新建，不要硬并。
+export const STAGE_OF_STATUS = { assessment: 'assessment', interview: 'interview' };
+export function stageOfStatus(status) { return STAGE_OF_STATUS[status] || null; }
+
+export function findProgressCandidates(ownerId, fields, { source='mail', stage: stageOption=null }={}) {
   const rows=all('SELECT * FROM applications WHERE owner_id = ? AND archived_at IS NULL ORDER BY updated_at DESC',[ownerId]);
   const candidate=(application,reason,confidence)=>({application,reason,confidence});
   if(fields.site_application_id){const exact=rows.filter(a=>a.site_application_id===fields.site_application_id&&(!fields.site_key||a.site_key===fields.site_key));if(exact.length)return exact.map(a=>candidate(a,'site_application_id',1));}
@@ -38,7 +43,19 @@ export function findProgressCandidates(ownerId, fields, { source='mail' }={}) {
   if(!company)return [];
   const same=rows.filter(a=>companyIdentity(a.company_name)===company);
   const similar=same.filter(a=>similarJob(a.job_title,fields.job_title));
-  if(similar.length)return similar.map(a=>candidate(a,'company_similar_title',0.9));
+  if(similar.length){
+    const stage=fields.stage||stageOption||null;
+    if(stage){
+      const staged=similar.filter(a=>STAGE_OF_STATUS[a.status]===stage);
+      if(staged.length)return staged.map(a=>candidate(a,'company_title_stage',0.92));
+      // 只有「另一个阶段」的记录时才拆开（已有笔试、来的是面试）。
+      // 记录还停在 applied/pending 时属于同一流程的早期，应该继续推进，不是拆分。
+      const otherStage=stage==='assessment'?'interview':'assessment';
+      if(similar.every(a=>STAGE_OF_STATUS[a.status]===otherStage))return [];
+      return similar.map(a=>candidate(a,'company_similar_title',0.9));
+    }
+    return similar.map(a=>candidate(a,'company_similar_title',0.9));
+  }
   const active=same.filter(a=>!TERMINAL.has(a.status));
   if(active.length===1)return [candidate(active[0],'single_active_company',0.85)];
   return same.map(a=>candidate(a,'company_only_ambiguous',0.5));

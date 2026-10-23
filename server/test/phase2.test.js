@@ -71,6 +71,61 @@ it('P2: 唯一高把握面邀自动更新；多候选不自动更新',()=>{
   const r=apps.processMailEvent(mailEvent({company_name:'字节跳动',job_title:'数据分析师',mapped_status:'rejected',confidence:1}));
   assert.equal(r.state,'pending');assert.equal(JSON.parse(r.review.candidates_json).length,2);
 });
+it('P2: 阶段规则——笔试与面试分开匹配，不合并成一条',()=>{
+  const company='阶段测试公司';
+  const assess=apps.createApplication({ownerId:owner,fields:{company_name:company,job_title:'后端实习生',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'assessment'});
+  const interview=apps.createApplication({ownerId:owner,fields:{company_name:company,job_title:'后端实习生',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'interview'});
+  // 面试邮件只能命中「面试」那条，不能命中笔试那条
+  const hit=matching.findProgressCandidates(owner,{company_name:company,job_title:'后端实习生',stage:'interview'},{source:'mail'});
+  assert.equal(hit.length,1);assert.equal(hit[0].application.id,interview.id);
+  // 只有另一阶段记录时，返回空并提示单独建，而不是硬并
+  const only=matching.findProgressCandidates(owner,{company_name:company,job_title:'后端实习生',stage:'assessment'},{source:'mail'});
+  assert.equal(only[0].application.id,assess.id);
+  const other=matching.findProgressCandidates(owner,{company_name:'只有面试的公司',job_title:'产品经理',stage:'assessment'},{source:'mail'});
+  assert.equal(other.length,0);
+  // 端到端：已有面试记录时，来一封笔试邀请 → 进待确认并标 STAGE_SPLIT_REQUIRED
+  const company2='只有面试的公司';
+  apps.createApplication({ownerId:owner,fields:{company_name:company2,job_title:'产品经理',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'interview'});
+  const r=apps.processMailEvent(mailEvent({company_name:company2,job_title:'产品经理',mapped_status:'assessment',confidence:0.95,subject_excerpt:'笔试通知'}));
+  assert.equal(r.state,'pending');assert.equal(r.review.reason_code,'STAGE_SPLIT_REQUIRED');
+});
+it('P2: 待确认按邮件收到时间倒序排列',()=>{
+  const older=newId('rev'),newer=newId('rev'),mOld=newId('mail'),mNew=newId('mail');
+  const existing=db.one('SELECT id FROM mail_connections WHERE owner_id=? LIMIT 1',[owner]);
+  const conn=existing?.id||newId('conn');
+  if(!existing)db.run(`INSERT INTO mail_connections (id,owner_id,email,mode,scan_since,status,consent_version,created_at,updated_at) VALUES (?,?,?,'headers_only','2026-09-01T00:00:00Z','connected','QQ_MAIL_READ_CONSENT_V1',?,?)`,[conn,owner,'phase2@qq.com',nowIso(),nowIso()]);
+  const mailRow=(id,subject,received,uid)=>db.run(`INSERT INTO mail_messages (id,owner_id,connection_id,mailbox,uidvalidity,uid,subject_excerpt,received_at,created_at) VALUES (?,?,?,'INBOX','1',?,?,?,?)`,[id,owner,conn,uid,subject,received,nowIso()]);
+  mailRow(mOld,'旧邮件','2026-09-01T00:00:00.000Z','901');
+  mailRow(mNew,'新邮件','2026-10-20T00:00:00.000Z','902');
+  const insert=(id,mail,created)=>db.run(`INSERT INTO review_items (id,owner_id,kind,reason_code,summary,evidence_json,suggested_changes_json,candidates_json,source_mail_id,created_at) VALUES (?,?,'mail_progress','MAIL_MATCH_UNCONFIRMED','x','{}','{}','[]',?,?)`,[id,owner,mail,created]);
+  insert(older,mOld,'2026-10-21T00:00:00.000Z');
+  insert(newer,mNew,'2026-10-21T00:00:01.000Z');
+  const list=ledger.reviewList(owner,{status:'open',limit:50}).data.map(x=>x.id);
+  assert.ok(list.indexOf(newer)<list.indexOf(older),JSON.stringify(list));
+});
+it('P2: 同名面试邮件按时间推进轮次（一面 → 二面）',()=>{
+  const company='轮次测试公司';
+  const app=apps.createApplication({ownerId:owner,fields:{company_name:company,job_title:'测试开发',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'applied',at:'2026-10-01T00:00:00.000Z'});
+  const conn=db.one('SELECT id FROM mail_connections WHERE owner_id=? LIMIT 1',[owner]).id;
+  const mail=(subject,received,uid)=> {
+    const id=newId('mail');
+    db.run(`INSERT INTO mail_messages (id,owner_id,connection_id,mailbox,uidvalidity,uid,subject_excerpt,received_at,created_at) VALUES (?,?,?,'INBOX','1',?,?,?,?)`,[id,owner,conn,uid,subject,received,nowIso()]);
+    return id;
+  };
+  const build=(mailId,subject,received)=>{
+    const reviewEvent=mailEvent({company_name:company,job_title:'测试开发',mapped_status:'interview',confidence:0.8,subject_excerpt:subject,source_mail_id:mailId,source_received_at:received});
+    db.run('UPDATE review_items SET source_mail_id=? WHERE source_event_id=?',[mailId,reviewEvent.id]);
+    return reviewEvent;
+  };
+  const first=build(mail('面试邀请函','2026-10-10T02:00:00.000Z','801'),'面试邀请函','2026-10-10T02:00:00.000Z');
+  const r1=apps.processMailEvent(first).review;
+  const a1=reviews.resolveReview({ownerId:owner,reviewId:r1.id,expectedVersion:r1.version,action:'confirm',applicationId:app.id,expectedApplicationVersion:db.getApplication(owner,app.id).version}).application;
+  assert.equal(a1.interview_round,1);assert.equal(a1.round_label,'第1面');
+  const second=build(mail('面试时间收集','2026-10-11T02:00:00.000Z','802'),'面试时间收集','2026-10-11T02:00:00.000Z');
+  const r2=apps.processMailEvent(second).review;
+  const a2=reviews.resolveReview({ownerId:owner,reviewId:r2.id,expectedVersion:r2.version,action:'confirm',applicationId:app.id,expectedApplicationVersion:db.getApplication(owner,app.id).version}).application;
+  assert.equal(a2.interview_round,2);assert.equal(a2.round_label,'第2面');
+});
 it('P2: 低把握拒信待确认，总把握度是乘积；人工确认成功',()=>{
   const app=apps.createApplication({ownerId:owner,fields:{company_name:'唯一企业',job_title:'测试经理',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'applied'});
   const r=apps.processMailEvent(mailEvent({company_name:'唯一企业',job_title:'测试经理',mapped_status:'rejected',confidence:0.95})).review;
