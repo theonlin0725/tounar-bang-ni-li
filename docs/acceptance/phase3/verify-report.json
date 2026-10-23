@@ -1,14 +1,14 @@
 {
-  "verified_at": "2026-10-23T13:23:53.516Z",
+  "verified_at": "2026-10-23T14:20:33.581Z",
   "base": "http://127.0.0.1:4311",
-  "data_dir": "/Users/mingenlin/tounar-acceptance/20261023-132023",
+  "data_dir": "/Users/mingenlin/tounar-acceptance/20261023-134848",
   "email": "1191240794@qq.com",
   "node": "26.8.1",
   "checks": [
     {
       "name": "1. /api/v1/health 返回 200 且 ok=true",
       "ok": true,
-      "detail": "status=200 body={\"ok\":true,\"service\":\"tounar-bang-ni-li\",\"time\":\"2026-10-23T13:23:07.953Z\"}"
+      "detail": "status=200 body={\"ok\":true,\"service\":\"tounar-bang-ni-li\",\"time\":\"2026-10-23T14:20:31.099Z\"}"
     },
     {
       "name": "2. 首页 / 返回 200",
@@ -38,12 +38,12 @@
     {
       "name": "7. popup 显示「后台可达」并带地址",
       "ok": true,
-      "detail": "后台可达 · http://127.0.0.1:4311 · 21:23:52"
+      "detail": "后台可达 · http://127.0.0.1:4311 · 22:20:32"
     },
     {
       "name": "8. 网页会话批准配对码",
       "ok": true,
-      "detail": "code=K3855L3U status=200"
+      "detail": "code=E2LKKV5L status=200"
     },
     {
       "name": "9. 插件显示已绑定",
@@ -58,7 +58,7 @@
     {
       "name": "11. 服务端设备列表包含刚绑定的设备",
       "ok": true,
-      "detail": "status=200 devices=3"
+      "detail": "status=200 devices=2"
     }
   ],
   "passed": 11,
