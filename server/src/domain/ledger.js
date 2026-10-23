@@ -1,6 +1,6 @@
 import { all, dataRevision, getApplication, one } from '../db.js';
 import {
-  AppError, STATUSES, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse
+  AppError, STATUSES, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse, stageFollowupState
 } from '../util.js';
 import { applicationProjection, getPreferences, reviewAnchor } from './applications.js';
 
@@ -66,13 +66,13 @@ export function ledgerResponse(ownerId, query = {}) {
     viewed: allApps.filter((a) => !a.has_applied && !a.archived_at).length,
     archived: allApps.filter((a) => !!a.archived_at).length,
     pending_review: one("SELECT COUNT(*) AS n FROM review_items WHERE owner_id = ? AND status = 'open'", [ownerId]).n,
-    due_for_review: allApps.filter((a) => isDueForReview(a, preferences.review_threshold_days, asOf)).length
+    due_for_review: allApps.filter((a) => isDueForReview(a, preferences.review_threshold_days, asOf) || stageFollowupState(a, preferences.stage_followup_days, asOf).due).length
   };
   let rows = viewRows(ownerId, view)
     .filter((a) => matchesQuery(a, q))
     .filter((a) => !status || a.status === status)
     .filter((a) => !source || safeJsonParse(a.source_methods_json, []).includes(source))
-    .filter((a) => !dueFilter || isDueForReview(a, preferences.review_threshold_days, asOf));
+    .filter((a) => !dueFilter || isDueForReview(a, preferences.review_threshold_days, asOf) || stageFollowupState(a, preferences.stage_followup_days, asOf).due);
   if (query.sort === 'applied_desc') {
     rows = [...rows].sort((a, b) => String(b.applied_at || '').localeCompare(String(a.applied_at || '')));
   } else if (query.sort === 'company_asc') {

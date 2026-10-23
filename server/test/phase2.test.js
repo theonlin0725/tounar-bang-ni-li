@@ -6,6 +6,7 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tounar-phase2-'));
 process.env.DATA_DIR = dir;
 process.env.ENABLE_SCHEDULER = 'false';
+process.env.MAIL_MODE = 'outbox';
 const db = await import('../src/db.js');
 const apps = await import('../src/domain/applications.js');
 const ledger = await import('../src/domain/ledger.js');
@@ -13,13 +14,15 @@ const { newId, nowIso } = await import('../src/util.js');
 const reviews = await import('../src/domain/reviews.js');
 const matching = await import('../src/domain/mailMatching.js');
 const {config}=await import('../src/config.js');
+const reminders = await import('../src/domain/reminders.js');
+const {stageFollowupState}=await import('../src/util.js');
 const owner = 'phase2-owner';
 db.run('INSERT INTO users (id,email_normalized,email_display,created_at) VALUES (?,?,?,?)', [owner,'phase2@tounar.local','phase2@tounar.local',nowIso()]);
 after(() => { db.closeDb(); fs.rmSync(dir,{recursive:true,force:true}); });
-function mailEvent(payload = {}) {
+function mailEvent(payload = {}, mailOwner = owner) {
   const id = newId('evt');
-  const event = { id,owner_id:owner,source_method:'mail',occurred_at:'2026-10-20T03:00:00.000Z',received_at:nowIso(),payload };
-  db.run(`INSERT INTO events (id,owner_id,client_event_id,source_method,event_type,occurred_at,observed_at,received_at,schema_version,evidence_level,payload_hash,payload_json) VALUES (?,?,?,'mail','mail_progress_detected',?,?,?,'C1','strong','test',?)`,[id,owner,id,event.occurred_at,event.occurred_at,event.received_at,JSON.stringify(payload)]);
+  const event = { id,owner_id:mailOwner,source_method:'mail',occurred_at:'2026-10-20T03:00:00.000Z',received_at:nowIso(),payload };
+  db.run(`INSERT INTO events (id,owner_id,client_event_id,source_method,event_type,occurred_at,observed_at,received_at,schema_version,evidence_level,payload_hash,payload_json) VALUES (?,?,?,'mail','mail_progress_detected',?,?,?,'C1','strong','test',?)`,[id,mailOwner,id,event.occurred_at,event.occurred_at,event.received_at,JSON.stringify(payload)]);
   return event;
 }
 it('P0: 邮件复核保留原信 ID，列表和详情返回同一收信时间', () => {
@@ -88,4 +91,57 @@ it('P2: 不回退状态、不覆盖终态、搜索相似度不混淆两条岗位
   assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'assessment',confidence:1})).review.reason_code,'STATUS_REGRESSION');
   db.markApplicationChanged(owner,app.id,null,'manual',{status:'offer'});
   assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'rejected',confidence:1})).review.reason_code,'TERMINAL_LOCKED');
+});
+
+it('P3: 阶段锚点取原信或更晚面试时间；7/14/关闭与确认顺延',()=>{
+  const app={status:'interview',has_applied:1,stage_received_at:'2026-10-12T01:00:00Z',stage_anchor_at:'2026-10-15T06:00:00Z'};
+  assert.equal(stageFollowupState(app,7,new Date('2026-10-21T00:00:00Z')).due,false);
+  assert.equal(stageFollowupState(app,7,new Date('2026-10-22T00:00:00Z')).due,true);
+  assert.equal(stageFollowupState(app,14,new Date('2026-10-22T00:00:00Z')).due,false);
+  assert.equal(stageFollowupState(app,0,new Date('2026-11-22T00:00:00Z')).due,false);
+  assert.equal(stageFollowupState({...app,last_reviewed_at:'2026-10-22T00:00:00Z'},7,new Date('2026-10-28T00:00:00Z')).due,false);
+  assert.equal(stageFollowupState({...app,last_reviewed_at:'2026-10-22T00:00:00Z'},7,new Date('2026-10-29T00:00:00Z')).due,true);
+  assert.equal(stageFollowupState({...app,status:'offer'},7,new Date('2026-11-22T00:00:00Z')).due,false);
+});
+it('P3: D+7 08:00 实际生成阶段邮件，三链接、原信落款一致，每锚点只提醒一次',async()=>{
+  const own='phase3-stage';db.run('INSERT INTO users (id,email_normalized,email_display,created_at) VALUES (?,?,?,?)',[own,'stage@tounar.local','stage@tounar.local',nowIso()]);
+  const app=apps.createApplication({ownerId:own,fields:{company_name:'阶段企业',job_title:'测试岗',site_key:'test',site_application_id:'stage-id',applied_at:'2026-10-01T00:00:00Z',job_url:'https://example.com/jobs/stage',status_url:'https://example.com/application/stage'},sourceMethod:'manual',status:'applied'});
+  const event=mailEvent({site_key:'test',site_application_id:'stage-id',mapped_status:'interview',confidence:1,subject_excerpt:'面试邀请',source_received_at:'2026-10-20T03:00:00.000Z'},own);
+  const result=apps.processMailEvent(event);assert.equal(result.application.stage_anchor_at,event.occurred_at);
+  apps.getPreferences(own);
+  db.run("UPDATE notification_preferences SET review_threshold_days=30 WHERE owner_id=?",[own]);
+  const now=new Date('2026-10-27T00:00:00Z');const before=reminders.buildReminderCandidates(own,now);assert.ok(before.b.find(x=>x.app.id===app.id)?.stage);
+  const sent=await reminders.runReminderForOwner(own,now);assert.equal(sent.status,'sent');
+  const record=fs.readdirSync(path.join(dir,'outbox')).map(f=>JSON.parse(fs.readFileSync(path.join(dir,'outbox',f)))).find(r=>r.kind==='reminder'&&r.metadata.owner_id===own);
+  for(const text of [record.text,record.html]){assert.ok(text.includes('2026-10-20'));assert.ok(text.includes('/?app='+app.id));assert.ok(text.includes('/r/'));assert.ok(text.includes('https://example.com/application/stage'));}
+  assert.ok(record.subject.includes('2026-10-20'));assert.ok(!record.subject.includes('2026-10-27'));
+  assert.ok(!reminders.buildReminderCandidates(own,new Date('2026-11-03T00:00:00Z')).b.some(x=>x.app.id===app.id));
+  assert.equal((await reminders.runReminderForOwner(own,now)).reused,true);
+});
+it('P3: 阶段推进使旧锚点作废，原信多条不按岗位吞掉',()=>{
+  const own='phase3-stage';
+  const app=db.one('SELECT * FROM applications WHERE owner_id=?',[own]);
+  const e=mailEvent({site_key:'test',site_application_id:'stage-id',mapped_status:'rejected',confidence:1,source_received_at:'2026-10-22T03:00:00Z'},own);
+  apps.processMailEvent(e);
+  assert.ok(!reminders.buildReminderCandidates(own,new Date('2026-11-03T00:00:00Z')).b.some(x=>x.app.id===app.id));
+  const cards=[{app,outbox:{summary:'面邀',source_received_at:'2026-10-20T18:00:00Z'},from_mail:true},{app,outbox:{summary:'拒信',source_received_at:'2026-10-22T03:00:00Z'},from_mail:true}];
+  const text=reminders.reminderBatchText({a:cards,b:[],links:new Map(),asOf:new Date('2026-10-23T00:00:00Z'),digest:{due:false,items:[]}});
+  assert.ok(text.includes('2026-10-21–2026-10-22'));assert.equal((text.match(/—— /g)||[]).length,2);
+});
+it('P0/P3: 旧库增量升级回填原信且保留业务数据，重开不重复迁移',async()=>{
+  const {DatabaseSync}=await import('node:sqlite');
+  const file=path.join(dir,'legacy.sqlite');const legacy=new DatabaseSync(file);
+  legacy.exec(fs.readFileSync(new URL('../../tests/fixtures/schema-v1.sql',import.meta.url),'utf8'));
+  legacy.prepare("INSERT INTO users(id,email_normalized,email_display,created_at) VALUES ('legacy','legacy@local','legacy@local','2026-10-01')").run();
+  legacy.prepare("INSERT INTO mail_connections(id,owner_id,email,mode,scan_since,consent_version,created_at,updated_at) VALUES ('legacy-conn','legacy','legacy@qq.com','headers_only','2026-10-01','test','2026-10-01','2026-10-01')").run();
+  legacy.prepare("INSERT INTO mail_messages(id,owner_id,connection_id,mailbox,uidvalidity,uid,received_at,created_at) VALUES ('legacy-mail','legacy','legacy-conn','INBOX','42','7','2026-10-18T03:00:00Z','2026-10-20')").run();
+  legacy.prepare("INSERT INTO events(id,owner_id,client_event_id,source_method,event_type,occurred_at,observed_at,received_at,schema_version,evidence_level,payload_hash,connection_id,mailbox,uidvalidity,uid) VALUES ('legacy-event','legacy','legacy-event','mail','mail_progress_detected','2026-10-18T03:00:00Z','2026-10-20','2026-10-20','C1','weak','hash','legacy-conn','INBOX','42','7')").run();
+  legacy.prepare("INSERT INTO review_items(id,owner_id,kind,reason_code,summary,source_event_id,created_at) VALUES ('legacy-review','legacy','mail_progress','MAIL_MATCH_UNCONFIRMED','历史线索','legacy-event','2026-10-20')").run();legacy.close();
+  for(let pass=0;pass<2;pass++){
+    const upgraded=db.openDatabase(file);
+    assert.equal(upgraded.prepare("SELECT source_mail_id FROM review_items WHERE id='legacy-review'").get().source_mail_id,'legacy-mail');
+    assert.equal(upgraded.prepare('SELECT COUNT(*) AS n FROM mail_messages').get().n,1);
+    assert.ok(upgraded.prepare('PRAGMA table_info(notification_preferences)').all().some(x=>x.name==='stage_followup_days'));
+    assert.equal(upgraded.prepare("SELECT COUNT(*) AS n FROM meta WHERE key='migration_phase2_followup'").get().n,1);upgraded.close();
+  }
 });

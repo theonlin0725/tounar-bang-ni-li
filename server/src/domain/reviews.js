@@ -389,10 +389,10 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
   const updated = markApplicationChanged(ownerId, app.id, eventId, 'manual', updates, { reason });
   if (updates.status && updates.status !== app.status) {
     run(`INSERT INTO notification_outbox
-      (id, owner_id, application_id, event_id, kind, summary, occurred_at, created_at)
-      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
+      (id, owner_id, application_id, event_id, kind, summary, occurred_at, source_received_at, created_at)
+      VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?, ?)`,
     [newId('out'), ownerId, app.id, eventId, `${updated.company_name} · ${updated.job_title}：${app.status} → ${updated.status}`,
-      nowIso(), nowIso()]);
+      nowIso(), event?.source_method === 'mail' ? event.occurred_at : nowIso(), nowIso()]);
   }
   return { application: updated };
 }
@@ -409,7 +409,7 @@ export function undoReview({ ownerId, reviewId, expectedVersion }) {
       if (!app || app.version !== result.after_version) throw new AppError(409, 'VERSION_CONFLICT', '记录已有新变化，请在详情中纠错');
       const restore = {};
       if (result.before) {
-        for (const key of [...CORRECTION_FIELDS, 'has_applied', 'company_key', 'last_status_changed_at', 'last_progress_at', 'archived_at', 'archive_reason']) {
+        for (const key of [...CORRECTION_FIELDS, 'has_applied', 'company_key', 'last_status_changed_at', 'last_progress_at', 'stage_received_at', 'stage_anchor_at', 'last_reviewed_at', 'archived_at', 'archive_reason']) {
           if (app[key] !== result.before[key]) restore[key] = result.before[key] ?? null;
         }
       } else {
@@ -439,7 +439,7 @@ export function undoAutomaticMail({ ownerId, applicationId, historyId, expectedV
     const updates = {};
     for (const h of all('SELECT changed_fields_json FROM application_history WHERE owner_id = ? AND application_id = ? AND event_id = ? ORDER BY rowid ASC', [ownerId, applicationId, entry.event_id])) {
       for (const [field, change] of Object.entries(safeJsonParse(h.changed_fields_json, {}))) {
-        if (!(field in updates) && [...CORRECTION_FIELDS, 'has_applied', 'company_key', 'last_status_changed_at', 'last_progress_at', 'source_methods_json'].includes(field)) updates[field] = change.from ?? null;
+        if (!(field in updates) && [...CORRECTION_FIELDS, 'has_applied', 'company_key', 'last_status_changed_at', 'last_progress_at', 'stage_received_at', 'stage_anchor_at', 'last_reviewed_at', 'source_methods_json'].includes(field)) updates[field] = change.from ?? null;
       }
     }
     if (TERMINAL.has(app.status) && updates.status !== app.status && !config.d05AllowTerminalCorrection) throw new AppError(409, 'D05_DISABLED', '当前关闭了终态纠错');

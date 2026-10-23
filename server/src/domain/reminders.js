@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { all, bumpRevision, dataRevision, getApplication, one, run, transaction } from '../db.js';
 import {
   AppError, STATUS_LABELS, daysBetweenShanghai, decryptSecret, encryptSecret, escapeHtml, isDueForReview,
-  newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods
+  newId, nowIso, randomToken, safeJsonParse, shanghaiClock, shanghaiDateKey, sha256, sourceMethods, stageFollowupState, isSafeHttpUrl
 } from '../util.js';
 import { getPreferences } from './applications.js';
 import { sendMail } from '../mailer.js';
@@ -140,7 +140,7 @@ export function reviewDigestState(ownerId, now = new Date()) {
     [ownerId]);
   const total = one(`SELECT COUNT(*) AS c FROM review_items WHERE owner_id = ? AND status = 'open'`, [ownerId])?.c || 0;
   const lastAt = prefs.last_review_digest_at || null;
-  const due = total > 0 && (!lastAt || daysBetweenShanghai(lastAt, now) >= config.reviewDigestDays);
+  const due = prefs.mode !== 'off' && total > 0 && (!lastAt || daysBetweenShanghai(lastAt, now) >= config.reviewDigestDays);
   return { due, total, last_at: lastAt, items: open.map((r) => ({
     id: r.id, summary: r.summary, kind: r.kind, created_at: r.created_at,
     dated_at: r.mail_received_at || r.created_at, from_mail: !!r.mail_received_at
@@ -156,25 +156,24 @@ export function buildReminderCandidates(ownerId, now = new Date()) {
   if (prefs.mode === 'all' || prefs.mode === 'changes_only') {
     const rows = all(`SELECT * FROM notification_outbox WHERE owner_id = ? AND consumed_batch_id IS NULL
       AND occurred_at >= ? ORDER BY occurred_at ASC LIMIT 100`,
-    [ownerId, new Date(Date.now() - 30 * 86400000).toISOString()]);
-    const seen = new Set();
+    [ownerId, new Date(now.getTime() - 30 * 86400000).toISOString()]);
     for (const row of rows) {
       const app = byId.get(row.application_id);
-      if (!app || seen.has(app.id)) continue;
-      seen.add(app.id);
-      a.push({ app, outbox: row });
+      if (!app) continue;
+      const event = row.event_id ? one('SELECT source_method, payload_json FROM events WHERE id = ? AND owner_id = ?', [row.event_id, ownerId]) : null;
+      a.push({ app, outbox: row, payload: safeJsonParse(event?.payload_json, {}), from_mail: event?.source_method === 'mail' });
     }
   }
   const b = [];
   if (prefs.mode === 'all' || prefs.mode === 'review_only') {
-    if (prefs.review_frequency === 'daily' || isMondayShanghai(now)) {
       for (const app of apps) {
-        if (!isDueForReview(app, prefs.review_threshold_days, now)) continue;
+        const stage = stageFollowupState(app, prefs.stage_followup_days, now);
+        const oldDue = (prefs.review_frequency === 'daily' || isMondayShanghai(now)) && isDueForReview(app, prefs.review_threshold_days, now);
+        if (!stage.due && !oldDue) continue;
         if (!(app.status_url || app.job_url)) continue;
         if (app.last_b_notified_at && daysBetweenShanghai(app.last_b_notified_at, now) < 7) continue;
-        b.push({ app });
+        b.push({ app, stage: stage.due ? stage : null });
       }
-    }
   }
   return { prefs, a, b, owner: one('SELECT * FROM users WHERE id = ?', [ownerId]) };
 }
@@ -192,76 +191,44 @@ function progressTag(app, asOf) {
   return '投递时间未知';
 }
 
-function reminderBatchText({ owner, a, b, links, digest }) {
-  const today = shanghaiDateKey(new Date());
-  const lines = [];
-  lines.push(`Tounar 帮你理 · ${today} 08:00（北京时间）`);
-  if (a.length) {
-    lines.push(`一、有进展（${a.length}）`);
-    for (const x of a) {
-      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app)}]`);
-      lines.push(`  ${x.outbox.summary}`);
-    }
-  }
-  if (b.length) {
-    lines.push(`二、等待回看（${b.length}）`);
-    for (const x of b) {
-      lines.push(`· ${x.app.company_name} · ${x.app.job_title}  [${progressTag(x.app)}]`);
-      lines.push(`  ${appUrl('/r/' + links.get(x.app.id))}`);
-    }
-  }
-  if (digest && digest.due) {
-    lines.push(`三、待你确认（${digest.total}）`);
-    for (const item of digest.items.slice(0, 8)) {
-      const date = String(item.dated_at || '').slice(0, 10);
-      lines.push(`· ${item.summary}`);
-      lines.push(`  ${item.kind} · ${item.from_mail ? '邮件收到于' : '记录创建于'} ${date}`);
-    }
-    if (digest.total > digest.items.length) lines.push(`  …及其余 ${digest.total - digest.items.length} 条`);
-    lines.push(`  处理入口：${appUrl('/?panel=reviews')}`);
-  }
-  lines.push('没有进展、也没到回看节点的岗位，不会出现在这封邮件里。');
-  lines.push(`提醒设置：${appUrl('/?panel=settings')}  打开台账：${appUrl('/')}`);
+function itemDate(x) { return x.outbox?.source_received_at || x.outbox?.occurred_at || x.stage?.received_at || x.app.stage_received_at || x.app.last_status_changed_at || x.app.applied_at; }
+function receiptRange({ a, b, digest }) {
+  const source = a.length ? a.map(itemDate) : b.length ? b.map(itemDate) : (digest?.items || []).map(x => x.dated_at);
+  const dates = [...new Set(source.filter(Boolean).map(d => shanghaiDateKey(d)))].sort();
+  return dates.length > 1 ? `${dates[0]}–${dates.at(-1)}` : dates[0] || '日期待补充';
+}
+function officialUrl(app) { const url=app.status_url || app.job_url; return isSafeHttpUrl(url) ? url : null; }
+function stageLabel(x) { return x.stage ? `${STATUS_LABELS[x.app.status]}邀请 ${shanghaiDateKey(x.stage.received_at || x.stage.anchor)}收到，已过 ${x.stage.elapsed} 天，还没有新进展` : progressTag(x.app); }
+function progressDescription(x) {
+  const p=x.payload || {};
+  return [p.mapped_status ? STATUS_LABELS[p.mapped_status] : x.outbox.summary, p.round_label,
+    p.interview_scheduled_at ? '面试时间 '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short'}).format(new Date(p.interview_scheduled_at)) : null].filter(Boolean).join(' · ');
+}
+export function reminderBatchText({ a, b, links, asOf, digest }) {
+  const lines=[`Tounar 帮你理 · 收信 / 进展日期 ${receiptRange({a,b,digest})}`];
+  if(a.length){lines.push(`一、有进展（${a.length}）`);for(const x of a){
+    lines.push(`${x.app.company_name} · ${x.app.job_title}`,progressDescription(x),`—— ${shanghaiDateKey(itemDate(x))} ${x.from_mail?'收到':'发生'}`);
+    if(officialUrl(x.app))lines.push('打开岗位/申请状态页：'+officialUrl(x.app));
+    lines.push('在台账里查看：'+appUrl('/?app='+encodeURIComponent(x.app.id)));
+  }}
+  if(b.length){lines.push(`二、该回看了（${b.length}）`);for(const x of b){
+    lines.push(`${x.app.company_name} · ${x.app.job_title}`,stageLabel(x));
+    if(x.stage)lines.push(`—— ${shanghaiDateKey(itemDate(x))} 收到`);
+    if(officialUrl(x.app))lines.push('直接打开申请状态页：'+officialUrl(x.app));
+    lines.push('我看过了，没变化：'+appUrl('/r/'+links.get(x.app.id)),'结果出来了，去更新：'+appUrl('/?app='+encodeURIComponent(x.app.id)));
+  }}
+  if(digest?.due){lines.push(`三、待你确认（${digest.total}）`);for(const item of digest.items.slice(0,8))lines.push(item.summary,`${item.from_mail?'邮件收到于':'记录创建于'} ${shanghaiDateKey(item.dated_at)}`);lines.push('处理入口：'+appUrl('/?panel=reviews'));}
+  lines.push(`收信 / 进展日期：${receiptRange({a,b,digest})}`,`推送时间：${asOf.toISOString()}（北京时间每日 08:00 触发，当天补发）`, '提醒设置：'+appUrl('/?panel=settings'));
   return lines.join('\n');
 }
-
-function reminderBatchHtml({ owner, a, b, links, asOf, digest }) {
-  const tagHtml = (app) => {
-    const tag = progressTag(app, asOf);
-    const isInterview = String(tag).startsWith('已面');
-    return `<span style="display:inline-block;margin-left:8px;background:${isInterview ? '#eaf2ef' : '#f1efe8'};color:${isInterview ? '#17594c' : '#5f5e5a'};border:1px solid ${isInterview ? '#cfe0da' : '#e2e7e1'};border-radius:999px;padding:2px 10px;font-size:12px;vertical-align:2px">${escapeHtml(tag)}</span>`;
-  };
-  const rowsA = a.map((x) => `
-    <tr><td style="padding:14px 0;border-bottom:1px solid #e2e7e1">
-      <div style="font-size:15px;color:#151a19"><strong>${escapeHtml(x.app.company_name)}</strong> · ${escapeHtml(x.app.job_title)}${tagHtml(x.app)}</div>
-      <div style="margin-top:5px;color:#66716d;font-size:13px">${escapeHtml(x.outbox.summary)}</div>
-    </td></tr>`).join('');
-  const rowsB = b.map((x) => `
-    <tr><td style="padding:14px 0;border-bottom:1px solid #e2e7e1">
-      <div style="font-size:15px;color:#151a19"><strong>${escapeHtml(x.app.company_name)}</strong> · ${escapeHtml(x.app.job_title)}${tagHtml(x.app)}</div>
-      <div style="margin-top:5px;color:#66716d;font-size:13px">状态没有变化</div>
-      <div style="margin-top:9px"><a href="${appUrl('/r/' + links.get(x.app.id))}" style="display:inline-block;background:#17594c;color:#fff;text-decoration:none;padding:8px 14px;border-radius:4px;font-size:13px">查看状态并确认</a></div>
-    </td></tr>`).join('');
-  const rowsD = digest && digest.due
-    ? digest.items.slice(0, 8).map((item) => `
-      <tr><td style="padding:10px 0;border-bottom:1px solid #e2e7e1">
-        <div style="font-size:14px;color:#151a19">${escapeHtml(item.summary || '')}</div>
-        <div style="margin-top:3px;color:#66716d;font-size:12px">${escapeHtml(item.kind || '')} · ${item.from_mail ? '邮件收到于' : '记录创建于'} ${escapeHtml(String(item.dated_at || '').slice(0, 10))}</div>
-      </td></tr>`).join('') +
-      (digest.total > digest.items.length
-        ? `<tr><td style="padding:10px 0;color:#66716d;font-size:13px">…及其余 ${digest.total - digest.items.length} 条</td></tr>` : '')
-    : '';
-  return `<!doctype html><html lang="zh-CN"><body style="margin:0;background:#f4f6f2;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#151a19">
-  <div style="max-width:620px;margin:0 auto;padding:32px 22px">
-    <div style="font-size:13px;letter-spacing:.16em;color:#17594c;text-transform:uppercase">Tounar · 帮你理</div>
-    <h1 style="font-family:Georgia,'Songti SC',serif;font-size:26px;font-weight:600;margin:12px 0 4px">${a.length ? `${a.length} 个岗位有进展` : ''}${a.length && b.length ? ' · ' : ''}${b.length ? `${b.length} 个岗位等待回看` : ''}${(a.length || b.length) && digest && digest.due ? ' · ' : ''}${digest && digest.due ? `${digest.total} 条待确认` : ''}</h1>
-    <p style="color:#66716d;font-size:13px;line-height:1.7">${escapeHtml(shanghaiDateKey(asOf))} 08:00 批次 · 没有进展、也没到回看节点的岗位不会出现在这里。</p>
-    ${a.length ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">一、有进展（${a.length}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsA}</table>` : ''}
-    ${b.length ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">二、等待回看（${b.length}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsB}</table>` : ''}
-    ${digest && digest.due ? `<h2 style="font-size:15px;margin:26px 0 4px;color:#17594c">三、待你确认（${digest.total}）</h2><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowsD}</table><p style="margin:8px 0 0;font-size:12px;color:#66716d">这些是系统拿不准、等你裁决的线索（每 ${config.reviewDigestDays} 天汇总一次）。</p>` : ''}
-    <p style="margin:28px 0 0;font-size:12px;line-height:1.8;color:#66716d">只有你明确点击“已确认，状态无变化”后，才会刷新回看时间。打开邮件里的链接不会自动标记。<br>
-    <a href="${appUrl('/?panel=settings')}" style="color:#17594c">提醒设置</a> · <a href="${appUrl('/?panel=reviews')}" style="color:#17594c">待确认队列</a> · <a href="${appUrl('/')}" style="color:#17594c">打开台账</a></p>
-  </div></body></html>`;
+export function reminderBatchHtml({ a, b, links, asOf, digest }) {
+  const link=(url,label)=>`<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
+  const section=(title,body)=>`<h2>${escapeHtml(title)}</h2>${body}`;
+  const cardsA=a.map(x=>`<article><h3>${escapeHtml(x.app.company_name)} · ${escapeHtml(x.app.job_title)}</h3><p>${escapeHtml(progressDescription(x))}</p><p>—— ${escapeHtml(shanghaiDateKey(itemDate(x)))} ${x.from_mail?'收到':'发生'}</p><p>${officialUrl(x.app)?link(officialUrl(x.app),'打开岗位/申请状态页')+' · ':''}${link(appUrl('/?app='+encodeURIComponent(x.app.id)),'在台账里查看')}</p></article>`).join('');
+  const cardsB=b.map(x=>`<article><h3>${escapeHtml(x.app.company_name)} · ${escapeHtml(x.app.job_title)}</h3><p>${escapeHtml(stageLabel(x))}</p>${x.stage?`<p>—— ${escapeHtml(shanghaiDateKey(itemDate(x)))} 收到</p>`:''}<p>${officialUrl(x.app)?link(officialUrl(x.app),'直接打开申请状态页')+' · ':''}${link(appUrl('/r/'+links.get(x.app.id)),'我看过了，没变化')} · ${link(appUrl('/?app='+encodeURIComponent(x.app.id)),'结果出来了，去更新')}</p></article>`).join('');
+  const cardsD=(digest?.items||[]).slice(0,8).map(x=>`<p>${escapeHtml(x.summary)}<br>${x.from_mail?'邮件收到于':'记录创建于'} ${escapeHtml(shanghaiDateKey(x.dated_at))}</p>`).join('');
+  const range=escapeHtml(receiptRange({a,b,digest}));
+  return `<!doctype html><html lang="zh-CN"><body style="font-family:system-ui,sans-serif;line-height:1.8;color:#183c32"><main style="max-width:640px;margin:auto;padding:24px"><h1>Tounar · 帮你理</h1><p>收信 / 进展日期 ${range}</p>${a.length?section('一、有进展（'+a.length+'）',cardsA):''}${b.length?section('二、该回看了（'+b.length+'）',cardsB):''}${digest?.due?section('三、待你确认（'+digest.total+'）',cardsD+link(appUrl('/?panel=reviews'),'处理待确认')):''}<footer><p>收信 / 进展日期：${range}</p><small>推送时间：${escapeHtml(asOf.toISOString())}（北京时间每日 08:00 触发，当天补发）</small><p>只有明确确认状态无变化后，才重新计算回看时间。</p>${link(appUrl('/?panel=settings'),'提醒设置')} · ${link(appUrl('/?panel=reviews'),'待确认队列')} · ${link(appUrl('/'),'打开台账')}</footer></main></body></html>`;
 }
 
 function statusForBatchError(err) {
@@ -307,11 +274,14 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
   const links = new Map();
   for (const x of b) links.set(x.app.id, createReminderLink(ownerId, x.app.id).token);
   const batchId = existing?.id || newId('batch');
+  const range = receiptRange({a,b,digest});
   const subjectParts = [];
-  if (a.length) subjectParts.push(`${a.length} 个岗位有进展`);
-  if (b.length) subjectParts.push(`${b.length} 个岗位已投 ${prefs.review_threshold_days} 天以上`);
-  if (digest.due) subjectParts.push(`${digest.total} 条待确认`);
-  const subject = `【Tounar】${subjectParts.join(' · ')}`;
+  if(a.length === 1) subjectParts.push(`${a[0].app.company_name}·${a[0].app.job_title} ${STATUS_LABELS[a[0].payload?.mapped_status] || '有进展'}`);
+  else if(a.length) subjectParts.push(`${a.length} 条进展`);
+  if(b.length) subjectParts.push(`${b.length} 条该回看了`);
+  if(digest.due) subjectParts.push(`${digest.total} 条待确认`);
+  const subject = `【帮你理】${subjectParts.join(' · ')}（${range}收到）`;
+
   transaction(() => {
     if (!existing) {
       run(`INSERT INTO notification_batches
@@ -324,7 +294,7 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
     }
     for (const x of a) {
       run(`INSERT OR IGNORE INTO notification_batch_items (batch_id, owner_id, application_id, kind, snapshot_json)
-           VALUES (?, ?, ?, 'status_change', ?)`, [batchId, ownerId, x.app.id, JSON.stringify({ summary: x.outbox.summary })]);
+           VALUES (?, ?, ?, ?, ?)`, [batchId, ownerId, x.app.id, 'status_change:'+x.outbox.id, JSON.stringify({ summary: x.outbox.summary, source_received_at: itemDate(x), event_id: x.outbox.event_id })]);
     }
     for (const x of b) {
       run(`INSERT OR IGNORE INTO notification_batch_items (batch_id, owner_id, application_id, kind, snapshot_json)
@@ -352,10 +322,11 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
         [sent.messageId || null, nowIso(), batchId]);
       for (const x of a) {
         run(`UPDATE notification_outbox SET consumed_batch_id = ? WHERE id = ?`, [batchId, x.outbox.id]);
-        run('UPDATE applications SET last_a_notified_at = ? WHERE id = ? AND owner_id = ?', [nowIso(), x.app.id, ownerId]);
+        run('UPDATE applications SET last_a_notified_at = ? WHERE id = ? AND owner_id = ?', [now.toISOString(), x.app.id, ownerId]);
       }
       for (const x of b) {
-        run('UPDATE applications SET last_b_notified_at = ? WHERE id = ? AND owner_id = ?', [nowIso(), x.app.id, ownerId]);
+        run('UPDATE applications SET last_b_notified_at = ? WHERE id = ? AND owner_id = ?', [now.toISOString(), x.app.id, ownerId]);
+        if (x.stage) run('UPDATE applications SET stage_last_notified_anchor = ? WHERE id = ? AND owner_id = ?', [x.stage.anchor, x.app.id, ownerId]);
       }
       if (digest.due) {
         run('UPDATE notification_preferences SET last_review_digest_at = ?, updated_at = ? WHERE owner_id = ?',
@@ -403,11 +374,11 @@ export function batchPreview(ownerId, now = new Date()) {
     threshold_days: prefs.review_threshold_days,
     a: a.map((x) => ({
       application_id: x.app.id, company_name: x.app.company_name, job_title: x.app.job_title,
-      summary: x.outbox.summary, occurred_at: x.outbox.occurred_at
+      summary: x.outbox.summary, occurred_at: x.outbox.occurred_at, source_received_at: itemDate(x)
     })),
     b: b.map((x) => ({
       application_id: x.app.id, company_name: x.app.company_name, job_title: x.app.job_title,
-      applied_at: x.app.applied_at, days_since_applied: daysBetweenShanghai(x.app.applied_at, now),
+      stage_followup: x.stage, applied_at: x.app.applied_at, days_since_applied: daysBetweenShanghai(x.app.applied_at, now),
       has_safe_link: !!(x.app.status_url || x.app.job_url)
     })),
     review_digest: digest,

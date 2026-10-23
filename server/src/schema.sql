@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS applications (
   form_started_at TEXT,
   last_status_changed_at TEXT,
   last_progress_at TEXT,
+  stage_received_at TEXT,
+  stage_anchor_at TEXT,
+  stage_last_notified_anchor TEXT,
   last_site_observed_at TEXT,
   last_reviewed_at TEXT,
   deadline_at TEXT,
@@ -292,6 +295,7 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   review_frequency TEXT NOT NULL DEFAULT 'daily',
   review_threshold_days INTEGER NOT NULL DEFAULT 14,
   last_review_digest_at TEXT,
+  stage_followup_days INTEGER NOT NULL DEFAULT 7 CHECK (stage_followup_days IN (0,7,14)),
   version INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL,
   CHECK (mode IN ('all','changes_only','review_only','off')),
@@ -308,6 +312,7 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
   summary TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
   consumed_batch_id TEXT,
+  source_received_at TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_outbox_owner_pending ON notification_outbox(owner_id, consumed_batch_id);

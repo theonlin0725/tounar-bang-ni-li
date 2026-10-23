@@ -45,6 +45,13 @@ export async function phase2Web(check) {
     await page.locator('[data-test=ledger-row]').click();await page.locator('[data-test=undo-mail]').first().click();await page.click('[data-test=confirm-ok]');
     await page.waitForFunction(()=>[...document.querySelectorAll('.tn-toast')].some(x=>x.textContent.includes('已撤回邮件自动更新')));
     check('P2-详情撤回邮件自动判断并留历史',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
+    await page.click('[data-test=detail-drawer] .tn-drawer-close');
+    await page.click('[data-test=open-settings-reminder]');
+    await page.waitForSelector('[data-test=pref-stage-followup]');
+    check('P3-阶段回看默认7天，与旧阈值分开展示',await page.locator('[data-test=pref-stage-followup]').inputValue()==='7');
+    await page.selectOption('[data-test=pref-stage-followup]','14');await page.click('[data-test=pref-save]');
+    await page.waitForFunction(()=>document.querySelector('[data-test=pref-stage-followup]')?.value==='14'&&[...document.querySelectorAll('.tn-toast')].some(x=>x.textContent.includes('提醒设置已保存')));
+    check('P3-14天设置实际保存',db.prepare('SELECT stage_followup_days FROM notification_preferences WHERE owner_id=?').get(owner).stage_followup_days===14);
     db.close();
   }finally{await browser?.close();await server.stop();}
 }

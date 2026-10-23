@@ -174,6 +174,9 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     freqSel.value = frequency;
     const thresholdRange = h('input', { type: 'range', min: '7', max: '30', step: '1', value: String(threshold), 'data-test': 'pref-threshold' });
     const thresholdVal = h('span', { class: 'tn-range-val', text: `${threshold} 天` });
+    const stageSel = h('select', { class: 'tn-select', 'data-test': 'pref-stage-followup' });
+    for (const [value, text] of [[7, '7 天'], [14, '14 天'], [0, '关闭']]) stageSel.append(h('option', { value: String(value), text }));
+    stageSel.value = String(prefs.stage_followup_days ?? 7);
     const statusLine = h('div', { class: 'tn-faint tn-small', text: `设置版本 v${version ?? '—'} · 最近更新 ${fmtDateTime(prefs.updated_at)}` });
     const errBox = h('div', { 'data-test': 'pref-error' });
     const saveBtn = h('button', { class: 'tn-btn tn-btn-primary', type: 'button', text: '保存设置', 'data-test': 'pref-save' });
@@ -182,6 +185,7 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
       const reviewRelevant = mode === 'all' || mode === 'review_only';
       freqSel.disabled = !reviewRelevant;
       thresholdRange.disabled = !reviewRelevant;
+      stageSel.disabled = !reviewRelevant;
     };
     modeSel.addEventListener('change', () => { mode = modeSel.value; syncDisabled(); });
     freqSel.addEventListener('change', () => { frequency = freqSel.value; });
@@ -202,7 +206,8 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
           expected_version: version,
           mode,
           review_frequency: frequency,
-          review_threshold_days: Number(threshold)
+          review_threshold_days: Number(threshold),
+          stage_followup_days: Number(stageSel.value)
         });
         state.me.notification_preferences = res.data;
         toast('提醒设置已保存', 'ok');
@@ -254,7 +259,7 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     panelHost.append(
       h('div', { class: 'tn-banner info' },
         h('div', { class: 'tn-banner-body' },
-          h('div', { text: '提醒频率与回看阈值属于暂定参数（D06 未冻结）；默认每周一、阈值 14 天。' }),
+          h('div', { text: '默认每日北京时间 08:00 汇总；已投回看默认 14 天，笔试 / 面试后默认 7 天。' }),
           h('div', { class: 'tn-small', text: '提醒只发送摘要，不会自动改状态；关闭提醒只停止摘要发信，不停止邮箱同步。' })
         )
       ),
@@ -268,6 +273,11 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
           h('div', { class: 'tn-range-row' }, thresholdRange, thresholdVal),
           h('div', { class: 'tn-hint', text: '“待回看”= 距离最近有效进展/上次确认超过该天数。与 B 邮件基础集合一致，但不等于本次可发信名单。' })
         )
+      ),
+      h('div', { class: 'tn-pref-group' },
+        h('h4', { text: '笔试 / 面试后提醒回看' }),
+        h('div', { class: 'tn-field' }, h('label', { text: '收到邀请后多久提醒' }), stageSel,
+          h('div', { class: 'tn-hint', text: '按邀请收到日期计算；预约面试更晚时从面试时间算起。阶段推进后重算，终态停止。确认没变化后再等同样天数，与已投回看设置独立。' }))
       ),
       h('div', { class: 'tn-pref-group' },
         h('h4', { text: '下一批摘要预览（只读，不发送、不标记）' }),

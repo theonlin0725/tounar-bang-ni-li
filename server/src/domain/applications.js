@@ -4,7 +4,7 @@ import { all, bumpRevision, ensurePreferences, getApplication, markApplicationCh
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
   clipText, daysBetweenShanghai, isDueForReview, isSafeHttpUrl, maxIso, newId, normalizeCompanyKey,
-  normalizeWhitespace, nowIso, parseIso, safeJsonParse, sanitizeUrl, shanghaiDateKey, sourceMethods
+  normalizeWhitespace, nowIso, parseIso, safeJsonParse, sanitizeUrl, shanghaiDateKey, sourceMethods, stageFollowupState
 } from '../util.js';
 
 export const PUBLIC_APPLICATION_FIELDS = [
@@ -14,7 +14,7 @@ export const PUBLIC_APPLICATION_FIELDS = [
   'last_status_changed_at', 'last_progress_at', 'last_site_observed_at', 'last_reviewed_at',
   'deadline_at', 'deadline_precision', 'interview_round', 'round_label', 'interview_scheduled_at',
   'last_interview_completed_at', 'source_methods', 'latest_event_id', 'version', 'created_at',
-  'updated_at', 'archived_at', 'archive_reason'
+  'updated_at', 'archived_at', 'archive_reason', 'stage_received_at', 'stage_anchor_at'
 ];
 
 export function getPreferences(ownerId) {
@@ -28,7 +28,7 @@ export function reviewAnchor(app) {
 
 export function applicationProjection(app, preferences, asOf = new Date()) {
   const methods = safeJsonParse(app.source_methods_json, []);
-  const due = isDueForReview(app, preferences.review_threshold_days, asOf);
+  const due = isDueForReview(app, preferences.review_threshold_days, asOf) || stageFollowupState(app, preferences.stage_followup_days, asOf).due;
   const statusUrl = app.status_url && isSafeHttpUrl(app.status_url) ? app.status_url : null;
   const jobUrl = app.job_url && isSafeHttpUrl(app.job_url) ? app.job_url : null;
   const primaryStatusUrl = statusUrl || jobUrl;
@@ -178,6 +178,8 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
   const canonical = canonicalJobUrl(fields.job_url);
   const methods = [sourceMethod];
   const hasApplied = APPLIED_STATUSES.has(status) ? 1 : 0;
+  const sourceEvent = eventId ? one('SELECT source_method, occurred_at FROM events WHERE id = ? AND owner_id = ?', [eventId, ownerId]) : null;
+  const stageReceived = sourceEvent?.source_method === 'mail' ? sourceEvent.occurred_at : nowIso();
   const appFields = {
     id, owner_id: ownerId,
     company_name: company,
@@ -203,6 +205,8 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
     form_started_at: fields.form_started_at || null,
     last_status_changed_at: now,
     last_progress_at: now,
+    stage_received_at: ['assessment','interview'].includes(status) ? stageReceived : null,
+    stage_anchor_at: ['assessment','interview'].includes(status) ? maxIso(stageReceived, status === 'interview' ? fields.interview_scheduled_at : null) : null,
     last_site_observed_at: fields.last_site_observed_at || null,
     last_reviewed_at: null,
     deadline_at: parseIso(fields.deadline_at),
@@ -269,11 +273,11 @@ function outboxStatusChange(app, event, fromStatus, toStatus) {
   const existing = one(`SELECT id FROM notification_outbox WHERE event_id = ? AND kind = 'status_change'`, [event.id]);
   if (existing) return;
   run(`INSERT INTO notification_outbox
-    (id, owner_id, application_id, event_id, kind, summary, occurred_at, created_at)
-    VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
+    (id, owner_id, application_id, event_id, kind, summary, occurred_at, source_received_at, created_at)
+    VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?, ?)`,
   [newId('out'), app.owner_id, app.id, event.id,
     `${app.company_name} · ${app.job_title}：${STATUS_LABELS[fromStatus] || fromStatus} → ${STATUS_LABELS[toStatus] || toStatus}`,
-    event.occurred_at || nowIso(), nowIso()]);
+    event.occurred_at || nowIso(), event.payload?.source_received_at || event.occurred_at || nowIso(), nowIso()]);
 }
 
 function maybeSetRound(app, fields, eventId, sourceMethod) {
@@ -645,6 +649,7 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
       VALUES (?, ?, ?, ?, 'status_change', ?, ?, ?)`,
     [newId('out'), ownerId, app.id, eventId, `${app.company_name} · ${app.job_title}：手动补录`,
       appliedAt || nowIso(), nowIso()]);
+    run('UPDATE notification_outbox SET source_received_at = occurred_at WHERE owner_id = ? AND event_id = ?', [ownerId, eventId]);
     run(`INSERT INTO audit_log (id, owner_id, actor, action, target_type, target_id, meta_json, created_at)
          VALUES (?, ?, ?, 'application.manual_create', 'application', ?, '{}', ?)`,
     [newId('aud'), ownerId, actor, app.id, nowIso()]);

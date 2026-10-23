@@ -25,6 +25,24 @@ export function openDatabase(dbPath) {
 /* 轻量迁移：D06 冻结（2026-10-22）后新装库默认 daily；
    老库一次性把 weekly_monday 迁到 daily，并补 D08 的待确认摘要时间列。 */
 function migrate(instance) {
+  const addColumn = (table, column, definition) => {
+    if (!instance.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column)) instance.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  };
+  addColumn('notification_preferences', 'stage_followup_days', 'INTEGER NOT NULL DEFAULT 7 CHECK (stage_followup_days IN (0,7,14))');
+  addColumn('notification_outbox', 'source_received_at', 'TEXT');
+  addColumn('applications', 'stage_received_at', 'TEXT');
+  addColumn('applications', 'stage_anchor_at', 'TEXT');
+  addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
+  if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_followup'").get()) {
+    instance.exec(`UPDATE notification_outbox SET source_received_at = COALESCE(
+      (SELECT m.received_at FROM events e JOIN mail_messages m ON e.owner_id=m.owner_id AND e.connection_id=m.connection_id
+        AND e.mailbox=m.mailbox AND e.uidvalidity=m.uidvalidity AND e.uid=m.uid WHERE e.id=notification_outbox.event_id), occurred_at)
+      WHERE source_received_at IS NULL;
+      UPDATE applications SET stage_received_at = COALESCE(last_status_changed_at, applied_at),
+        stage_anchor_at = MAX(COALESCE(last_status_changed_at, applied_at, ''), COALESCE(interview_scheduled_at, ''))
+        WHERE status IN ('assessment','interview') AND stage_anchor_at IS NULL;`);
+    instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_phase2_followup', '1')").run();
+  }
   if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_mail_link'").get()) {
     instance.exec(`UPDATE review_items SET source_mail_id = (
       SELECT m.id FROM events e JOIN mail_messages m ON m.owner_id = e.owner_id
@@ -105,6 +123,18 @@ export function getApplication(ownerId, applicationId) {
 export function markApplicationChanged(ownerId, applicationId, eventId, sourceMethod, fields, options = {}) {
   const app = one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
   if (!app) return null;
+  fields = { ...fields };
+  const targetStatus = fields.status || app.status;
+  if (!('stage_anchor_at' in fields) && ['assessment', 'interview'].includes(targetStatus) && (targetStatus !== app.status || ('interview_scheduled_at' in fields && fields.interview_scheduled_at !== app.interview_scheduled_at))) {
+    const event = eventId ? one('SELECT source_method, occurred_at, payload_json FROM events WHERE id = ? AND owner_id = ?', [eventId, ownerId]) : null;
+    const payload = event ? JSON.parse(event.payload_json || '{}') : {};
+    const received = targetStatus === app.status ? (app.stage_received_at || app.last_status_changed_at || nowIso())
+      : (event?.source_method === 'mail' ? (payload.source_received_at || event.occurred_at) : fields.last_status_changed_at || event?.occurred_at || nowIso());
+    fields.stage_received_at = received;
+    const scheduled = targetStatus === 'interview' ? (fields.interview_scheduled_at ?? app.interview_scheduled_at) : null;
+    fields.stage_anchor_at = scheduled && Date.parse(scheduled) > Date.parse(received) ? scheduled : received;
+    if (targetStatus !== app.status) { fields.last_reviewed_at = null; fields.stage_last_notified_anchor = null; }
+  }
   const changed = Object.keys(fields);
   if (!changed.length) return app;
   const sets = changed.map((f) => `${f} = ?`).join(', ');

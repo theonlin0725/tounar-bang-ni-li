@@ -107,6 +107,13 @@ export function isDueForReview(app, thresholdDays, asOf = new Date()) {
   return daysApplied != null && daysAnchor != null && daysApplied >= thresholdDays && daysAnchor >= thresholdDays;
 }
 
+export function stageFollowupState(app, days = 7, asOf = new Date()) {
+  const anchor = maxIso(app.stage_anchor_at, app.last_reviewed_at);
+  const elapsed = anchor ? daysBetweenShanghai(anchor, asOf) : null;
+  return { anchor, elapsed, received_at: app.stage_received_at,
+    due: [7,14].includes(Number(days)) && app.stage_last_notified_anchor !== anchor && !app.archived_at && !!app.has_applied && ['assessment','interview'].includes(app.status) && elapsed != null && elapsed >= Number(days) };
+}
+
 export function normalizeWhitespace(value, max = 2000) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
