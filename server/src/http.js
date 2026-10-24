@@ -173,14 +173,15 @@ export function createServer() {
       sendJson(res, 200, {
         ok: true,
         service: 'tounar-bang-ni-li',
-        version: 'phase3-20261024d',
+        version: 'phase3-20261024e',
         share_code: Boolean(config.shareCode),
         tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
         tick_sha8: crypto.createHash('sha256').update(config.internalTickToken).digest('hex').slice(0, 8),
         internal_header_seen: Boolean(req.headers['x-internal-token']),
-        tick_query_seen: Boolean(req.query?.get?.('tick_token')),
-        tick_query_len: String(req.query?.get?.('tick_token') || '').length,
-        tick_query_sha8: crypto.createHash('sha256').update(String(req.query?.get?.('tick_token') || '')).digest('hex').slice(0, 8),
+        auth_header_len: String(req.headers.authorization || '').length,
+        x_device_token_seen: Boolean(req.headers['x-device-token']),
+        x_session_token_seen: Boolean(req.headers['x-session-token']),
+        x_custom_probe_seen: Boolean(req.headers['x-custom-probe']),
         time: new Date().toISOString()
       });
       return;

@@ -427,16 +427,15 @@ export function registerRoutes() {
 }
 
 function requireInternalToken(req) {
-  const header = String(req.headers['x-internal-token'] || '');
-  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  // 托管平台网关会剥离 X-Internal-Token / Authorization（2026-10-24 探针实测），
-  // 因此允许经查询参数或请求体传递：GET 用 ?tick_token=，POST 优先 body.tick_token。
   const viaQuery = String(req.query?.get?.('tick_token') || '');
   const viaBody = String(req.body?.tick_token || '');
-  const supplied = header || bearer || viaBody || viaQuery;
+  // 托管平台网关实测（2026-10-24 探针）：剥离 X-Internal-Token，并给每个请求注入自己的
+  // Authorization（长约 379 的 JWT）。因此 query/body 通道优先，头通道只作本地兜底。
+  const header = String(req.headers['x-internal-token'] || '');
+  const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const supplied = viaBody || viaQuery || header || bearer;
   const expected = config.internalTickToken;
   if (!supplied || !safeEqualHex(sha256(supplied), sha256(expected))) {
-    throw new AppError(401, 'UNAUTHENTICATED',
-      `内部调度令牌无效 [tickauth-v3 h=${header.length} b=${bearer.length} body=${viaBody.length} q=${viaQuery.length} s_sha=${sha256(supplied).slice(0, 8)} e_sha=${sha256(expected).slice(0, 8)}]`);
+    throw new AppError(401, 'UNAUTHENTICATED', '内部调度令牌无效 [tickauth-v3]');
   }
 }
