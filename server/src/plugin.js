@@ -218,10 +218,11 @@ function normalizeEvent(raw, batchSchemaVersion) {
   if (normalizedPayload.jd_text != null) {
     // 完整 JD：保留段落，只做长度上限（超限时置空并标记，不能静默截断）
     const raw = String(normalizedPayload.jd_text).replace(/\r\n/g, '\n').trim();
-    if (raw.length > 20000) {
-      // 不静默截断：明确拒绝，让客户端分页/裁剪后重试
-      throw new AppError(400, 'JD_TEXT_TOO_LONG', 'jd_text 超过 20000 字符，请分段提交，不要静默丢弃正文');
+    if (raw.length > 20000 && normalizedPayload.jd_text_truncated !== true) {
+      // 客户端没声明截断却超限：拒绝，避免静默丢正文
+      throw new AppError(400, 'JD_TEXT_TOO_LONG', 'jd_text 超过 20000 字符且未声明截断，请分段提交');
     }
+    if (normalizedPayload.jd_text_truncated === true) normalizedPayload.jd_text = raw.slice(0, 20000);
     normalizedPayload.jd_text = raw || null;
   }
   for (const key of ['job_url', 'status_url']) {

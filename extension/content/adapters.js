@@ -48,6 +48,13 @@
     'campus.xiaomi.com': '小米', 'hr.xiaomi.com': '小米',
     'talent.baidu.com': '百度',
     'campus.163.com': '网易', 'hr.163.com': '网易',
+    // 企业自建招聘站：域名即雇主，可以据此补公司（聚合站仍保持 null）
+    'jobs.mihoyo.com': '米哈游',
+    'job.xiaohongshu.com': '小红书',
+    'careers.oppo.com': 'OPPO',
+    'careers.pddglobalhr.com': '拼多多',
+    'careers.pinduoduo.com': '拼多多',
+    'zhaopin.kuaishou.cn': '快手', 'campus.kuaishou.cn': '快手',
     'www.zhipin.com': null, 'zhipin.com': null,
     'www.nowcoder.com': null, 'nowcoder.com': null,
     'www.shixiseng.com': null, 'shixiseng.com': null

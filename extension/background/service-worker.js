@@ -57,6 +57,22 @@ async function flushQueue() {
         await Queue.markAttempt(item.client_event_id, item.error?.code || 'RETRYABLE');
       }
     }
+    const resultMap = {};
+    for (const item of response.results || []) {
+      resultMap[item.client_event_id] = {
+        accepted: !!item.accepted,
+        duplicate: !!item.duplicate,
+        application_id: item.application_id || null,
+        review_item_id: item.review_item_id || null,
+        processing_state: item.processing_state || null,
+        error: item.error || null,
+        at: new Date().toISOString()
+      };
+    }
+    if (Object.keys(resultMap).length) {
+      const prev = (await getSettings()).lastEventResults || {};
+      await setSettings({ lastEventResults: { ...prev, ...resultMap }, lastEventResultsAt: new Date().toISOString() });
+    }
     await Queue.remove([...acceptedIds, ...dropped]);
     if (acceptedIds.length) {
       await setSettings({ lastUploadAt: new Date().toISOString(), lastError: null });
@@ -228,6 +244,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'set_server_url': {
         await setSettings({ serverUrl: String(message.serverUrl || '').replace(/\/$/, '') });
         sendResponse({ ok: true });
+        return;
+      }
+      case 'event_result': {
+        const clientEventId = String(message.clientEventId || '');
+        if (!clientEventId) { sendResponse({ ok: false, error: { code: 'NO_EVENT_ID', message: '缺少 client_event_id' } }); return; }
+        await flushQueue().catch(() => null);
+        const stored = (await getSettings()).lastEventResults || {};
+        const result = stored[clientEventId] || null;
+        let status = 'queued';
+        if (result) {
+          if (result.error && !result.accepted) status = 'rejected';
+          else if (result.application_id) status = 'entered';
+          else if (result.review_item_id) status = 'review';
+          else status = 'accepted';
+        }
+        sendResponse({ ok: true, status, result, queued: await Queue.count() });
         return;
       }
       case 'capture_current_tab': {

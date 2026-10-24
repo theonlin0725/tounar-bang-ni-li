@@ -155,7 +155,7 @@
     "file": "mihoyo/9707.html",
     "captured_at": "2026-10-23T03:07:24.625Z",
     "expected": {
-      "company_name": "",
+      "company_name": "米哈游",
       "job_title": "资深Unreal工具开发（关卡PCG方向）",
       "location": "",
       "recruitment_batch": "",
@@ -166,7 +166,8 @@
     "truth": {
       "company_name": "米哈游",
       "location": "上海"
-    }
+    },
+    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对"
   },
   {
     "site": "mihoyo",
@@ -174,7 +175,7 @@
     "file": "mihoyo/9705.html",
     "captured_at": "2026-10-23T03:07:35.621Z",
     "expected": {
-      "company_name": "",
+      "company_name": "米哈游",
       "job_title": "资深Unreal工具开发（构建方向）-预研项目",
       "location": "",
       "recruitment_batch": "",
@@ -185,7 +186,8 @@
     "truth": {
       "company_name": "米哈游",
       "location": "上海"
-    }
+    },
+    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对"
   },
   {
     "site": "netease",
@@ -351,14 +353,15 @@
     "file": "xiaohongshu/22013.html",
     "captured_at": "2026-10-23T14:00:16.888Z",
     "expected": {
-      "company_name": "",
+      "company_name": "小红书",
       "job_title": "【2027校招】媒体网络研发工程师-流媒体方向",
       "location": "",
       "recruitment_batch": "",
       "jd_summary": "1、参与研发媒体网络核心模块，演进优化RTMP/HTTP-FLV/HLS/RTSP等传输协议质量； 2、参与研发流媒体+AI应用等创新业务的研发，比如数字人、A",
       "site_job_id": "22013",
       "job_url": "https://job.xiaohongshu.com/campus/position/22013"
-    }
+    },
+    "note": "公司名来自企业自建招聘域名（job.xiaohongshu.com），2026-10-24 独立核对"
   },
   {
     "site": "xiaohongshu",
@@ -366,14 +369,15 @@
     "file": "xiaohongshu/22011.html",
     "captured_at": "2026-10-23T14:00:16.889Z",
     "expected": {
-      "company_name": "",
+      "company_name": "小红书",
       "job_title": "【2027校招】端智能图像算法工程师",
       "location": "",
       "recruitment_batch": "",
       "jd_summary": "1、自研端云协同的图像/视频画质处理引擎：云端智能转码和端侧生成式增强的端云联合决策方案设计与核心算法开发等； 2、负责传统画质处理与生成式大模型驱动的画质增强",
       "site_job_id": "22011",
       "job_url": "https://job.xiaohongshu.com/campus/position/22011"
-    }
+    },
+    "note": "公司名来自企业自建招聘域名（job.xiaohongshu.com），2026-10-24 独立核对"
   },
   {
     "site": "baidu",

@@ -7,29 +7,36 @@
  * 其余站点适配器仍是草案（G04 未验证），不在本地 fixture 里假装通过。
  */
 
-const JOB_A_HTML = (base) => `<!DOCTYPE html>
+const JOB_A_HTML = (base) => {
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: '前端开发实习生',
+    identifier: { '@type': 'PropertyValue', value: 'e2e-job-a' },
+    url: `${base}/job-a`,
+    datePosted: '2026-09-01',
+    hiringOrganization: { '@type': 'Organization', name: '星河科技' },
+    jobLocation: { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: '杭州' } },
+    description: '工作职责：\n1. 负责 React 前端页面开发与接口联调；\n2. 参与组件库建设与性能优化。\n\n任职要求：\n1. 熟悉 JavaScript/TypeScript；\n2. 了解 React 生态与工程化；\n3. 有良好的沟通与协作能力。'
+  };
+  return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <title>前端开发实习生 · 星河科技</title>
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "JobPosting",
-  "title": "前端开发实习生",
-  "identifier": { "@type": "PropertyValue", "value": "e2e-job-a" },
-  "url": "${base}/job-a",
-  "datePosted": "2026-09-01",
-  "hiringOrganization": { "@type": "Organization", "name": "星河科技" },
-  "jobLocation": { "@type": "Place", "address": { "@type": "PostalAddress", "addressLocality": "杭州" } },
-  "description": "负责 React 前端页面开发与接口联调，参与组件库建设。"
-}
-</script>
+<script type="application/ld+json">${JSON.stringify(ld)}</script>
 </head>
 <body>
 <h1 class="job-title">前端开发实习生</h1>
 <p class="company-name">星河科技</p>
-<div class="job-detail">负责 React 前端页面开发与接口联调，参与组件库建设。</div>
+<div class="job-detail">工作职责：
+1. 负责 React 前端页面开发与接口联调；
+2. 参与组件库建设与性能优化。
+
+任职要求：
+1. 熟悉 JavaScript/TypeScript；
+2. 了解 React 生态与工程化；
+3. 有良好的沟通与协作能力。</div>
 <form id="apply-form" action="#">
   <input id="candidate-name" name="candidate_name" placeholder="姓名" autocomplete="off">
   <button type="button" id="submit-apply">提交申请</button>
@@ -42,6 +49,7 @@ const JOB_A_HTML = (base) => `<!DOCTYPE html>
 </script>
 </body>
 </html>`;
+};
 
 const JOB_B_HTML = (base) => `<!DOCTYPE html>
 <html lang="zh-CN">

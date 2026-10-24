@@ -110,6 +110,27 @@
     return Object.keys(out).length ? out : null;
   }
 
+  /* 模板命中后的成功记账：只有「换了一个岗位 ID 仍命中」才升级为 stable。
+   * 不能因为重新生成了选择器就标记稳定。 */
+  async function recordHit(url, job) {
+    const key = keyFor(url.origin, url.pathname);
+    const map = await all();
+    const prev = map[key];
+    if (!prev) return null;
+    const jobId = String(job?.site_job_id || job?.job_url || '');
+    const differentJob = !!(prev.lastJobId && jobId && prev.lastJobId !== jobId);
+    const now = new Date().toISOString();
+    map[key] = {
+      ...prev,
+      successes: (prev.successes || 0) + 1,
+      lastJobId: jobId || prev.lastJobId,
+      lastOkAt: now,
+      status: differentJob ? 'stable' : (prev.status === 'suspect' ? 'trial' : prev.status || 'trial')
+    };
+    await save(map);
+    return map[key];
+  }
+
   async function learnFromJob(job, url) {
     if (!job?.job_title) return null;
     const selectors = {
@@ -123,16 +144,8 @@
     const prev = map[key];
     const now = new Date().toISOString();
     if (prev) {
-      // 已有模板：同一岗位/选择器稳定就记一次成功；跨岗位成功升为 stable
-      const newJob = prev.lastJobId !== (job.site_job_id || job.job_url);
-      map[key] = {
-        ...prev,
-        selectors: selectors.title ? selectors : prev.selectors,
-        successes: (prev.successes || 0) + 1,
-        lastJobId: job.site_job_id || job.job_url,
-        lastOkAt: now,
-        status: (prev.successes || 0) >= 1 && newJob ? 'stable' : (prev.status === 'suspect' ? 'trial' : prev.status || 'trial')
-      };
+      // 已有模板：不重新生成选择器、不在这里改稳定状态（稳定只能由 recordHit 在跨岗位命中后决定）
+      return prev;
     } else {
       map[key] = {
         id: key,
@@ -177,5 +190,5 @@
     await chrome.storage.local.remove(KEY);
   }
 
-  globalThis.TounarLearned = { KEY, routeShape, keyFor, getTemplate, extractWith, learnFromJob, markFailure, list, remove, clear };
+  globalThis.TounarLearned = { KEY, routeShape, keyFor, getTemplate, extractWith, learnFromJob, recordHit, markFailure, list, remove, clear };
 })();

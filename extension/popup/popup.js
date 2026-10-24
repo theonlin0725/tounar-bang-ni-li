@@ -66,8 +66,14 @@ function showCapture(status) {
   const el = $('capture-status');
   if (!el) return;
   if (!status) { el.textContent = '尚未采集'; return; }
+  const title = status.job?.job_title ? `：${status.job.job_title}` : '';
   const map = {
-    captured: `已识别并提交（${status.elapsedMs}ms）：${status.job?.job_title || ''}`,
+    entered: `已自动入账（${status.elapsedMs}ms）${title}`,
+    accepted: `服务端已接受，正在处理（${status.elapsedMs}ms）${title}`,
+    review: `已提交，但字段需要你确认（进了待确认）${title}`,
+    queued: `已入本地队列，等待上传（${status.elapsedMs}ms）${title}`,
+    rejected: `服务端拒绝：${status.result?.error?.message || '校验未通过'}`,
+    failed: `采集失败：${status.message || status.result?.error?.message || '未知错误'}`,
     no_job: '已连接页面，但这一页没有识别到岗位（首页/列表请点开详情再采集）',
     unauthorized: '该站点未授权，先点「将本站设为招聘网站并授权」',
     error: `采集失败：${status.message || '未知错误'}`
@@ -76,13 +82,18 @@ function showCapture(status) {
 }
 
 async function captureCurrentTab(reason) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.url || !/^https?:/.test(tab.url)) return { ok: false, error: { message: '当前标签页不是网页' } };
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // popup 本身被当成标签页打开时（自动化测试就是这种情形），回退到最近打开的 http(s) 标签页
+  if (!tab?.url || !/^https?:/.test(tab.url)) {
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    tab = tabs.filter((t) => /^https?:/.test(t.url || '')).sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+  }
+  if (!tab?.url || !/^https?:/.test(tab.url)) { $('capture-status').textContent = '当前标签页不是网页'; return { ok: false, error: { message: '当前标签页不是网页' } }; }
   const origin = new URL(tab.url).origin;
   $('capture-status').textContent = '已授权，正在识别当前页…';
   const result = await send({ type: 'capture_current_tab', tabId: tab.id, origin, reason });
   if (result?.ok) {
-    showCapture({ status: result.status, elapsedMs: result.elapsedMs, job: result.result?.job });
+    showCapture({ status: result.result?.status || result.status, elapsedMs: result.elapsedMs, job: result.result?.job, result: result.result });
   } else {
     showCapture({ status: 'error', message: result?.error?.message });
   }

@@ -20,7 +20,8 @@
     "probe:llm": "node --env-file-if-exists .env tools/probe-llm.mjs",
     "plugin:tryrun": "node tools/tryrun-plugin.mjs",
     "remind": "node --env-file-if-exists .env server/scripts/run-reminders.js",
-    "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js"
+    "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js",
+    "test:plugin-acceptance": "node tests/e2e/plugin-acceptance.mjs"
   },
   "dependencies": {
     "@tencent-ai/workbuddy-cloud-sdk": "^0.1.4-dev.ca27990.202610161713",
