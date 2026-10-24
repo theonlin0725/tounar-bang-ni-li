@@ -88,9 +88,14 @@ export function exchangePairing(body = {}) {
 }
 
 export function authenticateDevice(req, { allowRevoked = false } = {}) {
-  const header = String(req.headers.authorization || '');
-  if (!header.startsWith('Bearer dev_')) throw new AppError(401, 'UNAUTHENTICATED', '设备凭证缺失');
-  const token = header.slice(7).trim();
+  // 托管平台网关会覆盖 Authorization（2026-10-24 探针实测），
+  // 因此设备凭证优先走 X-Device-Token 自定义头（已证实能穿透网关），本地兜底仍支持 Bearer。
+  const altHeader = String(req.headers['x-device-token'] || '').trim();
+  const bearer = String(req.headers.authorization || '');
+  let token = '';
+  if (altHeader.startsWith('dev_')) token = altHeader;
+  else if (bearer.startsWith('Bearer dev_')) token = bearer.slice(7).trim();
+  if (!token) throw new AppError(401, 'UNAUTHENTICATED', '设备凭证缺失');
   const row = one(`SELECT d.*, u.email_display, u.deletion_blocked
     FROM plugin_devices d JOIN users u ON u.id = d.owner_id
     WHERE d.token_hash = ?`, [sha256(token)]);

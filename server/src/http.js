@@ -99,13 +99,15 @@ async function readJson(req) {
 }
 
 function csrfAllowed(req) {
+  // 只有插件设备凭证可跳过 CSRF。托管网关会给每个请求注入自己的 Authorization
+  // （2026-10-24 探针实测，长约 380 的 JWT），不能凭"任意 Bearer 头"放行。
   const header = String(req.headers.authorization || '');
-  if (header.startsWith('Bearer ') && !header.startsWith('Bearer sess_')) return true;
+  if (header.startsWith('Bearer dev_')) return true;
+  if (String(req.headers['x-device-token'] || '').startsWith('dev_')) return true;
   const origin = String(req.headers.origin || '');
   if (origin && origin === config.appBaseUrl) return true;
   const site = String(req.headers['sec-fetch-site'] || '');
   if (site === 'same-origin') return true;
-  // Non-browser test/API clients may explicitly opt out with the bearer session path.
   return false;
 }
 

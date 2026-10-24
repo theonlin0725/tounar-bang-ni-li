@@ -42,7 +42,9 @@
         method,
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          // 托管平台网关会覆盖 Authorization，设备凭证改走自定义头 X-Device-Token（已证实可穿透）；
+          // 同时保留 Authorization 以兼容无网关的本地后台。
+          ...(token ? { 'X-Device-Token': token, Authorization: `Bearer ${token}` } : {})
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         credentials: 'omit',
