@@ -40,7 +40,7 @@ export function buildTestExtension({ outDir = OUT } = {}) {
     content_scripts: [
       {
         matches: TEST_ORIGINS,
-        js: ['content/adapters.js', 'content/tracker.js'],
+        js: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js'],
         run_at: 'document_idle'
       }
     ],

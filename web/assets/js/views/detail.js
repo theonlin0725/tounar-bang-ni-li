@@ -97,6 +97,16 @@ export function openDetail(id, { gen, onChanged } = {}) {
       ? h('div', { class: 'tn-evidence', text: app.jd_summary })
       : h('div', { class: 'tn-link-disabled', text: '摘要待补充（纯文本，不渲染网页 HTML）' })));
 
+    /* JD 全文（插件采集的完整职责/要求；没有则回退摘要） */
+    if (app.jd_text && String(app.jd_text).trim().length > (app.jd_summary || '').length) {
+      bodyEl.append(section('JD 全文', h('div', {
+        class: 'tn-evidence tn-jd-full',
+        'data-test': 'detail-jd-text',
+        style: 'white-space:pre-wrap;max-height:320px;overflow:auto',
+        text: app.jd_text
+      })));
+    }
+
     /* 链接 */
     const links = h('div', { class: 'tn-links-row' });
     if (app.job_url) links.append(extLink(app.job_url, '查看岗位'));

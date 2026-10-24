@@ -230,6 +230,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true });
         return;
       }
+      case 'capture_current_tab': {
+        // 授权后立即在当前标签页识别并采集：注入脚本（幂等）+ 唤醒 + 等结果
+        const tabId = Number(message.tabId);
+        const origin = String(message.origin || '');
+        const startedAt = Date.now();
+        try {
+          if (!tabId) throw Object.assign(new Error('缺少 tabId'), { code: 'NO_TAB' });
+          const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+          if (!hasPermission) throw Object.assign(new Error('该站点未授权'), { code: 'NO_PERMISSION' });
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js']
+          }).catch(() => {});
+          let response = null;
+          try {
+            response = await chrome.tabs.sendMessage(tabId, { type: 'tounar_capture_now', reason: message.reason || 'authorize' });
+          } catch (error) {
+            throw Object.assign(new Error(`无法连接页面脚本：${error.message}`), { code: 'NO_CONTENT_SCRIPT' });
+          }
+          const elapsedMs = Date.now() - startedAt;
+          const status = response?.ok ? 'captured' : 'no_job';
+          await setSettings({ lastCapture: { at: new Date().toISOString(), origin, elapsedMs, status, job: response?.job || null } });
+          sendResponse({ ok: true, elapsedMs, status, result: response });
+        } catch (error) {
+          const status = error?.code === 'NO_PERMISSION' ? 'unauthorized' : 'error';
+          await setSettings({ lastCapture: { at: new Date().toISOString(), origin, elapsedMs: Date.now() - startedAt, status, message: error.message } });
+          sendResponse({ ok: false, error: { code: error?.code || 'CAPTURE_FAILED', message: error.message } });
+        }
+        return;
+      }
       case 'start_pairing': {
         try {
           const pending = await startPairing({ serverUrl: message.serverUrl, deviceName: message.deviceName });

@@ -7,6 +7,12 @@ import {
   normalizeWhitespace, nowIso, parseIso, safeJsonParse, sanitizeUrl, shanghaiDateKey, sourceMethods, stageFollowupState
 } from '../util.js';
 
+function clipLongText(value, max = 20000) {
+  const text = String(value || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+  if (!text) return null;
+  return text.length > max ? text.slice(0, max) : text;
+}
+
 export const PUBLIC_APPLICATION_FIELDS = [
   'id', 'company_name', 'job_title', 'recruitment_batch', 'location', 'jd_summary', 'channel',
   'job_url', 'canonical_job_url', 'status_url', 'status_url_scope', 'status', 'has_applied',
@@ -193,6 +199,7 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
     recruitment_batch: fields.recruitment_batch ? clipText(fields.recruitment_batch, 100) : null,
     location: fields.location ? clipText(fields.location, 100) : null,
     jd_summary: fields.jd_summary ? clipText(fields.jd_summary, 80) : null,
+    jd_text: clipLongText(fields.jd_text),
     channel: fields.channel ? clipText(fields.channel, 40) : '未知',
     job_url: sanitizeUrl(fields.job_url),
     canonical_job_url: canonical,
@@ -233,7 +240,7 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
 
 function fillMissingFields(app, fields, eventId, sourceMethod) {
   const updates = {};
-  const fillable = ['company_name', 'job_title', 'jd_summary', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
+  const fillable = ['company_name', 'job_title', 'jd_summary', 'jd_text', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
     'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at', 'round_label', 'interview_round'];
   const ranks={low:0,medium:1,high:2};
   for (const key of fillable) {
@@ -243,6 +250,7 @@ function fillMissingFields(app, fields, eventId, sourceMethod) {
     if(app[key]!=null && app[key]!=='' && ranks[confidence]<=(ranks[source?.confidence]??1))continue;
     let value=fields[key];
     if(key==='jd_summary'&&value)value=clipText(value,80);
+    if(key==='jd_text'&&value)value=clipLongText(value);
     if(['job_url','status_url'].includes(key))value=sanitizeUrl(value);
     if(key==='canonical_job_url')value=canonicalJobUrl(fields.job_url);
     if(['deadline_at','interview_scheduled_at'].includes(key))value=parseIso(value);
@@ -359,7 +367,7 @@ function reviewForEvent(event, details) {
   });
 }
 
-function processView(event) {
+function processView(event, { explicit = false } = {}) {
   const p = event.payload;
   const existing = one('SELECT * FROM applications WHERE owner_id = ? AND latest_event_id = ?', [event.owner_id, event.id]);
   if (existing) return { state: 'applied', application: existing };
@@ -373,7 +381,8 @@ function processView(event) {
   }
   const dwellMs = Number(p.visible_dwell_ms);
   const dwellBelowThreshold = Number.isFinite(dwellMs) && dwellMs < 3000;
-  if (event.evidence_level !== 'strong' || dwellBelowThreshold) {
+  // 用户显式点“采集”时不要求停留时长，但仍要求强证据（不能伪造 visible_dwell_ms）
+  if (event.evidence_level !== 'strong' || (!explicit && dwellBelowThreshold)) {
     const review = reviewForEvent(event, {
       kind: 'suspect_view',
       reasonCode: dwellBelowThreshold ? 'VIEW_DWELL_BELOW_THRESHOLD' : 'WEAK_VIEW_EVIDENCE',
@@ -387,7 +396,7 @@ function processView(event) {
     field_confidence: p.field_confidence,
     company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
-    job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
+    job_url: p.job_url, jd_summary: p.jd_summary, jd_text: p.jd_text, location: p.location,
     recruitment_batch: p.recruitment_batch, channel: p.channel, status_url: p.status_url,
     status_url_scope: p.status_url_scope, first_viewed_at: event.occurred_at,
     last_viewed_at: event.observed_at
@@ -473,7 +482,7 @@ function processSubmitted(event) {
     field_confidence: p.field_confidence,
     company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
-    job_url: p.job_url, jd_summary: p.jd_summary, location: p.location,
+    job_url: p.job_url, jd_summary: p.jd_summary, jd_text: p.jd_text, location: p.location,
     recruitment_batch: p.recruitment_batch, channel: p.channel || '企业官网',
     applied_at: eventAppliedAt(event), applied_at_precision: 'exact'
   };
@@ -563,6 +572,7 @@ export function processPluginEvent(event) {
   let result;
   switch (event.event_type) {
     case 'job_viewed': result = processView(event); break;
+    case 'job_captured': result = processView(event, { explicit: true }); break;
     case 'form_started': result = processFormStarted(event); break;
     case 'application_submitted': result = processSubmitted(event); break;
     case 'site_status_observed': result = processSiteStatus(event); break;

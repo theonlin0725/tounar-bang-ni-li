@@ -62,6 +62,61 @@ async function refresh() {
   renderSites(status.grantedOrigins || []);
 }
 
+function showCapture(status) {
+  const el = $('capture-status');
+  if (!el) return;
+  if (!status) { el.textContent = '尚未采集'; return; }
+  const map = {
+    captured: `已识别并提交（${status.elapsedMs}ms）：${status.job?.job_title || ''}`,
+    no_job: '已连接页面，但这一页没有识别到岗位（首页/列表请点开详情再采集）',
+    unauthorized: '该站点未授权，先点「将本站设为招聘网站并授权」',
+    error: `采集失败：${status.message || '未知错误'}`
+  };
+  el.textContent = map[status.status] || `状态：${status.status}`;
+}
+
+async function captureCurrentTab(reason) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url || !/^https?:/.test(tab.url)) return { ok: false, error: { message: '当前标签页不是网页' } };
+  const origin = new URL(tab.url).origin;
+  $('capture-status').textContent = '已授权，正在识别当前页…';
+  const result = await send({ type: 'capture_current_tab', tabId: tab.id, origin, reason });
+  if (result?.ok) {
+    showCapture({ status: result.status, elapsedMs: result.elapsedMs, job: result.result?.job });
+  } else {
+    showCapture({ status: 'error', message: result?.error?.message });
+  }
+  await refresh();
+  return result;
+}
+
+async function renderLearned() {
+  const list = await globalThis.TounarLearned?.list?.() || [];
+  const container = $('learned-list');
+  if (!container) return;
+  container.textContent = '';
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = '还没有学习记录：在岗位上点「采集当前页」成功后会生成。';
+    container.append(p);
+    return;
+  }
+  for (const item of list.slice(0, 8)) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const label = document.createElement('span');
+    label.className = 'hint';
+    label.textContent = `${new URL(item.origin).host} ${item.pathPattern} · ${item.status} · 成功${item.successes || 0}/失败${item.failures || 0}`;
+    const btn = document.createElement('button');
+    btn.className = 'link';
+    btn.textContent = '删除';
+    btn.addEventListener('click', async () => { await globalThis.TounarLearned.remove(item.id); await renderLearned(); });
+    row.append(label, btn);
+    container.append(row);
+  }
+}
+
 function renderSites(grantedOrigins) {
   const container = $('site-list');
   if (container.childElementCount === 0) {
@@ -94,7 +149,7 @@ async function ensureContentScript(origins) {
     await chrome.scripting.registerContentScripts([{
       id: 'tounar-tracker',
       matches: patterns,
-      js: ['content/adapters.js', 'content/tracker.js'],
+      js: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js'],
       runAt: 'document_idle',
       persistAcrossSessions: true
     }]);
@@ -203,10 +258,22 @@ $('grant-current').addEventListener('click', async () => {
   const url = tabs[0]?.url;
   if (!url || !/^https?:/.test(url)) { $('sites-status').textContent = '当前标签页不是 http(s) 页面'; return; }
   const origin = `${new URL(url).origin}/*`;
+  const startedAt = Date.now();
+  $('sites-status').textContent = '等待浏览器授权…';
   const granted = await chrome.permissions.request({ origins: [origin] });
-  $('sites-status').textContent = granted ? `已授权 ${origin}` : '未授权（用户取消）';
+  if (!granted) { $('sites-status').textContent = '未授权（用户取消）'; return; }
+  $('sites-status').textContent = `已授权 ${origin}（${Date.now() - startedAt}ms），正在识别当前页…`;
   await ensureContentScript();
-  await refresh();
+  await captureCurrentTab('authorize');
+  $('sites-status').textContent = `已授权 ${origin}`;
+});
+
+$('capture-now').addEventListener('click', async () => { await captureCurrentTab('manual'); });
+
+$('clear-learned').addEventListener('click', async () => {
+  await globalThis.TounarLearned?.clear?.();
+  await renderLearned();
+  $('capture-status').textContent = '已清除学习记录，下次采集会重新学习';
 });
 
 $('grant-selected').addEventListener('click', async () => {
@@ -228,4 +295,5 @@ $('revoke-all').addEventListener('click', async () => {
 });
 
 refresh();
+renderLearned();
 setInterval(refresh, 5000);

@@ -127,6 +127,7 @@ export function applicationDetail(ownerId, applicationId) {
   return {
     data: {
       ...applicationProjection(app, preferences),
+      jd_text: app.jd_text || null,
       history: history.map((h) => ({
         ...h,
         changed_fields: safeJsonParse(h.changed_fields_json, {})

@@ -8,7 +8,7 @@ import {
 import { mapStatusText, processPluginEvent } from './domain/applications.js';
 import { finalizeDeletionForOwner } from './domain/deletion.js';
 
-const ALLOWED_EVENT_TYPES = new Set(['job_viewed', 'form_started', 'application_submitted', 'site_status_observed']);
+const ALLOWED_EVENT_TYPES = new Set(['job_viewed', 'job_captured', 'form_started', 'application_submitted', 'site_status_observed']);
 
 export function createPairing(body = {}) {
   const deviceName = normalizeWhitespace(body.device_name || 'Chrome 扩展', 80) || 'Chrome 扩展';
@@ -203,7 +203,7 @@ function normalizeEvent(raw, batchSchemaVersion) {
     if (typeof payload.field_confidence !== 'object' || Array.isArray(payload.field_confidence)) throw new AppError(400, 'VALIDATION_ERROR', '字段把握度格式错误');
     normalizedPayload.field_confidence = {};
     normalizedPayload.field_sources = {};
-    for (const field of ['company_name','job_title','location','recruitment_batch','jd_summary','site_job_id','job_url']) {
+    for (const field of ['company_name','job_title','location','recruitment_batch','jd_summary','jd_text','site_job_id','job_url']) {
       const value = payload.field_confidence[field];
       if (value != null && !['low','medium','high'].includes(value)) throw new AppError(400, 'VALIDATION_ERROR', '未知字段把握度');
       if (value) normalizedPayload.field_confidence[field] = value;
@@ -215,6 +215,15 @@ function normalizeEvent(raw, batchSchemaVersion) {
     if (normalizedPayload[key] != null) normalizedPayload[key] = normalizeWhitespace(normalizedPayload[key], 200);
   }
   if (normalizedPayload.jd_summary != null) normalizedPayload.jd_summary = normalizeWhitespace(normalizedPayload.jd_summary, 80);
+  if (normalizedPayload.jd_text != null) {
+    // 完整 JD：保留段落，只做长度上限（超限时置空并标记，不能静默截断）
+    const raw = String(normalizedPayload.jd_text).replace(/\r\n/g, '\n').trim();
+    if (raw.length > 20000) {
+      // 不静默截断：明确拒绝，让客户端分页/裁剪后重试
+      throw new AppError(400, 'JD_TEXT_TOO_LONG', 'jd_text 超过 20000 字符，请分段提交，不要静默丢弃正文');
+    }
+    normalizedPayload.jd_text = raw || null;
+  }
   for (const key of ['job_url', 'status_url']) {
     if (normalizedPayload[key] != null) {
       if (!isSafeHttpUrl(normalizedPayload[key])) throw new AppError(400, 'VALIDATION_ERROR', `${key} 必须是安全 http(s) URL`);

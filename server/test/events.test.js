@@ -29,6 +29,37 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
   });
   after(async () => { await server.stop(); });
 
+  it('显式采集 job_captured：不需要停留时长，落库完整 JD', async () => {
+    const longJd = '工作职责：\n1. 负责服务端开发；\n2. 参与架构设计。\n任职要求：\n1. 熟悉 Node.js；\n2. 有分布式经验。' + ' 细节描述'.repeat(200);
+    const res = await server.eventBatch(token, [evt('job_captured', 'evt_capture_001', {
+      company_name: '采集公司', job_title: '后端工程师', site_job_id: 'cap-1',
+      job_url: 'https://jobs.example.com/job/cap-1', jd_summary: longJd.slice(0, 80),
+      jd_text: longJd, location: '深圳', recruitment_batch: '2027 秋招', channel: '企业官网',
+      visible_dwell_ms: 120
+    }, { evidence_code: 'explicit_capture' })]);
+    assert.equal(res.status, 200);
+    const detail = await server.request('/api/v1/ledger?view=viewed&status=all&limit=50', { cookie });
+    const row = detail.json.data.items.find((x) => x.job_title === '后端工程师');
+    assert.ok(row, JSON.stringify(detail.json.data.items));
+    assert.equal(row.status, 'pending');
+    assert.equal(row.has_applied, 0);
+    const full = await server.request(`/api/v1/applications/${row.id}`, { cookie });
+    assert.equal(full.json.data.jd_text, longJd);
+    assert.ok(full.json.data.jd_text.includes('任职要求'));
+  });
+
+  it('JD 超过 2 万字符时置空并标记截断，不静默丢正文', async () => {
+    const huge = 'x'.repeat(20001);
+    const res = await server.eventBatch(token, [evt('job_captured', 'evt_capture_big', {
+      company_name: '超长公司', job_title: '超长JD岗', site_job_id: 'cap-big',
+      job_url: 'https://jobs.example.com/job/cap-big', jd_summary: 'x', jd_text: huge
+    })]);
+    assert.equal(res.status, 200);
+    const result = res.json.results[0];
+    assert.equal(result.accepted, false, JSON.stringify(result));
+    assert.equal(result.error.code, 'JD_TEXT_TOO_LONG');
+  });
+
   it('批次级校验：空数组、超 50 条、schema 非 C1', async () => {
     const empty = await server.request('/api/v1/events/batch', { method: 'POST', token, body: { schema_version: 'C1', events: [] } });
     assert.equal(empty.status, 400);

@@ -21,9 +21,19 @@
   const SUBMIT_SCAN_MS = 1000;
   const SUBMIT_WINDOW_MS = 5 * 60 * 1000;
   const MAX_JD_CHARS = 80;
+  const MAX_JD_TEXT = 20000;
   const SUCCESS_TEXT = /投递成功|申请成功|提交成功|已成功提交|感谢(您|你)的?投递|简历投递成功|报名成功|application\s+(has been\s+)?submitted|successfully\s+submitted|submitted\s+successfully/i;
 
   const adapter = Adapters.resolveAdapter(location.hostname);
+
+  // 已学习模板（异步加载；命中时作为快速路径）
+  let learnedTemplate = null;
+  const learnedReady = (async () => {
+    try {
+      const res = await globalThis.TounarLearned?.getTemplate(new URL(location.href));
+      if (res?.template) learnedTemplate = res.template;
+    } catch { /* ignore */ }
+  })();
   const pageState = {
     href: location.href,
     routeKey: routeKey(),
@@ -98,6 +108,11 @@
       }
     }
     return '';
+  }
+
+  function clipLong(text) {
+    const clean = String(text || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+    return clean.length > MAX_JD_TEXT ? clean.slice(0, MAX_JD_TEXT) : clean;
   }
 
   function clipJd(text) {
@@ -293,6 +308,17 @@
     const ld=readJobPostingJsonLd();
     const posting=ld&&!ld.multiple?ld:null;
     if (ld?.multiple && !hook) return null;
+    if (learnedTemplate && learnedTemplate.status !== 'suspect') {
+      const picked = globalThis.TounarLearned?.extractWith(learnedTemplate);
+      if (picked?.title) {
+        add('job_title', picked.title, 90, 'learned_template');
+        if (picked.company) add('company_name', picked.company, 88, 'learned_template');
+        if (picked.jd && picked.jd.length >= 10) add('jd_summary', picked.jd, 88, 'learned_template');
+      } else {
+        learnedTemplate = null;
+        try { globalThis.TounarLearned?.markFailure(new URL(location.href)); } catch { /* ignore */ }
+      }
+    }
     const list=(adapter.listUrlPatterns||[]).some(p=>p.test(location.href));
     if(!hook&&!posting&&(list||!findApplySignal()))return null;
     const verifiedAdapter=adapter.site_verified&&(!adapter.verifiedUrlPatterns||adapter.verifiedUrlPatterns.some(pattern=>pattern.test(location.href)));
@@ -306,7 +332,7 @@
       if(field==='job_title'&&!validTitle(v))return;
       if(field==='location'&&(v.length>40||/职位|职责|要求|公司介绍/.test(v)))return;
       if(field==='company_name'&&(v.length>60||/登录|注册|招聘平台|直聘|牛客|实习僧/.test(v)))return;
-      (candidates[field]||=[]).push({value:field==='jd_summary'?clipJd(v):v,score,source});
+      (candidates[field]||=[]).push({value:field==='jd_summary'?clipJd(v):v,raw:field==='jd_summary'?clipLong(v):null,score,source});
     };
     if(hook)for(const [f,attr] of Object.entries({company_name:'company',job_title:'job-title',site_job_id:'job-id',jd_summary:'jd',location:'location',recruitment_batch:'batch'}))add(f,hook.getAttribute('data-tounar-'+attr),100,'explicit_hook');
     const aggregator=['boss','nowcoder','shixiseng'].includes(adapter.key);
@@ -380,6 +406,7 @@
       const best=(candidates[field]||[]).sort((a,b)=>b.score-a.score)[0];
       const confidence=!best||best.score<70?'low':best.score>=90?'high':'medium';
       job[field]=confidence==='low'?'':best.value;job.field_confidence[field]=confidence;job.field_sources[field]=best?.source||'unavailable';
+      if(field==='jd_summary'){const rawJd=(candidates.jd_summary||[]).sort((a,b)=>b.score-a.score)[0]?.raw||'';job.jd_text=rawJd&&rawJd.length>=20?rawJd:'';job.field_confidence.jd_text=job.field_confidence.jd_summary;job.field_sources.jd_text=job.jd_text?job.field_sources.jd_summary:'unavailable';}
     }
     // Ambiguous generic list-like pages must not manufacture a single job.
     if(!job.job_title)return null;
@@ -688,6 +715,40 @@
     } catch { /* ignore */ }
   }
 
+  // ---------- 显式采集（用户点「采集当前页」，不要求停留时长） ----------
+
+  async function captureNow(reason = 'user') {
+    const job = detectJob();
+    if (!job || !job.job_title) return { ok: false, detected: false, reason: 'no_job' };
+    pageState.job = job;
+    pageState.detectedAt = Date.now();
+    const result = await sendEvent(buildEvent(job, 'job_captured', {
+      evidenceLevel: 'strong',
+      evidenceCode: 'explicit_capture',
+      payload: { capture_reason: reason, visible_dwell_ms: pageState.visibleMs }
+    }));
+    let learned = null;
+    try { learned = await globalThis.TounarLearned?.learnFromJob(job, new URL(location.href)); } catch { /* ignore */ }
+    return {
+      ok: true, detected: true, upload: result, learned: learned ? learned.status : null,
+      job: { job_title: job.job_title, company_name: job.company_name || '', jd_chars: (job.jd_text || '').length }
+    };
+  }
+
+  // 供自动化验收调用（不产生副作用，只是暴露同一入口）
+  globalThis.__tounarCapture = captureNow;
+
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg?.type === 'tounar_capture_now') {
+        captureNow(msg.reason || 'user').then(sendResponse).catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+        return true;
+      }
+      if (msg?.type === 'tounar_ping') { sendResponse({ ok: true, tracker: true, url: location.href }); return false; }
+      return false;
+    });
+  } catch { /* ignore */ }
+
   // ---------- lifecycle ----------
 
   document.addEventListener('focusin', onUserInput, true);
@@ -734,4 +795,5 @@
 
   detectAndTrackRoute();
   probe();
+  learnedReady.then(() => { if (learnedTemplate) setTimeout(detectAndTrackRoute, 0); });
 })();

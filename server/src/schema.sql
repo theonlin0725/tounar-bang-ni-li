@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS applications (
   recruitment_batch TEXT,
   location TEXT,
   jd_summary TEXT,
+  jd_text TEXT,
   channel TEXT NOT NULL DEFAULT '未知',
   job_url TEXT,
   canonical_job_url TEXT,
