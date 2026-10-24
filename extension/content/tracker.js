@@ -444,6 +444,7 @@
       site_job_id: job.site_job_id || undefined,
       job_url: job.job_url || undefined,
       jd_summary: job.jd_summary || undefined,
+      jd_text: job.jd_text || undefined,
       location: job.location || undefined,
       recruitment_batch: job.recruitment_batch || undefined,
       field_confidence: job.field_confidence || undefined,
