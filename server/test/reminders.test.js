@@ -73,6 +73,25 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
     assert.equal(second.reused, true);
   });
 
+  it('空批次不锁死当天：08:00 前的空 tick 不会让当天提醒发不出去', async () => {
+    const peer = await server.login('peer@tounar.local');
+    const empty = await server.tick({ force: true, reminders: true });
+    const peerEmpty = empty.json.data.result.reminders.find((r) => r.owner_id !== undefined && r.status === 'skipped_empty');
+    assert.ok(peerEmpty, JSON.stringify(empty.json.data.result.reminders));
+    // 空批次之后补一条 30 天前投递的记录，再触发必须真的发，而不是复用 skipped_empty
+    const created = await server.request('/api/v1/applications/manual', {
+      method: 'POST', cookie: peer.cookie, headers: { 'Idempotency-Key': key('peer-after-empty') },
+      body: {
+        company_name: '空批次后公司', job_title: '测试岗', has_applied: true, status: 'applied',
+        applied_at: daysAgo(30), jd_summary: 'x', job_url: 'https://jobs.example.com/job/after-empty'
+      }
+    });
+    assert.equal(created.status, 201);
+    const again = await server.tick({ force: true, reminders: true });
+    const rows = again.json.data.result.reminders;
+    assert.ok(rows.some((r) => r.status === 'sent'), JSON.stringify(rows));
+  });
+
   it('提醒链接：未登录只提示登录；本人可读；他人 404', async () => {
     const reminder = server.latestOutbox('reminder', 'demo@tounar.local');
     const token = reminder.text.match(/\/r\/(rl_[A-Za-z0-9_-]+)/)[1];

@@ -248,13 +248,16 @@ export async function runReminderForOwner(ownerId, now = new Date(), { force = f
   if (!user || user.deletion_blocked) return { owner_id: ownerId, skipped: 'deletion_in_progress' };
   const existing = one(`SELECT * FROM notification_batches WHERE owner_id = ? AND business_date = ? AND channel = 'email'`,
     [ownerId, businessDate]);
-  if (existing && ['sent', 'skipped_empty', 'cancelled'].includes(existing.status)) {
+  if (existing && ['sent', 'cancelled'].includes(existing.status)) {
     return { owner_id: ownerId, business_date: businessDate, batch_id: existing.id, status: existing.status, reused: true };
   }
   if (existing && existing.status === 'sending') {
     return { owner_id: ownerId, business_date: businessDate, batch_id: existing.id, status: 'sending', reused: true };
   }
-  if (!force && !existing) {
+  // 空批次（skipped_empty）不能锁死当天：外部 cron 可能在 08:00 前先打一次 tick，
+  // 若被当成“已发”复用，当天的提醒就永远发不出去。允许在窗口内/force 时重试。
+  const retryingEmpty = existing?.status === 'skipped_empty';
+  if (!force && (!existing || retryingEmpty)) {
     const clock = shanghaiClock(now);
     if (clock.hour !== config.reminderHour || clock.minute < config.reminderMinute) {
       return { owner_id: ownerId, business_date: businessDate, skipped: 'outside_batch_window' };

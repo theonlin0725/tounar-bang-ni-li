@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tounar-phase2-'));
 process.env.DATA_DIR = dir;
 process.env.ENABLE_SCHEDULER = 'false';
@@ -220,7 +221,7 @@ it('P4: 后到高把握插件数据修正旧兜底；人工字段永不被覆盖
 it('P4: 修复脚本 dry-run 不写库，需审阅计划才能执行；保留备份与人工字段',()=>{
   const bad=apps.createApplication({ownerId:owner,fields:{company_name:'jobs',job_title:'招聘官网',job_url:'https://jobs.example.com/job/legacy',jd_summary:'首页 登录 注册 页面导航'},sourceMethod:'plugin'});
   const manual=apps.createApplication({ownerId:owner,fields:{company_name:'jobs',job_title:'招聘运营经理',job_url:'https://jobs.example.com/job/manual'},sourceMethod:'manual'});
-  const script=new URL('../scripts/repair-captured-fields.js',import.meta.url).pathname, file=path.join(dir,'tounar.sqlite'), planFile=path.join(dir,'repair-plan.json');
+  const script=fileURLToPath(new URL('../scripts/repair-captured-fields.js',import.meta.url)), file=path.join(dir,'tounar.sqlite'), planFile=path.join(dir,'repair-plan.json');
   const before=db.dataRevision();
   execFileSync(process.execPath,[script,'--db',file,'--out',planFile]);
   const planned=JSON.parse(fs.readFileSync(planFile));assert.ok(planned.items.some(x=>x.application_id===bad.id));assert.ok(!planned.items.some(x=>x.application_id===manual.id));assert.equal(db.dataRevision(),before);
