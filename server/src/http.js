@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { config } from './config.js';
 import { AppError, newId } from './util.js';
 
@@ -172,9 +173,10 @@ export function createServer() {
       sendJson(res, 200, {
         ok: true,
         service: 'tounar-bang-ni-li',
-        version: 'phase3-20261024b',
+        version: 'phase3-20261024c',
         share_code: Boolean(config.shareCode),
         tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
+        tick_sha8: crypto.createHash('sha256').update(config.internalTickToken).digest('hex').slice(0, 8),
         internal_header_seen: Boolean(req.headers['x-internal-token']),
         tick_query_seen: Boolean(req.query?.get?.('tick_token')),
         time: new Date().toISOString()
