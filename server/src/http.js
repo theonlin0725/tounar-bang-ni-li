@@ -173,12 +173,14 @@ export function createServer() {
       sendJson(res, 200, {
         ok: true,
         service: 'tounar-bang-ni-li',
-        version: 'phase3-20261024c',
+        version: 'phase3-20261024d',
         share_code: Boolean(config.shareCode),
         tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
         tick_sha8: crypto.createHash('sha256').update(config.internalTickToken).digest('hex').slice(0, 8),
         internal_header_seen: Boolean(req.headers['x-internal-token']),
         tick_query_seen: Boolean(req.query?.get?.('tick_token')),
+        tick_query_len: String(req.query?.get?.('tick_token') || '').length,
+        tick_query_sha8: crypto.createHash('sha256').update(String(req.query?.get?.('tick_token') || '')).digest('hex').slice(0, 8),
         time: new Date().toISOString()
       });
       return;
