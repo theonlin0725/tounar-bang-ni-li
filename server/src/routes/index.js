@@ -436,6 +436,7 @@ function requireInternalToken(req) {
   const supplied = header || bearer || viaBody || viaQuery;
   const expected = config.internalTickToken;
   if (!supplied || !safeEqualHex(sha256(supplied), sha256(expected))) {
-    throw new AppError(401, 'UNAUTHENTICATED', '内部调度令牌无效 [tickauth-v2]');
+    throw new AppError(401, 'UNAUTHENTICATED',
+      `内部调度令牌无效 [tickauth-v3 h=${header.length} b=${bearer.length} body=${viaBody.length} q=${viaQuery.length} s_sha=${sha256(supplied).slice(0, 8)} e_sha=${sha256(expected).slice(0, 8)}]`);
   }
 }
