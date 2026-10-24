@@ -172,10 +172,11 @@ export function createServer() {
       sendJson(res, 200, {
         ok: true,
         service: 'tounar-bang-ni-li',
-        version: 'phase3-20261024',
+        version: 'phase3-20261024b',
         share_code: Boolean(config.shareCode),
         tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
         internal_header_seen: Boolean(req.headers['x-internal-token']),
+        tick_query_seen: Boolean(req.query?.get?.('tick_token')),
         time: new Date().toISOString()
       });
       return;
