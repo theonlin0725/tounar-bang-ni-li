@@ -166,7 +166,18 @@ export function createServer() {
     req.query = url.searchParams;
 
     if (pathname === '/api/v1/health') {
-      sendJson(res, 200, { ok: true, service: 'tounar-bang-ni-li', time: new Date().toISOString() });
+      // 部署诊断探针（只暴露布尔/来源，不暴露任何值）：
+      // share_code —— SHARE_CODE 是否生效；tick_token_source —— env 注入还是文件兜底；
+      // internal_header_seen —— 自定义头是否穿过平台网关到达应用。
+      sendJson(res, 200, {
+        ok: true,
+        service: 'tounar-bang-ni-li',
+        version: 'phase3-20261024',
+        share_code: Boolean(config.shareCode),
+        tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
+        internal_header_seen: Boolean(req.headers['x-internal-token']),
+        time: new Date().toISOString()
+      });
       return;
     }
 

@@ -429,7 +429,11 @@ export function registerRoutes() {
 function requireInternalToken(req) {
   const header = String(req.headers['x-internal-token'] || '');
   const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const supplied = header || bearer;
+  // 托管平台网关会剥离 X-Internal-Token / Authorization（2026-10-24 探针实测），
+  // 因此允许经查询参数或请求体传递：GET 用 ?tick_token=，POST 优先 body.tick_token。
+  const viaQuery = String(req.query?.get?.('tick_token') || '');
+  const viaBody = String(req.body?.tick_token || '');
+  const supplied = header || bearer || viaBody || viaQuery;
   const expected = config.internalTickToken;
   if (!supplied || !safeEqualHex(sha256(supplied), sha256(expected))) {
     throw new AppError(401, 'UNAUTHENTICATED', '内部调度令牌无效');
