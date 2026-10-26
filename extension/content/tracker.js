@@ -649,8 +649,17 @@
     else pageState.job=job;
     return pageState.job;
   }
+  const isToastNode = (node) => node?.nodeType === 1 && (node.matches?.('[data-tounar-toast]') || !!node.closest?.('[data-tounar-toast]'));
   const observer=new MutationObserver(records=>{
-    if(records.some(r=>{const target=r.target.nodeType===1?r.target:r.target.parentElement;return target&&!target.closest('script,style,header,nav,footer,aside');}))lastDomChange=Date.now();
+    const meaningful = records.some(r=>{
+      // Toast 的挂载/移除会以 documentElement 为 target，必须看新增/删除节点本身
+      const onlyToast = (r.addedNodes.length + r.removedNodes.length) > 0
+        && [...r.addedNodes].every(isToastNode) && [...r.removedNodes].every(isToastNode);
+      if (onlyToast) return false;
+      const target=r.target.nodeType===1?r.target:r.target.parentElement;
+      return target&&!target.closest('script,style,header,nav,footer,aside,[data-tounar-toast]');
+    });
+    if(meaningful)lastDomChange=Date.now();
   });
   observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
 
@@ -858,6 +867,18 @@
   // ---------- 页面轻量反馈（Toast，Shadow DOM 隔离） ----------
 
   const toastState = { host: null, shadow: null, hideTimer: null, lastKey: '', lastAt: 0, pendingTimer: null };
+  let feedbackEnabled = true;
+  try {
+    chrome.storage.local.get('tounar.settings.v1').then((stored) => {
+      feedbackEnabled = (stored?.['tounar.settings.v1'] || {}).pageFeedback !== false;
+      if (!feedbackEnabled) hideToast();
+    }).catch(() => {});
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes['tounar.settings.v1']) return;
+      feedbackEnabled = (changes['tounar.settings.v1'].newValue || {}).pageFeedback !== false;
+      if (!feedbackEnabled) hideToast();
+    });
+  } catch { /* ignore */ }
 
   function ensureToast() {
     if (toastState.host && document.documentElement.contains(toastState.host)) return toastState;
@@ -892,6 +913,7 @@
   }
 
   function showToast(text, { action = null, ttl = 4000 } = {}) {
+    if (!feedbackEnabled) return null;
     const state = ensureToast();
     const box = state.shadow.querySelector('.box');
     state.shadow.querySelector('.text').textContent = text;
@@ -923,11 +945,14 @@
         return '当前岗位待同步，连接恢复后自动重试';
       case 'failed':
         return '尚未保存，请打开插件查看原因';
+      case 'unknown':
+        return '尚未确认保存，请打开插件查看状态';
       case 'batch': {
         const parts = [];
-        if (feedback.entered) parts.push(`${feedback.entered} 个岗位已保存`);
+        if (feedback.saved) parts.push(`${feedback.saved} 个岗位已保存`);
         if (feedback.review) parts.push(`${feedback.review} 个需要确认`);
         if (feedback.queued) parts.push(`${feedback.queued} 个待同步`);
+        if (feedback.failed) parts.push(`${feedback.failed} 个未保存`);
         return `本页 ${parts.join('，') || '没有新的岗位'}`;
       }
       case 'saved':
@@ -936,7 +961,28 @@
     }
   }
 
+  function currentIdentity() {
+    try {
+      const job = detectJob();
+      const id = job?.site_job_id;
+      if (id) return `${adapter.key}:id:${id}`;
+      const u = new URL(job?.job_url || location.href);
+      return `${adapter.key}:url:${u.origin}${u.pathname}${u.search}${u.hash}`;
+    } catch { return null; }
+  }
+
+  function feedbackStillBelongsToThisPage(feedback) {
+    // 列表汇总只认列表页上下文；详情回执必须对得上当前岗位身份
+    if (feedback.context === 'list' || feedback.status === 'batch') {
+      try { return new URL(feedback.url).href === location.href; } catch { return false; }
+    }
+    if (!feedback.identity) return false;
+    return currentIdentity() === feedback.identity;
+  }
+
   function showFeedback(feedback = {}) {
+    if (!feedbackEnabled) return;
+    if (!feedbackStillBelongsToThisPage(feedback)) return;
     const text = feedbackText(feedback, feedback.kind);
     if (!text) return;
     const key = `${feedback.status}|${feedback.applicationId || feedback.reviewId || ''}|${text}`;
@@ -954,7 +1000,18 @@
 
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      if (msg?.type === 'tounar_feedback') { showFeedback(msg.feedback || {}); sendResponse?.({ ok: true }); return false; }
+      if (msg?.type === 'tounar_feedback_settings') {
+        feedbackEnabled = msg.enabled !== false;
+        if (!feedbackEnabled) hideToast();
+        sendResponse?.({ ok: true });
+        return false;
+      }
+      if (msg?.type === 'tounar_feedback') {
+        if (!feedbackEnabled) { sendResponse?.({ ok: false, disabled: true }); return false; }
+        showFeedback(msg.feedback || {});
+        sendResponse?.({ ok: true });
+        return false;
+      }
       return false;
     });
   } catch { /* ignore */ }
@@ -983,6 +1040,7 @@
     });
     if (toastState.pendingTimer) clearTimeout(toastState.pendingTimer);
     toastState.pendingTimer = setTimeout(() => {
+      if (!feedbackEnabled) return;
       if (toastState.lastKey && Date.now() - toastState.lastAt < 1000) return;
       showToast('正在整理当前岗位…', { ttl: 12000 });
     }, 800);

@@ -87,6 +87,7 @@ function showCapture(status) {
     list_result: `列表发现 ${status.count || 0} 条：已入账 ${status.counts?.entered || 0}，待确认 ${status.counts?.review || 0}，待上传 ${status.counts?.queued || 0}，失败 ${status.counts?.rejected || 0}`,
     entered: `已自动入账（${status.elapsedMs}ms）${title}`,
     accepted: `服务端已接受，正在处理（${status.elapsedMs}ms）${title}`,
+    unknown: `尚未确认保存，请查看插件状态（${status.elapsedMs}ms）${title}`,
     review: `待确认${title}（${status.result?.review_reason || status.review_reason || '关键字段或岗位身份需要核对'}）`,
     queued: `已入本地队列，等待上传（${status.elapsedMs}ms）${title}`,
     cancelled: '未上传事件已清空',

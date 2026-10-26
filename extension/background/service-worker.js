@@ -24,56 +24,133 @@ async function updateBadge() {
 
 /* ---------- 轻量反馈：把服务端确认的结果送回原始标签页 ---------- */
 
+const PENDING_KEY = 'tounar.pendingTabs.v1';
+const PENDING_TTL_MS = 30 * 60 * 1000;
+const FEEDBACK_REPEAT_MS = 60 * 1000;
+let pendingLoaded = false;
+let persistTimer = null;
+const lastFeedbackAt = new Map();
+
+async function ensurePendingLoaded() {
+  if (pendingLoaded) return;
+  pendingLoaded = true;
+  try {
+    const stored = await chrome.storage.session.get(PENDING_KEY);
+    const rows = stored?.[PENDING_KEY] || {};
+    const now = Date.now();
+    for (const [id, t] of Object.entries(rows)) {
+      if (!t || now - (t.at || 0) > PENDING_TTL_MS) continue;
+      pendingTabs.set(id, t);
+    }
+  } catch { /* session storage 不可用时退化为内存 */ }
+}
+
+function persistPending() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(async () => {
+    persistTimer = null;
+    try {
+      const now = Date.now();
+      const rows = {};
+      for (const [id, t] of pendingTabs) if (now - (t.at || 0) <= PENDING_TTL_MS) rows[id] = t;
+      await chrome.storage.session.set({ [PENDING_KEY]: rows });
+    } catch { /* ignore */ }
+  }, 150);
+}
+
+async function clearPendingFeedback() {
+  pendingTabs.clear();
+  lastFeedbackAt.clear();
+  try { await chrome.storage.session.remove(PENDING_KEY); } catch { /* ignore */ }
+}
+
+function jobIdentity(payload = {}, siteKey = '') {
+  const id = payload.site_job_id || payload.site_application_id;
+  if (id) return `${siteKey}:id:${id}`;
+  try {
+    const u = new URL(payload.job_url);
+    return `${siteKey}:url:${u.origin}${u.pathname}${u.search}${u.hash}`;
+  } catch { return null; }
+}
+
+/* 成功判定必须同时满足：accepted、processing_state=applied、有业务记录 ID。
+ * 仅入队 / HTTP 200 / accepted / ignored / cancelled / 无 ID 一律不算保存成功。 */
 function feedbackStatus(result) {
-  if (result?.error && !result.accepted) return 'failed';
-  if (result?.review_item_id) return 'review';
-  if (result?.outcome === 'created') return 'created';
-  if (result?.outcome === 'updated') return 'updated';
-  if (result?.outcome === 'unchanged') return 'unchanged';
-  if (result?.outcome === 'queued') return 'queued';
+  if (!result) return 'unknown';
+  if (result.review_item_id) return 'review';
+  if (result.error && result.error.retryable === false) return 'failed';
+  if (result.error) return 'queued';
+  if (!result.accepted || result.processing_state !== 'applied') return 'unknown';
+  if (!result.application_id) return 'unknown';
+  if (result.outcome === 'created') return 'created';
+  if (result.outcome === 'updated') return 'updated';
+  if (result.outcome === 'unchanged') return 'unchanged';
   return 'saved';
 }
 
+// 完整 URL 比较（含 query 与 hash）：同 pathname 的 ?postId=5001/5002、#/job/1、#/job/2 都不能算同页
 function samePage(a, b) {
-  try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname === y.pathname; } catch { return false; }
+  try { return new URL(a).href === new URL(b).href; } catch { return false; }
 }
 
 async function deliverFeedback(resultMap) {
+  await ensurePendingLoaded();
   const settings = await getSettings();
   const byTab = new Map();
   for (const [clientId, result] of Object.entries(resultMap || {})) {
     const target = pendingTabs.get(clientId);
     if (!target) continue;
     const key = `${target.tabId}:${target.frameId}`;
-    const bucket = byTab.get(key) || { ...target, ids: [] };
-    bucket.ids.push({ ...result, client_event_id: clientId });
+    const bucket = byTab.get(key) || { ...target, entries: [] };
+    bucket.entries.push({ ...result, client_event_id: clientId, identity: target.identity || null });
     byTab.set(key, bucket);
-    pendingTabs.delete(clientId);
+    // 只有最终结果才移除关联；待同步/重试中的事件保留映射，恢复后还能回到原页面
+    if (feedbackStatus(result) !== 'queued') pendingTabs.delete(clientId);
   }
+  persistPending();
   if (settings.pageFeedback === false) return;
   for (const bucket of byTab.values()) {
     let tab;
     try { tab = await chrome.tabs.get(bucket.tabId); } catch { continue; }
-    // 回执必须回到原始页面：A 岗上传途中切到 B 岗时不显示 A 的提示
+    // 页面必须还是同一个完整 URL；query/hash 变化都视为离开了原岗位
     if (!tab?.url || !samePage(tab.url, bucket.url)) continue;
-    const count = bucket.ids.length;
+    // 按业务记录/岗位身份去重：同一岗位的多个事件只算一个
+    const uniq = new Map();
+    for (const entry of bucket.entries) {
+      const status = feedbackStatus(entry);
+      const key = entry.application_id ? `app:${entry.application_id}`
+        : entry.review_item_id ? `rev:${entry.review_item_id}`
+          : entry.identity ? `job:${entry.identity}` : `evt:${entry.client_event_id}`;
+      const prev = uniq.get(key);
+      const rank = { created: 5, updated: 4, saved: 3, unchanged: 2, review: 2, queued: 1, failed: 0, unknown: 0 };
+      if (!prev || rank[status] > rank[prev.status]) uniq.set(key, { ...entry, status, key });
+    }
+    const entries = [...uniq.values()];
+    const countOf = (list) => entries.filter((e) => list.includes(e.status)).length;
     let feedback;
-    if (count > 1) {
-      const statuses = bucket.ids.map(feedbackStatus);
-      feedback = {
-        status: 'batch', total: count,
-        entered: statuses.filter((x) => ['created', 'updated', 'unchanged', 'saved'].includes(x)).length,
-        review: statuses.filter((x) => x === 'review').length,
-        queued: statuses.filter((x) => x === 'queued' || x === 'failed').length,
-        url: tab.url, serverUrl: settings.serverUrl || null
-      };
+    if (entries.length > 1) {
+      const saved = countOf(['created', 'updated', 'saved']);
+      const review = countOf(['review']);
+      const queued = countOf(['queued']);
+      const failed = countOf(['failed']);
+      feedback = { status: 'batch', saved, review, queued, failed, total: entries.length,
+        url: bucket.url, serverUrl: settings.serverUrl || null, context: bucket.kind === 'job_discovered' ? 'list' : 'detail' };
     } else {
-      const r = bucket.ids[0];
+      const entry = entries[0];
       feedback = {
-        status: feedbackStatus(r), applicationId: r.application_id || null, reviewId: r.review_item_id || null,
-        missing: r.missing_fields || [], hasApplied: r.has_applied, applicationStatus: r.application_status,
-        url: tab.url, kind: bucket.kind, serverUrl: settings.serverUrl || null
+        status: entry.status, applicationId: entry.application_id || null, reviewId: entry.review_item_id || null,
+        missing: entry.missing_fields || [], hasApplied: entry.has_applied, applicationStatus: entry.application_status,
+        identity: entry.identity || null, url: bucket.url, kind: bucket.kind,
+        serverUrl: settings.serverUrl || null, context: bucket.kind === 'job_discovered' ? 'list' : 'detail',
+        errorMessage: entry.error?.message || null
       };
+    }
+    // 同一页面同一岗位的待同步/失败提示 60 秒内只发一次，避免重试刷屏
+    if (['queued', 'failed'].includes(feedback.status)) {
+      const key = `${bucket.tabId}:${feedback.identity || 'list'}:${feedback.status}`;
+      const last = lastFeedbackAt.get(key) || 0;
+      if (Date.now() - last < FEEDBACK_REPEAT_MS) continue;
+      lastFeedbackAt.set(key, Date.now());
     }
     try { await chrome.tabs.sendMessage(bucket.tabId, { type: 'tounar_feedback', feedback }, { frameId: bucket.frameId }); } catch { /* 页面已关闭 */ }
   }
@@ -105,9 +182,17 @@ async function runFlush() {
     } catch (err) {
       await setSettings({ lastError: { code: err.code || 'UPLOAD_FAILED', message: err.message, at: new Date().toISOString() } });
 
-      if (err.status === 401 || err.status === 403) {
+      const authFailure = err.status === 401 || err.status === 403;
+      if (authFailure) {
         await setSettings({ lastError: { code: 'DEVICE_REVOKED_OR_INVALID', message: '设备凭证被服务端拒绝；如已撤销请在网页确认后解除本设备', at: new Date().toISOString() } });
       }
+      const retryable = !authFailure && (err.status == null || err.status >= 500 || err.code === 'TIMEOUT' || err.code === 'NETWORK_UNREACHABLE');
+      const failureMap = Object.fromEntries(pending.map((item) => [item.client_event_id, {
+        accepted: false,
+        error: { code: err.code || 'UPLOAD_FAILED', message: err.message || '', retryable },
+        outcome: retryable ? 'queued' : 'failed'
+      }]));
+      await deliverFeedback(failureMap).catch(() => {});
       await updateBadge();
       return { failed: pending.length, error: err.code || 'UPLOAD_FAILED' };
     }
@@ -261,6 +346,7 @@ async function pollPairing() {
 }
 
 async function unpair({ cleanup = true } = {}) {
+  await clearPendingFeedback();
   const settings = await getSettings();
   let cleanupResult = null;
   if (settings.deviceToken) {
@@ -296,13 +382,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         const result = await Queue.add(message.event);
         if (!result.duplicate && sender.tab?.id && message.event?.client_event_id) {
+          await ensurePendingLoaded();
           pendingTabs.set(message.event.client_event_id, {
             tabId: sender.tab.id,
             frameId: sender.frameId ?? 0,
             url: sender.tab.url || sender.url || null,
-            kind: message.event.event_type || null
+            identity: jobIdentity(message.event.payload, message.event.site_key),
+            kind: message.event.event_type || null,
+            at: Date.now()
           });
           if (pendingTabs.size > 200) pendingTabs.delete(pendingTabs.keys().next().value);
+          persistPending();
         }
         await updateBadge();
         flushQueue().catch(() => {});
@@ -321,6 +411,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ok: true,
           settings: {
             serverUrl: settings.serverUrl,
+            pageFeedback: settings.pageFeedback !== false,
             deviceId: settings.deviceId,
             bindingVersion: settings.bindingVersion,
             pendingPairing: settings.pendingPairing,
@@ -345,8 +436,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       case 'set_page_feedback': {
-        await setSettings({ pageFeedback: message.enabled !== false });
-        sendResponse({ ok: true });
+        const enabled = message.enabled !== false;
+        await setSettings({ pageFeedback: enabled });
+        try {
+          const tabs = await chrome.tabs.query({});
+          for (const tab of tabs) {
+            if (!tab.id || !/^https?:/.test(tab.url || '')) continue;
+            chrome.tabs.sendMessage(tab.id, { type: 'tounar_feedback_settings', enabled }).catch(() => {});
+          }
+        } catch { /* ignore */ }
+        sendResponse({ ok: true, enabled });
         return;
       }
       case 'sync_permissions': {
@@ -361,6 +460,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'clear_queue': {
         // Let an in-flight upload settle before deciding which local events remain.
         await flushPromise?.catch(() => {});
+        await clearPendingFeedback();
         const pending = await Queue.list(10000);
         const settings = await getSettings();
         const results = {...settings.lastEventResults};
@@ -380,12 +480,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = stored[clientEventId] || null;
         let status = 'queued';
         if (result) {
+          // 与页面 Toast 使用同一套回执解释，避免两处对同一回执给出不同结果
+          const interpreted = feedbackStatus(result);
           if (result.processing_state === 'cancelled') status = 'cancelled';
           else if (result.processing_state === 'failed') status = 'failed';
-          else if (result.error && !result.accepted) status = result.error.retryable ? 'queued' : 'rejected';
-          else if (result.application_id && result.processing_state === 'applied') status = 'entered';
-          else if (result.review_item_id) status = 'review';
-          else status = 'accepted';
+          else if (interpreted === 'review') status = 'review';
+          else if (['created', 'updated', 'unchanged', 'saved'].includes(interpreted)) status = 'entered';
+          else if (interpreted === 'queued') status = 'queued';
+          else if (interpreted === 'failed') status = 'rejected';
+          else status = 'unknown';
         }
         sendResponse({ ok: true, status, result, serverUrl: (await getSettings()).serverUrl || null, queued: await Queue.count() });
         return;

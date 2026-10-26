@@ -481,13 +481,17 @@ function processView(event, { explicit = false, discovered = false } = {}) {
         summary: '同一链接出现不同岗位，请明确选择关联原记录，或按新岗位新建', fields,
         suggested: { ...p, status: 'pending' } }) };
     }
-    let app = fillMissingFields(strong[0].application, fields, event.id, 'plugin');
+    const before = strong[0].application;
+    let app = fillMissingFields(before, fields, event.id, 'plugin');
+    // 只有实质字段变化才算 updated；仅刷新浏览时间不能冒称“信息已更新”
+    const meaningfulFields = ['company_name', 'job_title', 'jd_summary', 'jd_text', 'location', 'recruitment_batch', 'job_url'];
+    const meaningful = meaningfulFields.some((key) => (app[key] || null) !== (before[key] || null));
     const updates = {};
     if (!discovered && (!app.first_viewed_at || Date.parse(event.occurred_at) < Date.parse(app.first_viewed_at))) updates.first_viewed_at = event.occurred_at;
     if (!discovered && (!app.last_viewed_at || Date.parse(event.observed_at) >= Date.parse(app.last_viewed_at))) updates.last_viewed_at = event.observed_at;
     if (Object.keys(updates).length) app = markApplicationChanged(app.owner_id, app.id, event.id, 'plugin', updates, { reason: '重复浏览' });
     app = ensureSource(app, 'plugin', event.id);
-    return { state: 'applied', application: app, change: Object.keys(updates).length ? 'updated' : 'unchanged' };
+    return { state: 'applied', application: app, change: meaningful ? 'updated' : 'unchanged' };
   }
   // 同名不同 ID：保留为独立浏览记录，不合并、也不阻塞入账
   const app = createApplication({
