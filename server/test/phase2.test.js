@@ -96,6 +96,16 @@ it('P2: 阶段规则——笔试与面试分开匹配，不合并成一条',()=>
   const r=apps.processMailEvent(mailEvent({company_name:company2,job_title:'产品经理',mapped_status:'assessment',confidence:0.95,subject_excerpt:'笔试通知'}));
   assert.equal(r.state,'pending');assert.equal(r.review.reason_code,'STAGE_SPLIT_REQUIRED');
 });
+it('P0: 邮件复核来源标记为 mail，并带主题与正文片段',()=>{
+  const event=mailEvent({company_name:'来源测试公司',job_title:'来源测试岗',mapped_status:'assessment',confidence:0.8,
+    subject_excerpt:'笔试邀请：来源测试',body_excerpt:'请于本周五参加在线笔试。',read_mode:'recruitment_body'});
+  const review=apps.processMailEvent(event).review;
+  assert.ok(review);
+  const detail=ledger.reviewDetail(owner,review.id).data;
+  assert.equal(detail.source.type,'mail');
+  assert.equal(detail.source.subject_excerpt,'笔试邀请：来源测试');
+  assert.ok(String(detail.source.body_excerpt||'').includes('在线笔试'));
+});
 it('P2: 待确认按邮件收到时间倒序排列',()=>{
   const older=newId('rev'),newer=newId('rev'),mOld=newId('mail'),mNew=newId('mail');
   const existing=db.one('SELECT id FROM mail_connections WHERE owner_id=? LIMIT 1',[owner]);

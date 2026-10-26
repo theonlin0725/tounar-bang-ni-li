@@ -123,3 +123,22 @@ it('没有岗位身份才进待确认，且证据里能读到页面信息', asyn
   assert.ok(src.missing_fields.includes('job_url') || src.missing_fields.length >= 0);
   assert.ok(detailRes.json.data.evidence.page, 'evidence.page 应存在');
 });
+
+it('缺标题岗位后续补出标题：补全同一条，不回到待确认', async () => {
+  const url = 'https://capture.example/jobs/late-title-1';
+  const make = (title) => strongViewEvent({ event_type: 'job_captured', payload: {
+    company_name: '补全公司', job_title: title, site_job_id: null, job_url: url,
+    jd_summary: '负责补全测试', location: '杭州', visible_dwell_ms: 4200
+  } });
+  const first = await ingest(make(null));
+  assert.ok(first.application_id, JSON.stringify(first));
+  assert.equal(first.review_item_id, null);
+  const second = await ingest(make('补出来的岗位'));
+  assert.equal(second.review_item_id, null, '补标题不应变成身份冲突');
+  assert.equal(second.application_id, first.application_id);
+  const data = await detail(first.application_id);
+  assert.equal(data.job_title, '补出来的岗位');
+  const third = await ingest(make(null));
+  assert.equal(third.review_item_id, null, '再次上报空标题也不应进待确认');
+  assert.equal(third.application_id, first.application_id);
+});

@@ -148,7 +148,7 @@ export function reviewList(ownerId, query = {}) {
   if (!['open', 'resolved', 'dismissed', 'all'].includes(status)) throw new AppError(400, 'VALIDATION_ERROR', 'status 无效');
   const rows = all(`SELECT r.*, m.received_at AS mail_received_at, e.payload_json AS source_payload_json,
       e.occurred_at AS source_occurred_at, e.observed_at AS source_observed_at, e.site_key AS source_site_key,
-      e.event_type AS source_event_type
+      e.event_type AS source_event_type, e.source_method AS source_event_method
     FROM review_items r
     LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
     LEFT JOIN events e ON e.id = r.source_event_id
@@ -185,7 +185,7 @@ export function reviewList(ownerId, query = {}) {
 export function reviewDetail(ownerId, reviewId) {
   const row = one(`SELECT r.*, m.received_at AS mail_received_at, e.payload_json AS source_payload_json,
       e.occurred_at AS source_occurred_at, e.observed_at AS source_observed_at, e.site_key AS source_site_key,
-      e.event_type AS source_event_type
+      e.event_type AS source_event_type, e.source_method AS source_event_method
     FROM review_items r
     LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
     LEFT JOIN events e ON e.id = r.source_event_id
@@ -208,11 +208,14 @@ export function reviewDetail(ownerId, reviewId) {
   };
 }
 
-/* 复核项的来源：页面事件给可读的页面证据，邮件给主题/发件/收信时间。
- * 老数据没有 evidence.page 时，用 events.payload_json 现场还原一份，避免面板空白。 */
+/* 复核项的来源：邮件与页面必须区分开。
+ * 判据优先级：review.source_mail_id → 事件 source_method==='mail' → 事件类型以 mail_ 开头。
+ * 只看「有没有 payload」会把邮件误判成页面（邮件事件同样带 payload）。 */
 function sourceFromRow(row) {
   const evidence = safeJsonParse(row.evidence_json, {}) || {};
-  if (row.source_payload_json) {
+  const eventIsMail = row.source_event_method === 'mail' || String(row.source_event_type || '').startsWith('mail_');
+  const isMail = Boolean(row.source_mail_id) || eventIsMail;
+  if (!isMail && row.source_payload_json) {
     const p = safeJsonParse(row.source_payload_json, {}) || {};
     const page = evidence.page || {
       type: 'page',
@@ -234,13 +237,26 @@ function sourceFromRow(row) {
     };
     return { ...page, event_type: row.source_event_type || null, occurred_at: row.source_occurred_at || null };
   }
+  if (isMail) {
+    const payload = safeJsonParse(row.source_payload_json || '{}', {}) || {};
+    const readMode = evidence.read_mode || payload.read_mode || null;
+    const body = evidence.body_excerpt || payload.body_excerpt || null;
+    return {
+      type: 'mail',
+      subject_excerpt: evidence.subject_excerpt || payload.subject_excerpt || null,
+      from_domain: evidence.from_domain || payload.from_domain || null,
+      body_excerpt: body,
+      read_mode: readMode,
+      category: evidence.category || payload.category || null,
+      received_at: row.mail_received_at || payload.source_received_at || payload.occurred_at || null,
+      status_text: evidence.status_text || null,
+      missing_fields: body ? [] : ['body_excerpt'],
+      mail_available: Boolean(row.source_mail_id)
+    };
+  }
   return {
-    type: 'mail',
-    subject_excerpt: evidence.subject_excerpt || null,
-    from_domain: evidence.from_domain || null,
-    body_excerpt: evidence.body_excerpt || null,
-    received_at: row.mail_received_at || null,
-    status_text: evidence.status_text || null,
-    missing_fields: []
+    type: 'unknown',
+    missing_fields: ['source'],
+    note: '来源记录不可用（原始事件或邮件可能已被删除）'
   };
 }

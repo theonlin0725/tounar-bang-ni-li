@@ -463,7 +463,12 @@ function processView(event, { explicit = false, discovered = false } = {}) {
     const found = strong[0];
     const titleSource = one('SELECT source_method, confidence FROM application_field_sources WHERE application_id = ? AND field = ?', [found.application.id, 'job_title']);
     const ranks = { low: 0, medium: 1, high: 2 };
-    if ((found.reason === 'canonical_job_url' || p.field_sources?.site_job_id === 'url_identifier') && found.application.job_title !== p.job_title
+    // 空值不等于“换了岗位”：已有标题为空 → 正常补全；新事件标题为空 → 忽略。
+    // 只有“两个都非空且不同”才算身份冲突，避免缺标题记录反复进待确认。
+    const existingTitle = normalizeWhitespace(found.application.job_title, 200);
+    const incomingTitle = normalizeWhitespace(p.job_title, 200);
+    const titleConflict = Boolean(existingTitle) && Boolean(incomingTitle) && existingTitle !== incomingTitle;
+    if ((found.reason === 'canonical_job_url' || p.field_sources?.site_job_id === 'url_identifier') && titleConflict
       && titleSource?.source_method !== 'manual' && (ranks[p.field_confidence?.job_title || 'medium'] <= ranks[titleSource?.confidence || 'medium'])) {
       return { state: 'pending', review: reviewForEvent(event, { kind: 'ambiguous_match', reasonCode: 'PAGE_CONTENT_IDENTITY_UNCERTAIN',
         summary: '同一链接出现不同岗位，请明确选择关联原记录，或按新岗位新建', fields,

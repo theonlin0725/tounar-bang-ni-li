@@ -90,12 +90,15 @@ export async function renderReviews(container,{gen,onChanged}={}) {
       if(!src.job_title&&!src.company_name&&!src.jd_excerpt)evidence.append(h('p',{class:'tn-small tn-muted',text:'这条记录没有保存到可展示的页面字段；可以先打开原网页核对，或直接按页面信息新建。'}));
     }else if(src&&src.type==='mail'){
       const line=(label,value)=>value?h('p',{text:`${label}：${String(value).slice(0,300)}`}):null;
-      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源：招聘邮件'}));
-      evidence.append(...[line('邮件主题',src.subject_excerpt||e.subject_excerpt),line('发件域名',src.from_domain||e.from_domain),line('收信日期',(src.received_at||r.mail_received_at)&&fmtDateTime(src.received_at||r.mail_received_at)),line('页面状态原文',src.status_text)].filter(Boolean));
-      if(src.body_excerpt||e.body_excerpt)evidence.append(h('pre',{class:'tn-evidence',style:'white-space:pre-wrap;max-height:180px;overflow:auto',text:(src.body_excerpt||e.body_excerpt||'').slice(0,600)}));
-      else evidence.append(h('p',{class:'tn-small tn-muted',text:'这封邮件只保存了主题和发件信息（授权范围是“仅读邮件头”），因此没有正文可展开。'}));
+      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源：招聘邮件'+(src.mail_available===false?'（原信关联已失效）':'')}));
+      evidence.append(...[line('邮件主题',src.subject_excerpt||e.subject_excerpt),line('发件域名',src.from_domain||e.from_domain),line('收信日期',(src.received_at||r.mail_received_at)&&fmtDateTime(src.received_at||r.mail_received_at)),line('邮件分类',src.category),line('页面状态原文',src.status_text)].filter(Boolean));
+      const body=src.body_excerpt||e.body_excerpt;
+      if(body)evidence.append(h('pre',{class:'tn-evidence',style:'white-space:pre-wrap;max-height:180px;overflow:auto',text:String(body).slice(0,600)}));
+      else if(src.read_mode==='headers_only')evidence.append(h('p',{class:'tn-small tn-muted',text:'这封邮件是按「仅读邮件头」授权同步的，只保存了主题和发件信息，没有正文可展开。'}));
+      else if(src.read_mode)evidence.append(h('p',{class:'tn-small tn-muted',text:'邮件已按正文模式同步，但这封没有保存到可展示的正文片段（可能为空正文或解析失败）。'}));
+      else evidence.append(h('p',{class:'tn-small tn-muted',text:'这封邮件没有保存正文片段，也没有记录读取模式；无法确认是未授权正文还是解析失败。'}));
     }else{
-      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源记录不可用（原始事件或邮件可能已被删除）。'}));
+      evidence.append(h('p',{class:'tn-small tn-muted',text:src?.note||'来源记录不可用（原始事件或邮件可能已被删除）。'}));
     }
     el.append(evidence);
     const edit=h('div',{class:'tn-inline-form',hidden:true,'data-test':'review-edit'}),err=h('div',{'data-test':'review-error'});

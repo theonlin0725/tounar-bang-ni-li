@@ -55,12 +55,19 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
   // 「感谢您的应聘」类最常见于拒信，但也可能是收简历回执。
   // 只有确认没有面试/笔试/录用信息时才当拒信，而且置信度封顶 0.88（低于自动终态 0.9，必进待确认）。
   const explicitNegative = hasAny(text, ['未通过', '不合适', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '感谢信', '拒绝', '进入人才库', '暂不匹配']);
+  // 投递成功回执：明确的“已提交/已收到申请”才算已投递；仅“感谢投递”不算（可能是拒信或营销）。
+  const appliedReceipt = hasAny(text, [
+    '投递成功', '申请成功', '提交成功', '已成功提交', '申请已收到', '已收到您的简历', '已收到您的申请',
+    '简历已收到', '申请已提交', 'successfully submitted', 'application submitted', 'application has been submitted',
+    'we have received your application', 'received your resume'
+  ]);
   const thankYouOnly = !explicitNegative && !interview && !assessment && !offer && !closed
     && hasAny(text, ['感谢您的应聘', '感谢您应聘', '感谢您的投递', '感谢您投递', '感谢您参加本次', 'thank you for your application', 'thanks for applying']);
   const negative = explicitNegative || thankYouOnly;
   const genericInvite = hasAny(text, ['恭喜', '邀请', 'invite', 'congratulations']);
   let category = 'other';
-  if (negative) category = 'rejected';
+  if (!explicitNegative && appliedReceipt) category = 'applied';
+  else if (negative) category = 'rejected';
   else if (closed) category = 'closed';
   else if (offer) category = 'offer';
   else if (interview) category = 'interview';
@@ -77,7 +84,8 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
     if (Number.isFinite(parsed)) scheduled = new Date(parsed).toISOString();
   }
   let status = null;
-  if (category === 'assessment') status = 'assessment';
+  if (category === 'applied') status = 'applied';
+  else if (category === 'assessment') status = 'assessment';
   else if (category === 'interview') status = 'interview';
   else if (category === 'offer') status = 'offer';
   else if (category === 'rejected') status = 'rejected';
@@ -88,7 +96,7 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
     status,
     round_label: roundLabel,
     interview_scheduled_at: scheduled,
-    confidence: category === 'other' || category === 'application_update' ? 0.4 : (negative || offer ? (explicitNegative || offer ? 0.95 : 0.88) : (/面试邀请|笔试邀请|测评邀请|invitation to interview/i.test(text) ? 0.94 : 0.88)),
+    confidence: category === 'other' || category === 'application_update' ? 0.4 : (category === 'applied' ? 0.94 : (negative || offer ? (explicitNegative || offer ? 0.95 : 0.88) : (/面试邀请|笔试邀请|测评邀请|invitation to interview/i.test(text) ? 0.94 : 0.88))),
     reason: category
   };
 }

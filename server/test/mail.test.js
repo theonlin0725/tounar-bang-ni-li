@@ -110,6 +110,12 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     assert.equal(irrelevant.relevant, false);
     const scheduled = classifyRecruitmentMail({ subject: '面试通知 2026-11-03 14:30', fromDomain: 'jobs.example.com', mode: 'headers_only' });
     assert.ok(scheduled.interview_scheduled_at);
+    // 明确的投递成功回执：必须映射到 applied，而不是 other
+    const receipt = classifyRecruitmentMail({ subject: '【测试科技】投递成功通知', fromDomain: 'hr.example.com',
+      bodyText: '您的软件工程师岗位申请已成功提交，我们已收到您的简历。', mode: 'recruitment_body' });
+    assert.equal(receipt.category, 'applied');
+    assert.equal(receipt.status, 'applied');
+    assert.ok(receipt.confidence >= 0.9);
     // 真实数据里抓到的假阴性：「感谢您的应聘」被当成 other 丢弃。
     // 现在按拒信处理，但置信度封顶 0.88（低于自动终态 0.9），必须进待确认。
     const thankYou = classifyRecruitmentMail({ subject: '合合信息感谢您的应聘', fromDomain: 'shmail.ibeisen.com', mode: 'headers_only' });
