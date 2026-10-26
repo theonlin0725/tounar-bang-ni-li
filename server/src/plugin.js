@@ -8,7 +8,7 @@ import {
 import { mapStatusText, processPluginEvent } from './domain/applications.js';
 import { finalizeDeletionForOwner } from './domain/deletion.js';
 
-const ALLOWED_EVENT_TYPES = new Set(['job_viewed', 'job_captured', 'form_started', 'application_submitted', 'site_status_observed']);
+const ALLOWED_EVENT_TYPES = new Set(['job_viewed', 'job_captured', 'job_discovered', 'form_started', 'application_submitted', 'site_status_observed']);
 
 export function createPairing(body = {}) {
   const deviceName = normalizeWhitespace(body.device_name || 'Chrome 扩展', 80) || 'Chrome 扩展';
@@ -197,7 +197,7 @@ function normalizeEvent(raw, batchSchemaVersion) {
   const evidenceLevel = String(raw.evidence_level || 'unknown');
   if (!['strong', 'weak', 'unknown'].includes(evidenceLevel)) throw new AppError(400, 'VALIDATION_ERROR', 'evidence_level 无效');
   const payload = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload) ? raw.payload : {};
-  if (Buffer.byteLength(JSON.stringify(payload)) > 200_000) throw new AppError(400, 'VALIDATION_ERROR', 'payload 过大');
+  if (Buffer.byteLength(JSON.stringify(payload)) > 450_000) throw new AppError(400, 'VALIDATION_ERROR', 'payload 过大');
   const normalizedPayload = { ...payload };
   if (payload.field_confidence != null) {
     if (typeof payload.field_confidence !== 'object' || Array.isArray(payload.field_confidence)) throw new AppError(400, 'VALIDATION_ERROR', '字段把握度格式错误');
@@ -218,13 +218,14 @@ function normalizeEvent(raw, batchSchemaVersion) {
   if (normalizedPayload.jd_text != null) {
     // 完整 JD：保留段落，只做长度上限（超限时置空并标记，不能静默截断）
     const raw = String(normalizedPayload.jd_text).replace(/\r\n/g, '\n').trim();
-    if (raw.length > 20000 && normalizedPayload.jd_text_truncated !== true) {
-      // 客户端没声明截断却超限：拒绝，避免静默丢正文
-      throw new AppError(400, 'JD_TEXT_TOO_LONG', 'jd_text 超过 20000 字符且未声明截断，请分段提交');
+    if (raw.length > 100000) {
+      throw new AppError(400, 'JD_TEXT_TOO_LONG', 'JD 超过 100000 字符，本次未保存；请检查正文选区');
     }
-    if (normalizedPayload.jd_text_truncated === true) normalizedPayload.jd_text = raw.slice(0, 20000);
     normalizedPayload.jd_text = raw || null;
   }
+  normalizedPayload.jd_status = payload.jd_text_truncated === true ? 'truncated'
+    : (['missing', 'partial', 'complete', 'too_long'].includes(payload.jd_status) ? payload.jd_status
+      : normalizedPayload.jd_text ? 'complete' : 'missing');
   for (const key of ['job_url', 'status_url']) {
     if (normalizedPayload[key] != null) {
       if (!isSafeHttpUrl(normalizedPayload[key])) throw new AppError(400, 'VALIDATION_ERROR', `${key} 必须是安全 http(s) URL`);
@@ -286,13 +287,16 @@ export function ingestBatch(device, body) {
           if (existing.payload_hash !== normal.payload_hash) {
             throw new AppError(409, 'IDEMPOTENCY_CONFLICT', '同一事件 ID 被用于不同内容');
           }
+          const review = one('SELECT id, reason_code FROM review_items WHERE source_event_id = ? AND owner_id = ?', [existing.id, device.owner_id]);
           return {
             client_event_id: normal.client_event_id,
             accepted: true,
             duplicate: true,
             event_id: existing.id,
             processing_state: existing.processing_state,
-            application_id: existing.application_id || null
+            application_id: existing.application_id || null,
+            review_item_id: review?.id || null,
+            review_reason: review?.reason_code || null
           };
         }
         const eventId = newId('evt');
@@ -320,7 +324,8 @@ export function ingestBatch(device, body) {
           event_id: eventId,
           processing_state: current.processing_state,
           application_id: current.application_id || null,
-          review_item_id: processed.review?.id || null
+          review_item_id: processed.review?.id || null,
+          review_reason: processed.review?.reason_code || null
         };
       });
       results.push(result);
@@ -336,10 +341,10 @@ export function ingestBatch(device, body) {
         console.error(JSON.stringify({ level: 'error', event: 'plugin_event_failed', message: err.message }));
         results.push({
           client_event_id: normal.client_event_id,
-          accepted: true,
+          accepted: false,
           duplicate: false,
           processing_state: 'failed',
-          error: { code: 'EVENT_PROCESSING_FAILED', message: '事件已持久受理但处理失败，可联系支持排查', retryable: false }
+          error: { code: 'EVENT_PROCESSING_FAILED', message: '处理失败，事务已回滚，将重试上传', retryable: true }
         });
       }
     }

@@ -7,7 +7,7 @@
  * - form_started 只记录「用户在某投递表单里开始输入」这一事实，不读取任何输入内容；
  * - application_submitted 只在检测到明确的成功标记时发出，并区分强/弱证据；
  * - site_status_observed 只读取显式 data-tounar-* 状态块或站点适配器声明的投递记录行；
- * - 不上传页面正文、表单值、Cookie 或账号信息。
+ * - 上传识别到的岗位字段与 JD 正文；不读取表单值、Cookie 或账号信息。
  */
 (function () {
   if (globalThis.__tounarTrackerLoaded) return;
@@ -21,19 +21,36 @@
   const SUBMIT_SCAN_MS = 1000;
   const SUBMIT_WINDOW_MS = 5 * 60 * 1000;
   const MAX_JD_CHARS = 80;
-  const MAX_JD_TEXT = 20000;
+  const MAX_JD_TEXT = 100000;
   const SUCCESS_TEXT = /投递成功|申请成功|提交成功|已成功提交|感谢(您|你)的?投递|简历投递成功|报名成功|application\s+(has been\s+)?submitted|successfully\s+submitted|submitted\s+successfully/i;
 
   const adapter = Adapters.resolveAdapter(location.hostname);
+  let capturePaused = false;
+  chrome.storage?.local?.get('tounar.settings.v1').then(value => { capturePaused = !!value['tounar.settings.v1']?.capturePaused; }).catch(() => {});
 
   // 已学习模板（异步加载；命中时作为快速路径）
   let learnedTemplate = null;
-  const learnedReady = (async () => {
+  async function loadTemplate() {
+    const href = location.href;
     try {
-      const res = await globalThis.TounarLearned?.getTemplate(new URL(location.href));
-      if (res?.template) learnedTemplate = res.template;
-    } catch { /* ignore */ }
-  })();
+      const res = await globalThis.TounarLearned?.getTemplate(new URL(href));
+      if (href === location.href) learnedTemplate = res?.template || null;
+    } catch { learnedTemplate = null; }
+  }
+  const learnedReady = loadTemplate();
+  async function auditTemplate(job) {
+    const url = new URL(job.job_url);
+    try {
+      if (learnedTemplate && learnedTemplate.status !== 'suspect') {
+        const audit = globalThis.TounarLearned?.validateHit(learnedTemplate, globalThis.TounarLearned?.extractWith(learnedTemplate), job);
+        if (audit?.ok) return await globalThis.TounarLearned.recordHit(url, job, audit);
+        await globalThis.TounarLearned?.markFailure(url);
+      }
+      const learned = await globalThis.TounarLearned?.learnFromJob(job, url);
+      if (learned) learnedTemplate = learned;
+      return learned;
+    } catch { return null; }
+  }
   const pageState = {
     href: location.href,
     routeKey: routeKey(),
@@ -54,7 +71,7 @@
   // ---------- helpers ----------
 
   function routeKey() {
-    return `${location.pathname}${location.search}`;
+    return `${location.pathname}${location.search}${location.hash}`;
   }
 
   function nowIso() {
@@ -75,7 +92,7 @@
       if (!/^https?:$/.test(url.protocol)) return null;
       url.username = ''; url.password = '';
       url.pathname = url.pathname.replace(/;(?:jsessionid|phpsessid|sessionid|sid)=[^/;?#]*/gi, '');
-      const drop = /^(utm_|spm|from|source|track|scm|share|ref|share_|weibo|gclid|fbclid|sid$|session|jsessionid$|phpsessid$|token$|access_token$|auth|code$|state$|email$|phone$)/i;
+      const drop = /^(utm_|spm|from|source|track|scm|share|ref|share_|weibo|gclid|fbclid|sid$|session|jsessionid$|phpsessid$|token$|access_token$|auth|state$|email$|phone$)/i;
       const kept = new URLSearchParams();
       for (const [key, value] of url.searchParams.entries()) {
         if (!drop.test(key)) kept.append(key, value);
@@ -110,11 +127,6 @@
     return '';
   }
 
-  function clipLong(text) {
-    const clean = String(text || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
-    return clean.length > MAX_JD_TEXT ? clean.slice(0, MAX_JD_TEXT) : clean;
-  }
-
   function clipJd(text) {
     const clean = String(text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     return clean.length > MAX_JD_CHARS ? clean.slice(0, MAX_JD_CHARS) : clean;
@@ -139,10 +151,10 @@
   function locationText(ld) {
     const loc = ld?.jobLocation;
     if (!loc) return '';
-    const first = Array.isArray(loc) ? loc[0] : loc;
-    const address = first?.address || first;
-    if (typeof address === 'string') return address;
-    return address?.addressLocality || address?.addressRegion || address?.streetAddress || '';
+    return [...new Set((Array.isArray(loc) ? loc : [loc]).map(item => {
+      const address = item?.address || item;
+      return typeof address === 'string' ? address : address?.addressLocality || address?.addressRegion || '';
+    }).filter(Boolean))].join('、');
   }
 
   function identifierValue(ld) {
@@ -162,7 +174,11 @@
         const part = parts[i];
         if (/^\d{4,}$/.test(part) || /^[0-9a-f-]{8,}$/i.test(part)) return part;
       }
-      return route.searchParams.get('jobId') || route.searchParams.get('positionId') || route.searchParams.get('postId') || route.searchParams.get('jobUnionId') || route.searchParams.get('id') || '';
+      const slug = route.pathname.match(/\/(?:jobs?|positions?|post|opening|intern|job_detail|job-detail|job-info|jobdesc)\/(?:detail\/)?([\w-]+)(?:\/detail)?\/?$/i);
+      if (slug && !/^(list|search|detail|index|all)$/i.test(slug[1])) return slug[1];
+      const numberedSlug = route.pathname.match(/\/(\d{6,})-[^/]+\/?$/);
+      if (numberedSlug) return numberedSlug[1];
+      return route.searchParams.get('code') || route.searchParams.get('job_id') || route.searchParams.get('requementId') || route.searchParams.get('jobId') || route.searchParams.get('positionId') || route.searchParams.get('postId') || route.searchParams.get('jobUnionId') || route.searchParams.get('id') || '';
     } catch {
       return '';
     }
@@ -209,7 +225,7 @@
   }
 
   // 投递按钮信号：页面上存在「投递/申请/Apply」类按钮，是岗位详情页的强信号
-  const APPLY_SIGNAL = /^(投递|投个简历|立即投递|投递简历|申请|立即申请|申请职位|申请岗位|我要申请|网申|报名|立即报名|apply|apply now|apply for|sign up|application$)/i;
+  const APPLY_SIGNAL = /^(投递|投个简历|立即投递|投递简历|简历投递|申请|立即申请|申请职位|申请岗位|我要申请|网申|报名|立即报名|apply|apply now|apply for|sign up|application$)/i;
   function findApplySignal() {
     let nodes;
     try { nodes = document.querySelectorAll(['a', 'button', '[role="button"]', 'input[type="submit"]', 'input[type="button"]', ...(adapter.applySelectors || [])].join(',')); } catch { return false; }
@@ -237,17 +253,18 @@
     // A global region/login modal is not job content, even when its stylesheet
     // fails to load. Keep actual job-detail drawers eligible.
     const modal=node.closest('[role="dialog"],[class*="modal"],[class*="Modal"]');
-    if(modal&&!modal.querySelector('[data-tounar-job-id],[class*="job-detail"],[class*="position-detail"]'))return false;
+    if(modal && !modal.matches('[data-job-id],[class*="job-detail"],[class*="position-detail"]') && !modal.querySelector('[data-job-id],[data-tounar-job-id],[class*="job-detail"],[class*="position-detail"]') && !/岗位职责|职位描述|任职要求|Responsibilities|Requirements/i.test(modal.innerText || ''))return false;
     const style=getComputedStyle(node);
     return style.display!=='none' && style.visibility!=='hidden' && node.getClientRects().length>0;
   }
   function validTitle(value) {
     const t=String(value||'').trim();
-    return t.length>=2&&t.length<=60&&!/招聘|官网|首页|加载|loading|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job description|requirements/i.test(t);
+    return t.length>=2&&t.length<=200&&!/^(?:.*(?:校园招聘|社会招聘|招聘官网)|招聘|官网|首页|加载中[.…]*|loading[.…]*|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job description|requirements)$/i.test(t);
   }
+  let detectionScope = document;
   function nodesFor(selectors) {
     const result=[];
-    for(const selector of selectors||[])try{for(const node of document.querySelectorAll(selector))if(visible(node))result.push(node);}catch{}
+    for(const selector of selectors||[])try{for(const node of detectionScope.querySelectorAll(selector))if(visible(node))result.push(node);}catch{}
     return [...new Set(result)];
   }
   function labelled(pattern) {
@@ -257,7 +274,7 @@
       if(text.length>160)continue;
       const m=text.match(pattern);
       if(m?.[1])result.push(m[1].trim());
-      else if(node.nextElementSibling&&visible(node.nextElementSibling)){const pair=(text.replace(/[:：]$/, '')+': '+textOf(node.nextElementSibling)).match(pattern);if(pair?.[1])result.push(pair[1].trim());}
+      else if(node.matches('dt,label,th,td,[data-job-label]')&&node.nextElementSibling&&visible(node.nextElementSibling)){const pair=(text.replace(/[:：]$/, '')+': '+textOf(node.nextElementSibling)).match(pattern);if(pair?.[1])result.push(pair[1].trim());}
     }
     return result.filter(t=>t&&t.length<=80);
   }
@@ -271,7 +288,7 @@
     for(const node of scope.querySelectorAll('[class*="title"],[class*="Title"]')){
       if(!visible(node))continue;
       const text=textOf(node);
-      if(text.length<2||text.length>60||!validTitle(text))continue;
+      if(text.length<2||text.length>200||!validTitle(text))continue;
       if(/[：:]$/.test(text)||/(工作地点|项目|职位方向|子方向|薪资|人数)\s*[：:]/.test(text))continue;
       if(/^(相关链接|相关职位|相似职位|热门职位|职位推荐|公司介绍|公司信息|招聘流程|投递须知|温馨提示|分享|收藏)$/.test(text))continue;
       const r=node.getBoundingClientRect();
@@ -293,7 +310,7 @@
     for(const node of scope.querySelectorAll('div,span,p,strong')){
       if(node.children.length||!visible(node))continue;
       const text=textOf(node);
-      if(text.length<6||text.length>60||!validTitle(text))continue;
+      if(text.length<6||text.length>200||!validTitle(text))continue;
       if(/[：:]$/.test(text)||/(工作地点|项目|职位方向|子方向|薪资|人数)\s*[：:]/.test(text))continue;
       if(seen.has(text))continue;
       seen.add(text);
@@ -302,25 +319,31 @@
     return null;
   }
 
-  function detectJob() {
-    if(/\/chat\b|\/im\b|\/message\b/i.test(location.pathname))return null;
-    let jdTruncated=false;
-    let learnedHit=false;
+  function blockedPage() {
+    if (/\/(?:chat|im|message|login|signin|captcha)(?:[/?#]|$)/i.test(location.pathname + location.hash)) return true;
+    const text = String(document.querySelector('main')?.innerText || document.body?.innerText || '').trim();
+    return text.length < 4000 && /职位已过期|岗位已下线|职位不存在|岗位不存在|职位已关闭|职位已停止招聘|验证后继续访问|完成安全验证|安全验证|访问异常|job (?:is )?(?:expired|no longer available)/i.test(text);
+  }
+  function detectJob({ useTemplate = true } = {}) {
+    if (blockedPage()) return null;
+    detectionScope = [...document.querySelectorAll('[role="dialog"],[class*="drawer"],[class*="Drawer"]')]
+      .find(n => visible(n) && /岗位职责|职位描述|任职要求|Responsibilities|Requirements/i.test(n.innerText || '')) || document;
     const hook=document.querySelector('[data-tounar-job-id]');
     const ld=readJobPostingJsonLd();
     const posting=ld&&!ld.multiple?ld:null;
     if (ld?.multiple && !hook) return null;
     const list=(adapter.listUrlPatterns||[]).some(p=>p.test(location.href));
-    if(!hook&&!posting&&(list||!findApplySignal()))return null;
     const verifiedAdapter=adapter.site_verified&&(!adapter.verifiedUrlPatterns||adapter.verifiedUrlPatterns.some(pattern=>pattern.test(location.href)));
+    const semanticDetail = !!idFromUrl(location.href) && /岗位职责|职位描述|任职要求|Job Description|Responsibilities|Requirements/i.test(detectionScope.body?.innerText || detectionScope.innerText || '') && nodesFor(['h1']).length === 1;
+    const adapterDetail = verifiedAdapter && !!idFromUrl(location.href) && nodesFor(adapter.selectors.title).length === 1;
+    if(!hook&&!posting&&((list && detectionScope === document)||(!findApplySignal()&&!semanticDetail&&!adapterDetail&&detectionScope===document)))return null;
     const candidates={};
     const add=(field,value,score,source,rawValue)=>{
       if(field==='jd_summary'){
         // JD 要保留段落：不做整段空白折叠，只清掉行尾空格和过多空行
         let raw=String(rawValue ?? value ?? '').replace(/\r\n/g,'\n').replace(/[ \t]+$/gm,'').replace(/\n{3,}/g,'\n\n').trim();
         if(raw.length<10)return;
-        if(raw.length>MAX_JD_TEXT){raw=raw.slice(0,MAX_JD_TEXT);jdTruncated=true;}
-        (candidates.jd_summary||=[]).push({value:clipJd(raw.replace(/\s+/g,' ')),raw,score,source});
+        (candidates.jd_summary||=[]).push({value:clipJd(value),raw,score,source});
         return;
       }
       const v=String(value||'').replace(/\s+/g,' ').trim();
@@ -333,20 +356,9 @@
       if(field==='company_name'&&(v.length>60||/登录|注册|招聘平台|直聘|牛客|实习僧/.test(v)))return;
       (candidates[field]||=[]).push({value:v,raw:null,score,source});
     };
-    // 已学习模板：必须在 add 之后才能调用（此前放在 const add 之前，命中模板会 ReferenceError）
-    if(learnedTemplate && learnedTemplate.status!=='suspect'){
-      const picked=globalThis.TounarLearned?.extractWith(learnedTemplate);
-      if(picked?.title){
-        learnedHit=true;
-        add('job_title',picked.title,90,'learned_template');
-        if(picked.company)add('company_name',picked.company,88,'learned_template');
-        if(picked.jd)add('jd_summary',picked.jd,88,'learned_template',picked.jd);
-        try{globalThis.TounarLearned?.recordHit(new URL(location.href),{site_job_id:null,job_url:location.href});}catch{}
-      }else{
-        learnedTemplate=null;
-        try{globalThis.TounarLearned?.markFailure(new URL(location.href));}catch{}
-      }
-    }
+    // Replay is audited against independent extraction below. A title-only hit is insufficient.
+    const picked = useTemplate && learnedTemplate?.status !== 'suspect'
+      ? globalThis.TounarLearned?.extractWith(learnedTemplate) : null;
     if(hook)for(const [f,attr] of Object.entries({company_name:'company',job_title:'job-title',site_job_id:'job-id',jd_summary:'jd',location:'location',recruitment_batch:'batch'}))add(f,hook.getAttribute('data-tounar-'+attr),100,'explicit_hook');
     const aggregator=['boss','nowcoder','shixiseng'].includes(adapter.key);
     const fixed=Adapters.companyForHost(location.hostname);
@@ -354,10 +366,20 @@
     if(fixed&&!aggregator)add('company_name',fixed,91,'known_company_host');
     if(posting){
       add('job_title',posting.title,95,'json_ld');
-      if(!aggregator)add('company_name',posting.hiringOrganization?.name,93,'json_ld');
-      add('jd_summary',posting.description,95,'json_ld',typeof posting.description==='string'?posting.description:null);add('site_job_id',identifierValue(posting),95,'json_ld');
+      add('company_name',posting.hiringOrganization?.name,99,'json_ld');
+      add('jd_summary',plainDescription(posting.description),95,'json_ld',plainDescription(posting.description));add('site_job_id',identifierValue(posting),95,'json_ld');
       add('location',locationText(posting),95,'json_ld');add('recruitment_batch',batchFromText(posting.title||''),90,'json_ld');
     }
+    const microdataCompany = document.querySelector('[itemprop="hiringOrganization"] [itemprop="name"]');
+    if (microdataCompany) add('company_name',microdataCompany.content || textOf(microdataCompany),98,'schema_microdata');
+    const microdataCity = document.querySelector('[itemprop="jobLocation"] [itemprop="addressLocality"]');
+    if (microdataCity) add('location',microdataCity.content || textOf(microdataCity),98,'schema_microdata');
+    // A declared employer in the page title must name the same visible job.
+    const applicationTitle = document.title.match(/^Job Application for (.+) at (.+)$/i);
+    if (applicationTitle && nodesFor(['h1','h2']).some(n=>textOf(n)===applicationTitle[1])) add('company_name',applicationTitle[2],92,'page_title_employer');
+    for(const n of nodesFor(['[itemprop="title"]'])) if(n.matches('h1,h2')) add('job_title',textOf(n),94,'schema_microdata');
+    const places = [...new Set(nodesFor(['[class*="job"][class*="location"]']).filter(n=>!n.closest('form')&&!n.querySelector('input,select')).map(textOf).filter(t=>t.length<=40))];
+    if(places.length===1)add('location',places[0],82,'job_location');
     const applyButtons=nodesFor(['button','a','[role="button"]','input[type="button"]','input[type="submit"]',...(adapter.applySelectors||[])]).filter(n=>{
       const label=n.tagName==='INPUT'?n.value:textOf(n);
       return APPLY_SIGNAL.test(label.replace(/\s+/g,''))&&label.length<=20;
@@ -365,7 +387,7 @@
     const headingNodes=nodesFor(['h1','h2','h3','[role="heading"]',...(adapter.selectors.title||[])]).filter(n=>validTitle(textOf(n))&&(verifiedAdapter||/^H[1-3]$/.test(n.tagName)||n.getAttribute('role')==='heading'||Number.parseFloat(getComputedStyle(n).fontSize)>=20));
     const headings=headingNodes.filter(node=>!headingNodes.some(other=>other!==node&&node.contains(other)));
     function headingScore(node){
-      const text=textOf(node);if(headings.filter(n=>textOf(n)===text&&!n.contains(node)&&!node.contains(n)).length>=1)return 0;
+      const text=textOf(node);if(node.tagName!=='H1'&&headings.filter(n=>textOf(n)===text&&!n.contains(node)&&!node.contains(n)).length>=1)return 0;
       const r=node.getBoundingClientRect();
       const distance=applyButtons.length?Math.min(...applyButtons.map(b=>{const a=b.getBoundingClientRect();return Math.abs(r.top-a.top)+Math.abs(r.left-a.left)*0.2;})):1000;
       return 82-Math.min(12,distance/100)+(node.tagName==='H1'?3:0);
@@ -378,7 +400,7 @@
       if(repeated)add('job_title',repeated,74,'title_near_apply');
     }
     const companyLabels=labelled(/(?:公司名称|公司名|雇主|Company)\s*[:：]\s*(.{2,50})/i);
-    for(const node of [...document.querySelectorAll('main div,main span,main strong,article div,article span')].slice(0,200)){
+    for(const node of [...detectionScope.querySelectorAll('main div,main span,main strong,article div,article span')].slice(0,200)){
       if(node.children.length||!visible(node)||!validTitle(textOf(node)))continue;
       const fontSize=Number.parseFloat(getComputedStyle(node).fontSize);
       if(fontSize<22||textOf(node)===fixed||companyLabels.includes(textOf(node)))continue;
@@ -390,7 +412,8 @@
     }
     if(aggregator){for(const n of nodesFor(adapter.selectors.company))if(!n.querySelector('h1,h2,form')&&textOf(n).length<=60)add('company_name',textOf(n),verifiedAdapter?92:85,'company_card');}
     else for(const n of nodesFor(adapter.selectors.company))add('company_name',textOf(n),verifiedAdapter?89:67,'site_selector');
-    const jdHeading=/^(职位描述|岗位描述|岗位职责|工作职责|任职要求|岗位要求|职位要求|工作内容|Job Description|Responsibilities|Requirements|What you['’]ll do|What you will do|About the role|Your responsibilities|A typical day|Your qualifications|Your expertise)\s*[:：]?$/i;
+    const jdHeading=/^(职位描述|岗位描述|岗位职责|工作职责|任职要求|岗位要求|职位要求|工作内容|Job Description|Responsibilities|Requirements|Qualifications|What you['’]ll do|What you will do|What you have|About the role|Your responsibilities|A typical day|Your qualifications|Your expertise)\s*[:：]?$/i;
+    const jdSections = [];
     for(const n of nodesFor(['h2','h3','h4','strong','dt','[class*="title"]'])){
       if(!jdHeading.test(textOf(n)))continue;
       const chunks=[];let section=n,next=n.nextElementSibling;
@@ -398,10 +421,16 @@
         if(!section.parentElement||textOf(section.parentElement)!==textOf(n))break;
         section=section.parentElement;next=section.nextElementSibling;
       }
-      for(let i=0;next&&i<5;i++,next=next.nextElementSibling){if(jdHeading.test(textOf(next)))break;if(!visible(next)||next.querySelector('form,input,textarea'))continue;chunks.push(String(next.innerText||textOf(next)).trim());}
-      const text=chunks.join('\n\n');if(text.length>=10)add('jd_summary',text,86,'jd_heading_section',text);
+      for(let i=0;next&&i<40;i++,next=next.nextElementSibling){if(jdHeading.test(textOf(next)) || next.matches('h1,h2,h3,h4') || /推荐职位|相关职位|公司介绍|投递须知|^#LI-/i.test(textOf(next).slice(0,30)))break;if(!visible(next)||next.matches('button,a')||next.querySelector('form,input,textarea,button'))continue;chunks.push(String(next.innerText||textOf(next)).trim());}
+      const text=chunks.join('\n\n');if(text.length>=10)jdSections.push(textOf(n) + '\n' + text);
     }
-    if(verifiedAdapter)for(const n of nodesFor(adapter.selectors.jd))if(!n.querySelector('nav,aside,form,input,textarea'))add('jd_summary',textOf(n),88,'verified_site_selector',String(n.innerText||''));
+    if(jdSections.length) add('jd_summary', jdSections[0].split('\n').slice(1).join('\n'), 86, 'jd_heading_sections', jdSections.join('\n\n'));
+    if(verifiedAdapter) {
+      const nodes = nodesFor(adapter.selectors.jd).filter(n => !n.querySelector('nav,aside,form,input,textarea') && !(adapter.jdExcludeHeaders||[]).includes(textOf(n.firstElementChild)));
+      const leaves = nodes.filter(n => !nodes.some(other => other !== n && n.contains(other)));
+      const text = leaves.map(n => String(n.innerText || '').trim()).filter(Boolean).join('\n\n');
+      if (text) add('jd_summary', textOf(leaves[0]), 88, 'verified_site_selector', text);
+    }
     for(const value of labelled(/(?:工作地点|工作城市|城市|Location)\s*[:：]\s*([^，,;；\n]{1,40})/i))add('location',value,84,'label');
     for(const value of labelled(/(?:招聘类型|招聘批次|批次)\s*[:：]\s*(.{1,50})/i))add('recruitment_batch',batchFromText(value)||value,84,'label');
     for(const value of labelled(/(?:职位\s*ID|岗位编号|职位编号|Job\s*ID|Position\s*ID)\s*[:：]\s*([A-Za-z0-9_-]+)/i))add('site_job_id',value,84,'label');
@@ -411,6 +440,9 @@
       const seed={site_job_id:identifierValue(posting)||idFromUrl(location.href)};
       try{const refined=adapter.refine(seed)||seed;for(const f of ['company_name','location','recruitment_batch','site_job_id'])add(f,refined[f],90,'verified_refine');}catch{}
     }
+    const scopedId = detectionScope.querySelector('[data-job-id],[data-position-id]') ||
+      (detectionScope.matches?.('[data-job-id],[data-position-id]') ? detectionScope : null);
+    if (scopedId) add('site_job_id', scopedId.getAttribute('data-job-id') || scopedId.getAttribute('data-position-id'), 95, 'visible_job_identifier');
     add('site_job_id',idFromUrl(location.href),80,'url_identifier');
     add('job_title',cleanPageTitle(metaContent(['og:title','twitter:title'])),55,'meta');
     add('job_title',cleanPageTitle(document.title),40,'document_title');
@@ -419,12 +451,82 @@
       const best=(candidates[field]||[]).sort((a,b)=>b.score-a.score)[0];
       const confidence=!best||best.score<70?'low':best.score>=90?'high':'medium';
       job[field]=confidence==='low'?'':best.value;job.field_confidence[field]=confidence;job.field_sources[field]=best?.source||'unavailable';
-      if(field==='jd_summary'){const rawJd=(candidates.jd_summary||[]).sort((a,b)=>b.score-a.score)[0]?.raw||'';job.jd_text=rawJd&&rawJd.length>=20?rawJd:'';job.jd_text_truncated=jdTruncated;job.field_confidence.jd_text=job.field_confidence.jd_summary;job.field_sources.jd_text=job.jd_text?job.field_sources.jd_summary:'unavailable';}
+      if(field==='jd_summary'){const rawJd=(candidates.jd_summary||[]).sort((a,b)=>b.score-a.score)[0]?.raw||'';job.jd_text=rawJd&&rawJd.length>=10&&rawJd.length<=MAX_JD_TEXT?rawJd:'';job.jd_status=rawJd.length>MAX_JD_TEXT?'too_long':job.jd_text?'complete':'missing';job.jd_text_truncated=false;job.field_confidence.jd_text=job.field_confidence.jd_summary;job.field_sources.jd_text=job.jd_text?job.field_sources.jd_summary:'unavailable';}
     }
     // Ambiguous generic list-like pages must not manufacture a single job.
     if(!job.job_title)return null;
-    if(learnedHit){try{globalThis.TounarLearned?.recordHit(new URL(location.href),job);}catch{}}
+    if (useTemplate && learnedTemplate && picked) {
+      const audit = globalThis.TounarLearned?.validateHit(learnedTemplate, picked, job);
+      job.template_version = learnedTemplate.version || 1;
+      job.template_fields = audit?.fields || [];
+      job.template_status = audit?.ok ? learnedTemplate.status : 'suspect';
+      if (audit?.ok) for (const [field, key] of [['job_title','title'],['company_name','company'],['jd_text','jd']]) {
+        if (audit.fields.includes(key)) job.field_sources[field] = 'learned_template';
+      }
+    }
     return job;
+  }
+
+  function plainDescription(value) {
+    const doc = new DOMParser().parseFromString(String(value || ''), 'text/html');
+    doc.querySelectorAll('script,style,form,input,textarea,nav,aside').forEach(n => n.remove());
+    doc.querySelectorAll('br').forEach(n => n.replaceWith('\n'));
+    doc.querySelectorAll('p,div,li,h1,h2,h3,h4,section,ul,ol').forEach(n => n.append('\n'));
+    return (doc.body.textContent || '').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g,'\n\n').trim();
+  }
+
+  const discoveredJobs = new Set();
+  let listBusy = false;
+  let lastListAttempt = 0;
+  let listLookup = {key:null,items:[]};
+  async function captureList(explicit = false) {
+    if (capturePaused || listBusy || blockedPage() || (!explicit && document.visibilityState !== 'visible')) return [];
+    if (!explicit && Date.now()-lastListAttempt < 1500) return [];
+    lastListAttempt = Date.now();
+    listBusy = true;
+    const ids = [];
+    try {
+      const listHref = location.href;
+      const cards = [...document.querySelectorAll(['li','article','[class*="job-card"]','[class*="position-item"]','[class*="job-item"]','[class*="position-card"]', ...(adapter.listCardSelector ? [adapter.listCardSelector] : [])].join(','))];
+      const lookupKey = location.href + '|' + cards.map(c => textOf(c.querySelector(adapter.listTitleSelector || 'h2,h3'))).join('|');
+      if (adapter.listIdentities && cards.length && listLookup.key !== lookupKey) {
+        const items = await adapter.listIdentities().catch(() => []);
+        if(items.length) listLookup = {key:lookupKey,items};
+      }
+      for (const card of cards) {
+        if (location.href !== listHref || !card.isConnected) break;
+        if (!visible(card) || card.closest('nav,footer,[class*="recommend"]')) continue;
+        const links = [...card.querySelectorAll('a[href]')].filter(a => idFromUrl(a.href) && /\/(?:jobs?|positions?|intern|job_detail|job-detail|jobdesc)|(?:jobId|postId|positionId|jobUnionId|code)=/i.test(a.href));
+        const title = textOf(card.querySelector(adapter.listTitleSelector || '[class*="job-title"],[class*="position-title"],h2,h3,h4') || links[0]);
+        const place = textOf(card.querySelector(adapter.listLocationSelector || '[class*="location"],[class*="job-area"]'));
+        const batch = adapter.listBatchSelector ? textOf(card.querySelector(adapter.listBatchSelector)) : '';
+        let matched = listLookup.key === lookupKey ? listLookup.items.filter(p => p.title === title && p.location === place) : [];
+        if (!matched.length && adapter.lookupIdentity) {
+          const items=await adapter.lookupIdentity(title).catch(()=>[]);
+          if(location.href!==listHref || !card.isConnected || textOf(card.querySelector(adapter.listTitleSelector))!==title) continue;
+          matched=items.filter(p=>p.title===title&&p.location===place);
+          if(matched.length===1)listLookup.items.push(matched[0]);
+        }
+        const identity = adapter.listIdentity?.(card);
+        const urls = [...new Set(links.map(a => canonicalUrl(a.href)))];
+        if (!urls.length && identity?.url) urls.push(canonicalUrl(identity.url));
+        if (!urls.length && matched.length === 1) urls.push(canonicalUrl(matched[0].url));
+        if (urls.length !== 1) continue;
+        const url = urls[0], id = idFromUrl(url);
+        if (!id || discoveredJobs.has(url)) continue;
+        if (!validTitle(title)) continue;
+        const companyNode = card.querySelector('[class*="company-name"],[class*="companyName"],[class*="employer"]');
+        const company = textOf(companyNode) || Adapters.companyForHost(location.hostname) || '';
+
+        const job = { job_title: title, company_name: company, job_url: url, site_job_id: id, location: place, recruitment_batch: batch,
+          jd_summary: clipJd(textOf(card.querySelector('.recruit-text'))), jd_status: 'missing', field_confidence: { job_title:'high', company_name: company?'high':'low', job_url:'high', site_job_id:'high', location: place?'medium':'low' },
+          field_sources: { job_title:'list_card', company_name:companyNode?'list_card':'known_company_host', job_url:links.length?'list_link':identity?'list_dom_identifier':adapter.listIdentitySource||'visible_card_public_api', site_job_id:'url_identifier', location:'list_card' } };
+        const event = buildEvent(job, 'job_discovered', { evidenceLevel:'strong', evidenceCode:'loaded-list-card' });
+        const result = await sendEvent(event);
+        if (result?.ok) { discoveredJobs.add(url); ids.push(event.client_event_id); }
+      }
+    } finally { listBusy = false; }
+    return ids;
   }
 
   // ---------- sending ----------
@@ -432,7 +534,7 @@
   function sendEvent(event) {
     if (['job_viewed','form_started','application_submitted'].includes(event.event_type)) {
       const current=detectJob();
-      if ((current && current.job_title !== event.payload.job_title) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
+      if ((current && (current.job_title !== event.payload.job_title || current.site_job_id !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url)) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
         detectAndTrackRoute(); return Promise.resolve({ok:false,skipped:'job_changed'});
       }
     }
@@ -443,7 +545,7 @@
             resolve({ ok: false, error: chrome.runtime.lastError.message });
             return;
           }
-          resolve(response || { ok: true });
+          resolve(response || { ok: false, error: 'NO_QUEUE_ACK' });
         });
       } catch (err) {
         resolve({ ok: false, error: String(err?.message || err) });
@@ -460,6 +562,9 @@
       jd_summary: job.jd_summary || undefined,
       jd_text: job.jd_text || undefined,
       jd_text_truncated: job.jd_text_truncated || undefined,
+      jd_status: job.jd_status,
+      template_version: job.template_version,
+      template_fields: job.template_fields,
       location: job.location || undefined,
       recruitment_batch: job.recruitment_batch || undefined,
       field_confidence: job.field_confidence || undefined,
@@ -474,7 +579,7 @@
       event_type: eventType,
       source_method: 'plugin',
       site_key: adapter.key,
-      adapter_version: adapter.version+'+capture-3',
+      adapter_version: adapter.version+'+capture-4',
       schema_version: 'C1',
       occurred_at: occurredAt || nowIso(),
       observed_at: nowIso(),
@@ -505,7 +610,8 @@
   // ---------- view dwell ----------
 
   let lastDomChange = Date.now();
-  let previousRouteTitle = null;
+  let previousRouteContent = null;
+  const contentIdentity = job => job ? JSON.stringify([job.job_title, job.company_name, job.jd_text, job.location, job.field_sources?.site_job_id !== 'url_identifier' ? job.site_job_id : null]) : null;
   function resetJob(job = null) {
     pageState.job=job;pageState.detectedAt=job?Date.now():null;pageState.viewStartedAt=job?nowIso():null;
     pageState.visibleMs=0;pageState.viewSent=false;pageState.formSent=false;pageState.submitSent=false;pageState.statusSent=new Set();pageState.lastTickAt=Date.now();
@@ -513,15 +619,16 @@
   }
   function detectAndTrackRoute() {
     if(location.href!==pageState.href){
-      previousRouteTitle=pageState.job?.job_title||null;pageState.href=location.href;pageState.routeKey=routeKey();lastDomChange=Date.now();
+      previousRouteContent=contentIdentity(pageState.job);
+      loadTemplate();pageState.href=location.href;pageState.routeKey=routeKey();lastDomChange=Date.now();
       resetJob();
       if(!/success|submitted|complete|finish/i.test(location.pathname))pageState.submitScanUntil=0;
     }
     if(Date.now()-lastDomChange<800)return null;
     const job=detectJob();
-    // Route changed while a SPA still shows the previous job: wait for the new title.
-    if(previousRouteTitle&&job?.job_title===previousRouteTitle)return null;
-    if(job)previousRouteTitle=null;
+    // A route can change before the SPA replaces the previous job's content.
+    if(previousRouteContent&&contentIdentity(job)===previousRouteContent)return null;
+    if(job)previousRouteContent=null;
     if(!job){if(pageState.job)resetJob();return null;}
     if(!pageState.job||pageState.job.job_title!==job.job_title||pageState.job.site_job_id!==job.site_job_id){resetJob(job);probe();}
     else pageState.job=job;
@@ -535,7 +642,7 @@
   function tickDwell() {
     const now = Date.now();
     const wasVisible = pageState.lastVisible !== false;
-    if (document.visibilityState === 'visible' && Date.now()-lastDomChange>=800 && !previousRouteTitle && pageState.job && !pageState.viewSent) {
+    if (document.visibilityState === 'visible' && Date.now()-lastDomChange>=800 && !previousRouteContent && pageState.job && !pageState.viewSent) {
       if (wasVisible) {
         const delta = now - pageState.lastTickAt;
         if (delta > 0 && delta < 30000) pageState.visibleMs += delta;
@@ -548,7 +655,7 @@
           evidenceCode: 'visible-dwell-3000ms',
           occurredAt: pageState.viewStartedAt || nowIso(),
           payload: { visible_dwell_ms: pageState.visibleMs }
-        }));
+        })).then(result => { if (!result?.ok && pageState.job?.site_job_id === job.site_job_id && pageState.job?.job_url === job.job_url) pageState.viewSent = false; else if (result?.ok) auditTemplate(job); });
         probe();
       }
     }
@@ -722,6 +829,7 @@
       const host = document.documentElement;
       host.setAttribute('data-tounar-adapter', adapter.key);
       host.setAttribute('data-tounar-adapter-version', adapter.version);
+      if (!pageState.job) host.removeAttribute('data-tounar-job-detected');
       if (pageState.job) host.setAttribute('data-tounar-job-detected', pageState.job.site_job_id || pageState.job.job_title || 'unknown');
       if (pageState.detectedAt) host.setAttribute('data-tounar-detected-at', String(pageState.detectedAt));
       host.setAttribute('data-tounar-visible-ms', String(Math.round(pageState.visibleMs)));
@@ -734,8 +842,18 @@
   // ---------- 显式采集（用户点「采集当前页」，不要求停留时长） ----------
 
   async function captureNow(reason = 'user') {
+    await loadTemplate();
     const job = detectJob();
-    if (!job || !job.job_title) return { ok: false, detected: false, status: 'no_job', reason: 'no_job' };
+    if (!job || !job.job_title) {
+      const discovered = await captureList(true);
+      if(discovered.length) {
+        const results = [];
+        for (const id of discovered) results.push(await chrome.runtime.sendMessage({type:'event_result',clientEventId:id}));
+        return { ok:true, detected:true, status:'list_result', count:discovered.length, client_event_ids:discovered,
+          counts:{entered:results.filter(r=>r?.status==='entered').length,review:results.filter(r=>r?.status==='review').length,queued:results.filter(r=>r?.status==='queued').length,rejected:results.filter(r=>r?.status==='rejected'||r?.status==='failed').length} };
+      }
+      return { ok: false, detected: false, status: 'no_job', reason: 'no_job' };
+    }
     pageState.job = job;
     pageState.detectedAt = Date.now();
     const event = buildEvent(job, 'job_captured', {
@@ -754,12 +872,16 @@
       } catch { resolve(null); }
     });
     const status = result?.status || 'queued';
-    let learned = null;
-    try { learned = await globalThis.TounarLearned?.learnFromJob(job, new URL(location.href)); } catch { /* ignore */ }
+    pageState.viewSent = true;
+    const learned = await auditTemplate(job);
     return {
       ok: status !== 'rejected' && status !== 'failed',
       detected: true,
       status,
+      client_event_id: event.client_event_id,
+      processing_state: result?.result?.processing_state || null,
+      review_reason: result?.result?.review_reason || null,
+      jd_status: job.jd_status,
       application_id: result?.result?.application_id || null,
       review_item_id: result?.result?.review_item_id || null,
       error: result?.result?.error || null,
@@ -781,6 +903,16 @@
       return false;
     });
   } catch { /* ignore */ }
+
+  window.addEventListener('online', () => { try { chrome.runtime.sendMessage({type:'flush_now'}); } catch {} });
+  if (chrome.storage?.onChanged) chrome.storage.onChanged.addListener((changes, area) => {
+    if(area !== 'local') return;
+    if(changes['tounar.learned.v1']) loadTemplate();
+    if(changes['tounar.settings.v1']) {
+      capturePaused = !!changes['tounar.settings.v1'].newValue?.capturePaused;
+      if (capturePaused !== !!changes['tounar.settings.v1'].oldValue?.capturePaused) resetJob();
+    }
+  });
 
   // ---------- lifecycle ----------
 
@@ -815,8 +947,10 @@
   });
 
   setInterval(() => {
+    if (capturePaused) return;
     detectAndTrackRoute();
     tickDwell();
+    if (!pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});
     scanForSubmission();
     scanStatusHooks();
     scanAdapterStatusPage();

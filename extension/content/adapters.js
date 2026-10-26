@@ -80,10 +80,32 @@
       hosts: ['join.qq.com', 'careers.tencent.com', 'hr.tencent.com'],
       jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobdesc/i],
       listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
+      listCardSelector: '.recruit-list',
+      listTitleSelector: '.job-recruit-title',
+      listLocationSelector: '.job-recruit-location',
+      // Tencent renders click handlers instead of hrefs. Replay only the public
+      // Query request already used by this page, then match each visible card.
+      async listIdentities() {
+        if (location.hostname !== 'careers.tencent.com' || location.pathname !== '/search.html') return [];
+        const requests = performance.getEntriesByType('resource').map(entry => entry.name).filter(raw => {
+          try { const u = new URL(raw); return u.origin === location.origin && u.pathname === '/tencentcareer/api/post/Query'; } catch { return false; }
+        });
+        const url = requests.at(-1);
+        if (!url) return [];
+        const response = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(8000) });
+        if (!response.ok) return [];
+        const data = await response.json();
+        return (data?.Data?.Posts || []).filter(p => p.IsValid !== false && /^\d+$/.test(String(p.PostId))).map(p => {
+          const url = new URL(p.PostURL, location.origin);
+          if (url.hostname !== location.hostname || url.pathname !== '/jobdesc.html' || url.searchParams.get('postId') !== String(p.PostId)) return null;
+          url.protocol = location.protocol;
+          return { title: String(p.RecruitPostName || ''), location: String(p.LocationName || ''), url: url.href };
+        }).filter(Boolean);
+      },
       selectors: {
         title: ['.job-text-wrapper > .job-recruit-title'],
         company: [],
-        jd: ['.duty.work-module .duty-text'],
+        jd: ['.duty.work-module .duty-text', '.requirement.work-module .duty-text'],
         location: ['.job-text-wrapper > .job-recruit-location'],
         success: ['.apply-success', '.submit-success', '[class*="applyResult"]']
       },
@@ -460,6 +482,101 @@
       notes: '公开实习详情 inn_lri5lbntavwi、inn_bliwylwige4t 已核验，快照见 tests/fixtures/sites/shixiseng。仅浏览态，投递/登录态未验证。字体反爬字符未解码，含乱码字段应留空。'
     }
   ];
+
+  // Current public navigation sampled 2026-10-25. A list API supplies identity
+  // only: tracker still requires a unique match against an actually visible card.
+  const readText = selector => String(document.querySelector(selector)?.innerText || '').trim();
+  const pageNumber = () => Number(readText('.ant-pagination-item-active,.rocket-pagination-item-active,.el-pager .is-active')) || 1;
+  async function publicPost(url, body) {
+    const response = await fetch(url, {method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
+    return response.ok ? response.json() : null;
+  }
+  const xiaomi=ADAPTERS.find(a=>a.key==='xiaomi');
+  xiaomi.hosts.push('xiaomi.jobs.f.mioffice.cn');
+  HOST_COMPANY['xiaomi.jobs.f.mioffice.cn']='小米';
+  xiaomi.listUrlPatterns.push(/\/website\/opportunities\.html/i);
+  xiaomi.listTitleSelector='a.job-title';xiaomi.listLocationSelector='.job-tags';
+  xiaomi.selectors.title.push('.job-header .job-title');xiaomi.selectors.jd.push('.block-content');
+  xiaomi.verifiedUrlPatterns.push(/^https:\/\/xiaomi\.jobs\.f\.mioffice\.cn\/index\/position\/\d+\/detail/);
+  const oldXiaomiRefine=xiaomi.refine;
+  xiaomi.refine=job=>location.hostname==='xiaomi.jobs.f.mioffice.cn'?{...job,location:readText('.job-info > span:first-child')}:oldXiaomiRefine(job);
+  xiaomi.version='1.1.0-current-mioffice';
+
+  const netease=ADAPTERS.find(a=>a.key==='netease');
+  netease.listUrlPatterns.push(/\/job-list\.html/);netease.listCardSelector='.posi-list-card';netease.listTitleSelector='.f-title';netease.listLocationSelector='.name > .tag[title]';
+  netease.listIdentities=async()=>{
+    if(location.pathname!=='/job-list.html')return [];
+    const data=await publicPost('/api/hr163/position/queryPage',{currentPage:pageNumber(),pageSize:10});
+    return (data?.data?.list||[]).map(p=>({title:p.name,location:p.workPlaceNameList.join('、'),url:`${location.origin}/job-detail.html?id=${p.id}&lang=zh`}));
+  };
+  const meituan=ADAPTERS.find(a=>a.key==='meituan');
+  meituan.listUrlPatterns.push(/\/web\/social(?:[?#]|$)/);meituan.listCardSelector='.position_list_item[data-jobunionid]';meituan.listTitleSelector='.postion_name .title';meituan.listLocationSelector='.city';
+  meituan.listIdentity=card=>({id:card.dataset.jobunionid,url:`${location.origin}/web/position/detail?jobUnionId=${card.dataset.jobunionid}&highlightType=social`});
+  meituan.jdExcludeHeaders=['部门介绍'];
+  const shixiseng=ADAPTERS.find(a=>a.key==='shixiseng');
+  shixiseng.listUrlPatterns.push(/^https:\/\/(?:www\.)?shixiseng\.com\/?(?:[?#]|$)/);
+  shixiseng.listCardSelector='.intern-content-href[point-id^="inn_"]';
+  shixiseng.listTitleSelector='.job-title .title';
+  shixiseng.listLocationSelector='.job-detail-style > .content:first-child';
+  shixiseng.listIdentity=card=>({url:`${location.origin}/intern/${card.getAttribute('point-id')}`});
+
+  ADAPTERS.push({
+    ...GENERIC,key:'oppo',label:'OPPO 招聘',company_name:'OPPO',hosts:['career.oppo.com','careers.oppo.com'],version:'1.0.0-current-post',priority:2,channel:'企业官网',
+    jobUrlPatterns:[/\/recruitment\/post\/\d+/],listUrlPatterns:[/\/recruitment\/post(?:\?|$)/],
+    listCardSelector:'.job__item',listTitleSelector:'.job_code',listLocationSelector:'.city_name',
+    selectors:{...GENERIC.selectors,title:['.job_duty_wrap .job_code'],company:[],jd:['.job_duty_wrap .duty_desc']},
+    refine:job=>({...job,location:readText('.job_duty_wrap .city_name')}),
+    site_verified:true,verified_at:'2026-10-25',verifiedUrlPatterns:[/^https:\/\/career\.oppo\.com\/official\/oppo\/recruitment\/post\/\d+/],
+    async lookupIdentity(title){
+      const type=new URL(location.href).searchParams.get('recruitType')||'SOCIAL-RECRUITMENT';
+      const data=await publicPost('/ats-candidate-api/open-api/position/queryPositionList',{pageNum:1,pageSize:10,publishName:title,workCityCodeList:[],jobTypeList:[],recruitTypeList:[type],shareId:''});
+      return (data?.data?.list||[]).map(p=>({title:p.publishName,location:p.workCityName,url:`${location.origin}/official/oppo/recruitment/post/${p.positionId}?recruitType=${encodeURIComponent(type)}`}));
+    },
+    async listIdentities(){
+      if(!/^\/official\/oppo\/recruitment\/post$/.test(location.pathname))return [];
+      const type=new URL(location.href).searchParams.get('recruitType')||'SOCIAL-RECRUITMENT';
+      const data=await publicPost('/ats-candidate-api/open-api/position/queryPositionList',{pageNum:pageNumber(),pageSize:10,publishName:'',workCityCodeList:[],jobTypeList:[],recruitTypeList:[type],shareId:''});
+      return (data?.data?.list||[]).map(p=>({title:p.publishName,location:p.workCityName,url:`${location.origin}/official/oppo/recruitment/post/${p.positionId}?recruitType=${encodeURIComponent(type)}`}));
+    }
+  },{
+    ...GENERIC,key:'kuaishou',label:'快手招聘',company_name:'快手',hosts:['zhaopin.kuaishou.cn'],version:'1.0.0-current-social',priority:2,channel:'企业官网',
+    jobUrlPatterns:[/\/job-info\/\d+/],listUrlPatterns:[/#\/official\/social\/(?:\?|$)/],
+    listCardSelector:'.ant-table-tbody > tr',listTitleSelector:'td:first-child',listLocationSelector:'td:nth-child(3)',
+    selectors:{...GENERIC.selectors,title:['.job-info-header-title-name'],company:[],jd:['.job-info-des-item-value']},
+    refine:job=>({...job,location:[...document.querySelectorAll('.job-info-labels-item')].find(n=>n.querySelector('.job-info-labels-item-name')?.innerText==='工作地点：')?.querySelector('.job-info-labels-item-value')?.innerText.trim()}),
+    site_verified:true,verified_at:'2026-10-25',verifiedUrlPatterns:[/^https:\/\/zhaopin\.kuaishou\.cn\/#\/official\/social\/job-info\/\d+/],
+    async listIdentities(){
+      if(!/^#\/official\/social\/(?:\?|$)/.test(location.hash))return [];
+      return chrome.runtime.sendMessage({type:'read_visible_kuaishou_cards'});
+    },
+    listIdentitySource:'visible_card_component'
+  },{
+    ...GENERIC,key:'pinduoduo',label:'拼多多招聘',company_name:'拼多多',hosts:['careers.pddglobalhr.com','careers.pinduoduo.com'],version:'1.0.0-current-campus',priority:2,channel:'企业官网',
+    jobUrlPatterns:[/\/campus\/(?:grad|intern)\/detail/],listUrlPatterns:[/\/campus\/(?:grad|intern)\/?(?:\?|$)/],
+    listBatchSelector:'[class*="index_container"] > span:nth-child(4) [class*="index_text__"]',
+    listCardSelector:'[class*="recruit-card_card"]',listTitleSelector:'[class*="recruit-card_title"] > span',listLocationSelector:'[class*="index_container"] > span:nth-child(3) [class*="index_text__"]',
+    selectors:{...GENERIC.selectors,title:['[class*="job-detail-title__"]'],company:[],jd:['[class*="job-detail-item-desc__"]']},
+    refine:job=>{const values=[...document.querySelectorAll('[class*="page-job-detail"] [class*="index_container"] [class*="index_text__"]')].map(n=>n.innerText.trim());return {...job,location:values[1],recruitment_batch:values.find(t=>/^20\d{2}届$/.test(t))||''};},
+    site_verified:true,verified_at:'2026-10-25',verifiedUrlPatterns:[/^https:\/\/careers\.pddglobalhr\.com\/campus\/(?:grad|intern)\/detail\?positionId=/],
+    async listIdentities(){
+      if(!/^\/campus\/grad\/?$/.test(location.pathname))return [];
+      const data=await publicPost('/api/careers/api/recruit/position/list',{page:pageNumber(),pageSize:10,t:null});
+      return (data?.result?.list||[]).map(p=>({title:p.name,location:p.workLocationName,url:`${location.origin}/campus/grad/detail?positionId=${p.id}`}));
+    }
+  },{
+    ...GENERIC,key:'mihoyo',label:'米哈游招聘',company_name:'米哈游',hosts:['jobs.mihoyo.com'],version:'1.0.0-current-position',priority:2,channel:'企业官网',
+    jobUrlPatterns:[/#\/position\/\d+/],listUrlPatterns:[/#\/position\/?(?:\?|$)/],
+    listCardSelector:'[class*="jobItem___"]',listTitleSelector:'[class*="jobName___"]',listLocationSelector:'[class*="subTitle___"] > span:first-child',
+    selectors:{...GENERIC.selectors,title:['[class*="detailHeader___"] [class*="jobTitle___"]'],company:[],jd:['[class*="describeBlock___"] [class*="blockContent___"]']},
+    refine:job=>({...job,location:readText('[class*="detailHeader___"] [class*="subTitle___"] > span:first-child')}),
+    site_verified:true,verified_at:'2026-10-25',verifiedUrlPatterns:[/^https:\/\/jobs\.mihoyo\.com\/#\/position\/\d+/],
+    async listIdentities(){
+      if(!/^#\/position\/?(?:\?|$)/.test(location.hash))return [];
+      const data=await publicPost('https://ats.openout.mihoyo.com/ats-portal/v1/job/list',{pageNo:pageNumber(),pageSize:10,channelDetailIds:[1],hireType:0});
+      return (data?.data?.list||[]).map(p=>({title:p.title,location:p.addressDetailList.map(a=>a.addressDetail).join('、'),url:`${location.origin}/#/position/${p.id}`}));
+    }
+  });
+  HOST_COMPANY['career.oppo.com']='OPPO';
 
   const STATUS_TEXT_MAP = [
     [/已投递|投递成功|已申请|申请成功|已提交/, 'applied'],

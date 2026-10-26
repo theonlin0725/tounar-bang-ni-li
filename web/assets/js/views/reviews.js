@@ -78,18 +78,35 @@ export async function renderReviews(container,{gen,onChanged}={}) {
     const pct=r.total_confidence==null?null:Math.round(r.total_confidence*100);
     const threshold=['offer','rejected','closed'].includes(pre.status)?90:80;
     el.append(h('h3',{class:'tn-review-title',text:pre.company_name||pre.job_title?`系统判断：${r.mail_received_at?fmtDateTime(r.mail_received_at)+' 收到的邮件，是 ':''}${pre.company_name||cs[0]?.company_name||'待补充公司'} · ${pre.job_title||cs[0]?.job_title||'待补充岗位'}的${STATUS_LABELS[pre.status]||'招聘进展'}`:r.summary}),h('p',{class:'tn-small tn-muted',text:`${LABELS[r.kind]||'线索待确认'} · ${r.mail_received_at?'邮件收到于 '+fmtDateTime(r.mail_received_at):fmtDateTime(r.created_at)}`}),h('p',{text:pct===null?'系统证据不足，请你确认。':`系统把握度 ${pct}%（自动更新要求至少 ${threshold}%，且记录唯一、状态不回退；请你确认归属和状态）`}));
-    const evidence=h('details',{},h('summary',{text:'查看邮件 / 页面证据'}));
-    for(const [k,label] of [['subject_excerpt','邮件主题'],['from_domain','发件域名'],['body_excerpt','正文片段'],['status_text','页面状态']])if(e[k])evidence.append(h('p',{text:`${label}：${String(e[k]).slice(0,300)}`}));
-    if(r.mail_received_at)evidence.append(h('p',{text:'收到日期：'+fmtDateTime(r.mail_received_at)}));el.append(evidence);
+    const evidence=h('details',{'data-test':'review-evidence'},h('summary',{text:'查看邮件 / 页面证据'}));
+    const src=r.source||null;
+    if(src&&src.type==='page'){
+      const line=(label,value)=>value?h('p',{text:`${label}：${String(value).slice(0,300)}`}):null;
+      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源：网页采集'}));
+      evidence.append(...[line('原岗位标题',src.job_title),line('公司',src.company_name),line('工作地点',src.location),line('招聘批次',src.recruitment_batch),line('站点',src.site_key),line('采集时间',src.captured_at&&fmtDateTime(src.captured_at)),line('页面状态原文',src.status_text)].filter(Boolean));
+      if(src.job_url)evidence.append(h('p',{},h('a',{href:src.job_url,target:'_blank',rel:'noopener noreferrer',text:'打开原网页'}),h('span',{class:'tn-small tn-muted',text:` ${src.job_url}`})));
+      if(src.jd_excerpt)evidence.append(h('pre',{class:'tn-evidence',style:'white-space:pre-wrap;max-height:180px;overflow:auto',text:src.jd_excerpt}));
+      if(src.missing_fields?.length)evidence.append(h('p',{class:'tn-small tn-muted',text:'缺失字段：'+src.missing_fields.map(f=>({company_name:'公司',job_title:'岗位',location:'城市',recruitment_batch:'批次',jd_summary:'JD'}[f]||f)).join('、')}));
+      if(!src.job_title&&!src.company_name&&!src.jd_excerpt)evidence.append(h('p',{class:'tn-small tn-muted',text:'这条记录没有保存到可展示的页面字段；可以先打开原网页核对，或直接按页面信息新建。'}));
+    }else if(src&&src.type==='mail'){
+      const line=(label,value)=>value?h('p',{text:`${label}：${String(value).slice(0,300)}`}):null;
+      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源：招聘邮件'}));
+      evidence.append(...[line('邮件主题',src.subject_excerpt||e.subject_excerpt),line('发件域名',src.from_domain||e.from_domain),line('收信日期',(src.received_at||r.mail_received_at)&&fmtDateTime(src.received_at||r.mail_received_at)),line('页面状态原文',src.status_text)].filter(Boolean));
+      if(src.body_excerpt||e.body_excerpt)evidence.append(h('pre',{class:'tn-evidence',style:'white-space:pre-wrap;max-height:180px;overflow:auto',text:(src.body_excerpt||e.body_excerpt||'').slice(0,600)}));
+      else evidence.append(h('p',{class:'tn-small tn-muted',text:'这封邮件只保存了主题和发件信息（授权范围是“仅读邮件头”），因此没有正文可展开。'}));
+    }else{
+      evidence.append(h('p',{class:'tn-small tn-muted',text:'来源记录不可用（原始事件或邮件可能已被删除）。'}));
+    }
+    el.append(evidence);
     const edit=h('div',{class:'tn-inline-form',hidden:true,'data-test':'review-edit'}),err=h('div',{'data-test':'review-error'});
     const search=h('input',{class:'tn-input',type:'search',placeholder:'按公司 / 岗位搜索本人台账','data-test':'review-search'});
     const select=h('select',{class:'tn-select','data-test':'review-target'});
-    function options(rows){clear(select);select.append(h('option',{value:'',text:'请选择本人台账记录'}));for(const a of rows)select.append(h('option',{value:a.application_id||a.id,text:`${a.company_name} · ${a.job_title}`}));select.append(h('option',{value:'__new__',text:'按邮件新建一条'}));select.value=selected;if(select.value!==selected)selected='';}
+    function options(rows){clear(select);select.append(h('option',{value:'',text:'请选择本人台账记录'}));for(const a of rows)select.append(h('option',{value:a.application_id||a.id,text:`${a.company_name} · ${a.job_title}`}));select.append(h('option',{value:'__new__',text:(r.source?.type==='page'?'按页面信息新建一条':'按邮件新建一条')}));select.value=selected;if(select.value!==selected)selected='';}
     options(cs);
     const status=h('select',{class:'tn-select','data-test':'review-status-select'});for(const s of STATUS_ORDER)status.append(h('option',{value:s,text:STATUS_LABELS[s]}));status.value=pre.status||'applied';
     const time=h('input',{class:'tn-input',type:'datetime-local','data-test':'review-switch-at',value:localInput(pre.applied_at||(r.mail_inferred_applied_at_enabled?r.mail_received_at:null))});
     const timeWrap=h('label',{},r.mail_inferred_applied_at_enabled?'投递时间（北京时间；默认据原信推断，可修改）':'实际投递时间（北京时间）',time);
-    const company=h('input',{class:'tn-input',value:pre.company_name||cs[0]?.company_name||'',placeholder:'公司名（可手改）','data-test':'review-create-company'}), title=h('input',{class:'tn-input',value:pre.job_title||cs[0]?.job_title||'',placeholder:'岗位名（可手改）','data-test':'review-create-title'});
+    const company=h('input',{class:'tn-input',value:pre.company_name||cs[0]?.company_name||r.source?.company_name||'',placeholder:'公司名（可手改）','data-test':'review-create-company'}), title=h('input',{class:'tn-input',value:pre.job_title||cs[0]?.job_title||r.source?.job_title||'',placeholder:'岗位名（可手改）','data-test':'review-create-title'});
     // 人工修改：公司和岗位始终可编辑；选中已有记录时改动会写回该记录，未选记录时按这两项新建。
     const newFields=h('div',{},h('label',{},'公司',company),h('label',{},'岗位',title));
     async function targetChanged(){selected=select.value;const request=++searchSeq;
@@ -102,7 +119,9 @@ export async function renderReviews(container,{gen,onChanged}={}) {
     edit.append(search,select,newFields,h('label',{},'状态',status),timeWrap,save);
     const confirm=h('button',{class:'tn-btn tn-btn-primary tn-btn-sm','data-test':'review-confirm',text:selected?'对，更新台账':'选一条记录并更新',onclick:()=>selected&&selected!=='__new__'?act(false):(edit.hidden=false,search.focus())});
     const change=h('button',{class:'tn-btn tn-btn-sm','data-test':'review-change',text:'不对，我来改',onclick:()=>{edit.hidden=!edit.hidden;targetChanged();}});
-    const create=h('button',{class:'tn-btn tn-btn-sm','data-test':'review-create',text:'按邮件新建一条',onclick:()=>{edit.hidden=false;selected='__new__';select.value=selected;targetChanged();}});
+    const isPageSource=(r.source?.type==='page');
+    const createLabel=isPageSource?'按页面信息新建一条':'按邮件新建一条';
+    const create=h('button',{class:'tn-btn tn-btn-sm','data-test':'review-create',text:createLabel,onclick:()=>{edit.hidden=false;selected='__new__';select.value=selected;targetChanged();}});
     const dismiss=h('button',{class:'tn-btn tn-btn-sm','data-test':'review-dismiss',text:'这不是招聘进展，忽略',onclick:async()=>{if(await confirmDialog({title:'忽略这条线索？',message:'不会修改台账记录。',confirmLabel:'忽略'}))await act(false,'dismiss');}});
     el.append(h('div',{class:'tn-action-row'},confirm,change,dismiss,create),edit,err);
     if(failures.has(r.id)){el.classList.add('tn-review-failed');err.append(h('p',{class:'tn-inline-msg err',text:failures.get(r.id)}));}
@@ -120,7 +139,7 @@ export async function renderReviews(container,{gen,onChanged}={}) {
           if(selected==='__new__'||(!selected&&c&&t)){changes.company_name=c;changes.job_title=t;action='create';}
         }
         if(action==='create'&&(!changes.company_name||!changes.job_title))throw new Error('新建需要公司名和岗位名');
-        if(action!=='dismiss'&&action!=='create'&&!selected){edit.hidden=false;throw new Error('请先搜索选择一条本人记录；或填写公司/岗位后按邮件新建');}
+        if(action!=='dismiss'&&action!=='create'&&!selected){edit.hidden=false;throw new Error('请先搜索选择一条本人记录；或填写公司/岗位后新建');}
         await submit(r,{action,target:action==='dismiss'||action==='create'?null:selected,changes});failures.delete(r.id);await load();
       }catch(e){if(active()){const text=humanError(e);err.append(h('p',{class:'tn-inline-msg err',text}));if(e.status===409){toast(text,'err');await load();}}}
       finally{working=false;[confirm,change,dismiss,save,create].forEach(b=>b.disabled=false);}

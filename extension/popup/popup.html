@@ -18,19 +18,20 @@
     <h2>1. 后台连接</h2>
     <div class="row">
       <input id="server-url" type="url" placeholder="https://你的帮你理域名" spellcheck="false">
-      <button id="save-server" class="secondary">保存</button>
+      <button id="save-server" class="secondary">保存并授权连接</button>
     </div>
     <div class="row">
       <button id="probe-local" class="secondary" data-testid="probe-local">检测本机服务</button>
     </div>
     <p id="probe-result" class="hint hidden"></p>
     <p id="health" class="hint">未检测</p>
+    <p class="hint">保存地址或检测本机服务时，会申请连接该后台的权限。</p>
   </section>
 
   <section id="pair-section">
     <h2>2. 设备配对</h2>
     <div id="unpaired">
-      <p>在已登录的帮你理网页「设置 → 浏览器插件」中输入下面的配对码：</p>
+      <p>在已登录的帮你理网页「设置 → 数据与授权 → 插件绑定」中输入下面的配对码：</p>
       <div id="pairing-box" class="hidden">
         <div id="pairing-code" class="code" data-testid="pairing-code">--------</div>
         <p id="pairing-expire" class="hint"></p>
@@ -56,6 +57,7 @@
   <section id="queue-section">
     <h2>3. 本地队列</h2>
     <p>待上传事件：<strong id="queue-count">0</strong> 条</p>
+    <button id="clear-queue" class="link">清空待上传事件</button>
     <p id="last-error" class="error hidden"></p>
     <p class="hint">后台不可达时事件会留在本地；相同事件重复上传会被服务端幂等去重。</p>
   </section>
@@ -66,9 +68,10 @@
     <div class="row">
       <button id="grant-current" class="secondary" data-testid="grant-current">将本站设为招聘网站并授权</button>
       <button id="capture-now" class="secondary" data-testid="capture-now">采集当前页</button>
+      <button id="toggle-pause" class="secondary">暂停采集</button>
       <button id="revoke-all" class="link">全部撤销</button>
     </div>
-    <p id="capture-status" class="hint" data-testid="capture-status">尚未采集</p>
+    <p id="capture-status" role="status" aria-live="polite" aria-atomic="true" class="hint" data-testid="capture-status">尚未采集</p>
     <details>
       <summary>内置适配的招聘站点（其余站点授权后自动用通用识别）</summary>
       <div id="site-list"></div>
@@ -77,7 +80,7 @@
       <button id="grant-selected">授权选中站点</button>
     </div>
     <p id="sites-status" class="hint"></p>
-    <p class="warn">所有已授权站点都会无感采集：内置站点用专属适配器（目前仅字节跳动经真实验证，其余为草案选择器），其余站点用通用识别（结构化数据 + 投递按钮信号）。聊天/沟通页面一律不采集。</p>
+    <p class="warn">所有已授权站点都会无感采集：内置站点用专属适配器（覆盖情况以逐站验收报告为准），其余站点用通用识别（结构化数据 + 投递按钮信号）。聊天/沟通页面一律不采集。</p>
   </section>
 
   <section id="learned-section">
@@ -88,7 +91,7 @@
   </section>
 
   <footer>
-    <p>不上传页面正文、表单填写内容、Cookie 或账号密码。</p>
+    <p>仅上传岗位字段与 JD 正文；不读取表单内容、Cookie 或账号密码。</p>
   </footer>
   <script src="../lib/common.js"></script>
   <script src="../lib/learned.js"></script>

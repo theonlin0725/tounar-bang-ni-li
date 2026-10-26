@@ -9,8 +9,7 @@ const FLUSH_ALARM = 'tounar-flush';
 const HEARTBEAT_ALARM = 'tounar-heartbeat';
 const PAIRING_ALARM = 'tounar-pairing-poll';
 const MAX_BATCH = 50;
-const MAX_ATTEMPTS = 5;
-let flushing = false;
+let flushPromise = null;
 
 async function updateBadge() {
   try {
@@ -20,16 +19,25 @@ async function updateBadge() {
   } catch { /* ignore */ }
 }
 
-async function flushQueue() {
-  if (flushing) return { skipped: 'flush_in_progress' };
-  flushing = true;
+function flushQueue() {
+  if (flushPromise) return flushPromise;
+  flushPromise = runFlush().finally(() => { flushPromise = null; });
+  return flushPromise;
+}
+async function runFlush() {
   try {
     const settings = await getSettings();
     if (!settings.deviceToken) {
       await updateBadge();
       return { skipped: 'not_paired', queued: await Queue.count() };
     }
-    const pending = await Queue.list(MAX_BATCH);
+    const available = await Queue.list(MAX_BATCH);
+    const pending = []; let bytes = 0;
+    for (const item of available) {
+      const size = new TextEncoder().encode(JSON.stringify(item)).length;
+      if (pending.length && bytes + size > 1000000) break;
+      pending.push(item); bytes += size;
+    }
     if (!pending.length) return { flushed: 0 };
     let response;
     try {
@@ -47,12 +55,10 @@ async function flushQueue() {
     for (const item of response.results || []) {
       const local = pending.find((p) => p.client_event_id === item.client_event_id);
       if (!local) continue;
-      if (item.accepted || item.duplicate) {
+      if ((item.accepted || item.duplicate) && item.processing_state !== 'failed') {
         acceptedIds.push(item.client_event_id);
       } else if (item.error && item.error.retryable === false) {
-        await Queue.markAttempt(item.client_event_id, item.error.code || 'REJECTED');
-        const refreshed = (await Queue.list(200)).find((p) => p.client_event_id === item.client_event_id);
-        if (!refreshed || (refreshed.attempts || 0) >= MAX_ATTEMPTS) dropped.push(item.client_event_id);
+        dropped.push(item.client_event_id);
       } else {
         await Queue.markAttempt(item.client_event_id, item.error?.code || 'RETRYABLE');
       }
@@ -64,6 +70,7 @@ async function flushQueue() {
         duplicate: !!item.duplicate,
         application_id: item.application_id || null,
         review_item_id: item.review_item_id || null,
+        review_reason: item.review_reason || null,
         processing_state: item.processing_state || null,
         error: item.error || null,
         at: new Date().toISOString()
@@ -71,16 +78,21 @@ async function flushQueue() {
     }
     if (Object.keys(resultMap).length) {
       const prev = (await getSettings()).lastEventResults || {};
-      await setSettings({ lastEventResults: { ...prev, ...resultMap }, lastEventResultsAt: new Date().toISOString() });
+      await setSettings({ lastEventResults: Object.fromEntries(Object.entries({ ...prev, ...resultMap }).sort((a,b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0,300)), lastEventResultsAt: new Date().toISOString() });
     }
     await Queue.remove([...acceptedIds, ...dropped]);
     if (acceptedIds.length) {
       await setSettings({ lastUploadAt: new Date().toISOString(), lastError: null });
     }
     await updateBadge();
-    return { flushed: acceptedIds.length, dropped: dropped.length, remaining: await Queue.count() };
+    const remaining = await Queue.count();
+    if (remaining && (acceptedIds.length || dropped.length)) {
+      const next = await runFlush();
+      return {flushed:acceptedIds.length + (next.flushed||0), dropped:dropped.length + (next.dropped||0), remaining:await Queue.count()};
+    }
+    return { flushed: acceptedIds.length, dropped: dropped.length, remaining };
   } finally {
-    flushing = false;
+    if (await Queue.count()) chrome.alarms.create(FLUSH_ALARM, { delayInMinutes: 0.5 });
   }
 }
 
@@ -94,6 +106,7 @@ async function heartbeat() {
   if (!settings.deviceToken) return { skipped: 'not_paired' };
   try {
     await Api.heartbeat(settings.serverUrl, settings.deviceToken);
+    if (['NETWORK_UNREACHABLE','TIMEOUT','BACKEND_PERMISSION_REQUIRED'].includes(settings.lastError?.code)) await setSettings({lastError:null});
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.code || 'HEARTBEAT_FAILED' };
@@ -209,9 +222,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message?.type) {
       case 'enqueue_event': {
+        const settings = await getSettings();
+        if (settings.capturePaused) { sendResponse({ok:false,error:'CAPTURE_PAUSED'}); return; }
+        if (sender.tab) {
+          const origin = new URL(sender.url || sender.tab.url).origin;
+          if (!await chrome.permissions.contains({ origins:[origin+'/*'] })) { sendResponse({ok:false,error:'PERMISSION_REVOKED'}); return; }
+        }
         const result = await Queue.add(message.event);
         await updateBadge();
-        if (!result.duplicate) setTimeout(() => { flushQueue().catch(() => {}); }, 300);
+        flushQueue().catch(() => {});
         sendResponse({ ok: true, ...result, queued: await Queue.count() });
         return;
       }
@@ -233,7 +252,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             lastUploadAt: settings.lastUploadAt,
             lastError: settings.lastError,
             pairedOwnerHint: settings.pairedOwnerHint,
-            paired: !!settings.deviceToken
+            paired: !!settings.deviceToken,
+            capturePaused: !!settings.capturePaused,
+            lastCapture: settings.lastCapture || null,
+            lastEventResults: settings.lastEventResults || {}
           },
           queue: count,
           health,
@@ -243,8 +265,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case 'set_server_url': {
         await setSettings({ serverUrl: String(message.serverUrl || '').replace(/\/$/, '') });
+        flushQueue().catch(() => {});
         sendResponse({ ok: true });
         return;
+      }
+      case 'sync_permissions': {
+        await syncContentScripts(); sendResponse({ok:true}); return;
+      }
+      case 'set_capture_paused': {
+        await setSettings({capturePaused:!!message.paused});
+        await syncContentScripts();
+        if (!message.paused) await injectAuthorizedTabs();
+        sendResponse({ok:true}); return;
+      }
+      case 'clear_queue': {
+        // Let an in-flight upload settle before deciding which local events remain.
+        await flushPromise?.catch(() => {});
+        const pending = await Queue.list(10000);
+        const settings = await getSettings();
+        const results = {...settings.lastEventResults};
+        for (const event of pending) results[event.client_event_id] = {
+          accepted:false, processing_state:'cancelled', at:new Date().toISOString(),
+          error:{code:'LOCAL_QUEUE_CLEARED',message:'未上传事件已由你清空',retryable:false}
+        };
+        await setSettings({lastEventResults:results});
+        await Queue.remove(pending.map(event => event.client_event_id));
+        await updateBadge(); sendResponse({ok:true,cleared:pending.length}); return;
       }
       case 'event_result': {
         const clientEventId = String(message.clientEventId || '');
@@ -254,44 +300,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = stored[clientEventId] || null;
         let status = 'queued';
         if (result) {
-          if (result.error && !result.accepted) status = 'rejected';
-          else if (result.application_id) status = 'entered';
+          if (result.processing_state === 'cancelled') status = 'cancelled';
+          else if (result.processing_state === 'failed') status = 'failed';
+          else if (result.error && !result.accepted) status = result.error.retryable ? 'queued' : 'rejected';
+          else if (result.application_id && result.processing_state === 'applied') status = 'entered';
           else if (result.review_item_id) status = 'review';
           else status = 'accepted';
         }
         sendResponse({ ok: true, status, result, queued: await Queue.count() });
         return;
       }
-      case 'capture_current_tab': {
-        // 授权后立即在当前标签页识别并采集：注入脚本（幂等）+ 唤醒 + 等结果
-        const tabId = Number(message.tabId);
-        const origin = String(message.origin || '');
-        const startedAt = Date.now();
-        try {
-          if (!tabId) throw Object.assign(new Error('缺少 tabId'), { code: 'NO_TAB' });
-          const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
-          if (!hasPermission) throw Object.assign(new Error('该站点未授权'), { code: 'NO_PERMISSION' });
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js']
-          }).catch(() => {});
-          let response = null;
-          try {
-            response = await chrome.tabs.sendMessage(tabId, { type: 'tounar_capture_now', reason: message.reason || 'authorize' });
-          } catch (error) {
-            throw Object.assign(new Error(`无法连接页面脚本：${error.message}`), { code: 'NO_CONTENT_SCRIPT' });
-          }
-          const elapsedMs = Date.now() - startedAt;
-          const status = response?.ok ? 'captured' : 'no_job';
-          await setSettings({ lastCapture: { at: new Date().toISOString(), origin, elapsedMs, status, job: response?.job || null } });
-          sendResponse({ ok: true, elapsedMs, status, result: response });
-        } catch (error) {
-          const status = error?.code === 'NO_PERMISSION' ? 'unauthorized' : 'error';
-          await setSettings({ lastCapture: { at: new Date().toISOString(), origin, elapsedMs: Date.now() - startedAt, status, message: error.message } });
-          sendResponse({ ok: false, error: { code: error?.code || 'CAPTURE_FAILED', message: error.message } });
-        }
-        return;
+      case 'read_visible_kuaishou_cards': {
+        const url = new URL(sender.url || 'https://invalid.local');
+        if (!sender.tab?.id || url.hostname !== 'zhaopin.kuaishou.cn' || (await getSettings()).capturePaused ||
+            !await chrome.permissions.contains({origins:[url.origin+'/*']})) { sendResponse([]); return; }
+        // Only the public identity bound to each rendered row is returned. Never
+        // copy the component's full record (which may contain unrelated fields),
+        // invoke site handlers, or replay the site's signed network requests.
+        const results = await chrome.scripting.executeScript({target:{tabId:sender.tab.id},world:'MAIN',func:() => {
+          if (location.hostname !== 'zhaopin.kuaishou.cn' || !/^#\/official\/social\/(?:\?|$)/.test(location.hash)) return [];
+          return [...document.querySelectorAll('.ant-table-tbody > tr')].flatMap(row => {
+            if (!row.getClientRects().length) return [];
+            const title = row.querySelector('td:first-child')?.innerText.trim();
+            const locationText = row.querySelector('td:nth-child(3)')?.innerText.trim();
+            const key = Object.keys(row).find(k => /^__react(?:Fiber|InternalInstance)\$/.test(k));
+            let fiber = key && row[key];
+            for (let depth=0; fiber && depth<6; depth++,fiber=fiber.return) {
+              const record = fiber.memoizedProps?.record;
+              if (record?.name === title && /^\d+$/.test(String(record.id)))
+                return [{title,location:locationText,url:`${location.origin}/#/official/social/job-info/${record.id}`}];
+            }
+            return [];
+          });
+        }});
+        sendResponse(results[0]?.result || []); return;
       }
+      case 'capture_current_tab': { sendResponse(await captureTab(message)); return; }
       case 'start_pairing': {
         try {
           const pending = await startPairing({ serverUrl: message.serverUrl, deviceName: message.deviceName });
@@ -355,3 +399,84 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 updateBadge();
 flushQueue().catch(() => {});
+
+let registration = Promise.resolve();
+function syncContentScripts() {
+  registration = registration.catch(() => {}).then(async () => {
+    const settings = await getSettings();
+    const all = await chrome.permissions.getAll();
+    const matches = settings.capturePaused ? [] : (all.origins || []);
+    const registered = await chrome.scripting.getRegisteredContentScripts();
+    if (registered.some(s => s.id === 'tounar-tracker')) {
+      if (matches.length) await chrome.scripting.updateContentScripts([{id:'tounar-tracker',matches,js:['lib/learned.js','content/adapters.js','content/tracker.js'],runAt:'document_idle',persistAcrossSessions:true}]);
+      else await chrome.scripting.unregisterContentScripts({ids:['tounar-tracker']});
+    } else if(matches.length) {
+      await chrome.scripting.registerContentScripts([{id:'tounar-tracker',matches,js:['lib/learned.js','content/adapters.js','content/tracker.js'],runAt:'document_idle',persistAcrossSessions:true}]);
+    }
+  });
+  return registration;
+}
+chrome.permissions.onAdded.addListener(permissions => {
+  (async () => {
+    await syncContentScripts();
+    if((await getSettings()).capturePaused) return;
+    // Complete the explicit authorization even if Chrome closes the popup.
+    const candidates = (await chrome.tabs.query({})).filter(tab => {
+      if(!/^https?:/.test(tab.url || '')) return false;
+      const url = new URL(tab.url);
+      return (permissions.origins || []).some(pattern => {
+        const match = pattern.match(/^(\*|https?):\/\/([^/]+)\//);
+        if(!match || match[1] !== '*' && match[1] !== url.protocol.slice(0,-1)) return false;
+        const host = match[2].split(':')[0];
+        return host === '*' || host === url.hostname || host.startsWith('*.') && (url.hostname === host.slice(2) || url.hostname.endsWith(host.slice(1)));
+      });
+    }).sort((a,b) => (b.lastAccessed||b.id)-(a.lastAccessed||a.id));
+    const tab=candidates[0];
+    if(tab) await captureTab({tabId:tab.id,origin:new URL(tab.url).origin,reason:'authorize'});
+  })().catch(() => {});
+});
+chrome.permissions.onRemoved.addListener(() => syncContentScripts().catch(() => {}));
+chrome.runtime.onStartup.addListener(() => syncContentScripts().catch(() => {}));
+syncContentScripts().catch(() => {});
+
+async function injectAuthorizedTabs() {
+  for (const tab of await chrome.tabs.query({})) {
+    if(!/^https?:/.test(tab.url || '')) continue;
+    const origin = new URL(tab.url).origin;
+    if(await chrome.permissions.contains({origins:[origin+'/*']})) {
+      await chrome.scripting.executeScript({target:{tabId:tab.id},files:['lib/learned.js','content/adapters.js','content/tracker.js']}).catch(()=>{});
+    }
+  }
+}
+
+async function captureTab(message) {
+        const tabId = Number(message.tabId);
+        const origin = String(message.origin || '');
+        const startedAt = Date.now();
+        try {
+          if (!tabId) throw Object.assign(new Error('缺少 tabId'), { code: 'NO_TAB' });
+          const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+          if (!hasPermission) throw Object.assign(new Error('该站点未授权'), { code: 'NO_PERMISSION' });
+          if ((await getSettings()).capturePaused) throw Object.assign(new Error('采集已暂停，请先恢复'), {code:'CAPTURE_PAUSED'});
+          await syncContentScripts();
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js']
+          });
+          let response = null;
+          try {
+            response = await chrome.tabs.sendMessage(tabId, { type: 'tounar_capture_now', reason: message.reason || 'authorize' });
+          } catch (error) {
+            throw Object.assign(new Error(`无法连接页面脚本：${error.message}`), { code: 'NO_CONTENT_SCRIPT' });
+          }
+          const elapsedMs = Date.now() - startedAt;
+          const status = response?.status || 'failed';
+          await setSettings({ lastCapture: { ...response, at: new Date().toISOString(), origin, elapsedMs, status } });
+          return { ok: true, elapsedMs, status, result: response };
+        } catch (error) {
+          const status = error?.code === 'NO_PERMISSION' ? 'unauthorized' : 'error';
+          await setSettings({ lastCapture: { at: new Date().toISOString(), origin, elapsedMs: Date.now() - startedAt, status, message: error.message } });
+          return { ok: false, error: { code: error?.code || 'CAPTURE_FAILED', message: error.message } };
+        }
+
+}

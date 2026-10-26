@@ -48,8 +48,8 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.ok(full.json.data.jd_text.includes('任职要求'));
   });
 
-  it('JD 超过 2 万字符时置空并标记截断，不静默丢正文', async () => {
-    const huge = 'x'.repeat(20001);
+  it('JD 超过 10 万字符时明确拒绝，不静默丢正文', async () => {
+    const huge = 'x'.repeat(100001);
     const res = await server.eventBatch(token, [evt('job_captured', 'evt_capture_big', {
       company_name: '超长公司', job_title: '超长JD岗', site_job_id: 'cap-big',
       job_url: 'https://jobs.example.com/job/cap-big', jd_summary: 'x', jd_text: huge

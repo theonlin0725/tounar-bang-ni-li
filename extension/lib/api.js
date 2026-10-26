@@ -58,9 +58,13 @@
           retryable: true
         };
       }
+      let missingPermission = false;
+      try { missingPermission = !!globalThis.chrome?.permissions && !await chrome.permissions.contains({origins:[new URL(base).origin+'/*']}); } catch { /* retain network diagnostic */ }
       throw {
-        code: 'NETWORK_UNREACHABLE',
-        message: `连不上 ${base}：该地址上没有服务在监听（后台可能没启动），或被浏览器拦截`,
+        code: missingPermission ? 'BACKEND_PERMISSION_REQUIRED' : 'NETWORK_UNREACHABLE',
+        message: missingPermission
+          ? `浏览器未能连接 ${base}，插件尚未获得该后台的访问权限。请点击后台地址旁的“保存并授权连接”，允许后重试。`
+          : `无法连接 ${base}：请求未成功，可能是服务未启动、代理或浏览器限制；仅凭此错误无法判断服务是否在监听。`,
         retryable: true
       };
     } finally {

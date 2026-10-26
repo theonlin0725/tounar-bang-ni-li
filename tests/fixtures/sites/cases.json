@@ -157,7 +157,7 @@
     "expected": {
       "company_name": "米哈游",
       "job_title": "资深Unreal工具开发（关卡PCG方向）",
-      "location": "",
+      "location": "上海",
       "recruitment_batch": "",
       "jd_summary": "1. 解决策划、美术处理关卡原型摸索过程中的资源制作问题； 2. 深度参与关卡制作流程梳理与标准制定，基于编辑器工具持续优化策划、美术日常制作效率； 3. 根据",
       "site_job_id": "9707",
@@ -167,7 +167,7 @@
       "company_name": "米哈游",
       "location": "上海"
     },
-    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对"
+    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对；2026-10-26 修复城市漏采后使用原已记录的 truth.location，未改动原真值。"
   },
   {
     "site": "mihoyo",
@@ -177,7 +177,7 @@
     "expected": {
       "company_name": "米哈游",
       "job_title": "资深Unreal工具开发（构建方向）-预研项目",
-      "location": "",
+      "location": "上海",
       "recruitment_batch": "",
       "jd_summary": "岗位职责 1. 游戏打包相关的管线与工具开发 -根据项目需求，设计适配于多平台的包体资源管理方案； -深入引擎打包逻辑以及工具链底层，持续优化打包效率； -开发",
       "site_job_id": "9705",
@@ -187,7 +187,7 @@
       "company_name": "米哈游",
       "location": "上海"
     },
-    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对"
+    "note": "公司名来自企业自建招聘域名（jobs.mihoyo.com），2026-10-24 独立核对；2026-10-26 修复城市漏采后使用原已记录的 truth.location，未改动原真值。"
   },
   {
     "site": "netease",

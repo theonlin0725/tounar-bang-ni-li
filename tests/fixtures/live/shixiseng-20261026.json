@@ -1,0 +1,171 @@
+{
+  "site": "shixiseng",
+  "sampled_at": "2026-10-26T01:16:42.671Z",
+  "source": "Independent current rendered cards and actual clicks; IDs from original point-id attributes, JD from visible body boundaries. No extractor used.",
+  "list_url": "https://www.shixiseng.com/",
+  "click_selector": ".intern-content-href .title",
+  "dismiss_selector": ".closeOpen",
+  "list": [
+    {
+      "company_name": "赛诺菲",
+      "job_title": "Communication Intern-Beijing-R2876243",
+      "location": "北京",
+      "site_job_id": "inn_3vmiomn9tqr2",
+      "job_url": "https://www.shixiseng.com/intern/inn_3vmiomn9tqr2",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "芒果TV",
+      "job_title": "道具组",
+      "location": "长沙",
+      "site_job_id": "inn_pbvru9vpkkcx",
+      "job_url": "https://www.shixiseng.com/intern/inn_pbvru9vpkkcx",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "小米",
+      "job_title": "国际电商运营-实习生-2027届-西语/法语/德语/荷兰语(A01550A)",
+      "location": "武汉",
+      "site_job_id": "inn_difhbijfhat5",
+      "job_url": "https://www.shixiseng.com/intern/inn_difhbijfhat5",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "百度",
+      "job_title": "数据分析实习生(J106851)",
+      "location": "北京",
+      "site_job_id": "inn_l0tcvlm0v5cb",
+      "job_url": "https://www.shixiseng.com/intern/inn_l0tcvlm0v5cb",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "爱奇艺",
+      "job_title": "活动执行实习生(A215761)",
+      "location": "北京",
+      "site_job_id": "inn_yivena33n4d3",
+      "job_url": "https://www.shixiseng.com/intern/inn_yivena33n4d3",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "字节跳动",
+      "job_title": "商家发品增长产品实习生 - TikTok Shop",
+      "location": "北京",
+      "site_job_id": "inn_zawdudgscnuh",
+      "job_url": "https://www.shixiseng.com/intern/inn_zawdudgscnuh",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "食品饮品客户运营实习生-【电商】（北京）",
+      "location": "北京",
+      "site_job_id": "inn_6j2hoemcaaxc",
+      "job_url": "https://www.shixiseng.com/intern/inn_6j2hoemcaaxc",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "爱德曼公关",
+      "job_title": "项目组行政实习生",
+      "location": "北京",
+      "site_job_id": "inn_qk3dukxudsbh",
+      "job_url": "https://www.shixiseng.com/intern/inn_qk3dukxudsbh",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "艾昆纬",
+      "job_title": "卫生经济与真实世界洞察实习生 Health Economics & Real World Insights Intern",
+      "location": "北京",
+      "site_job_id": "inn_e17elbs67oyx",
+      "job_url": "https://www.shixiseng.com/intern/inn_e17elbs67oyx",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "英特尔",
+      "job_title": "JR0288426 编译器工程师",
+      "location": "上海",
+      "site_job_id": "inn_dvvaaeaddy5c",
+      "job_url": "https://www.shixiseng.com/intern/inn_dvvaaeaddy5c",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "哔哩哔哩",
+      "job_title": "日语运营实习生",
+      "location": "上海",
+      "site_job_id": "inn_5gbtlvvpltni",
+      "job_url": "https://www.shixiseng.com/intern/inn_5gbtlvvpltni",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "滴滴",
+      "job_title": "Artificial Intelligence-后端研发实习生",
+      "location": "北京",
+      "site_job_id": "inn_u21taopliugn",
+      "job_url": "https://www.shixiseng.com/intern/inn_u21taopliugn",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "雀巢中国",
+      "job_title": "天津雀巢实习生-设备维修",
+      "location": "天津",
+      "site_job_id": "inn_cj3akujod6rm",
+      "job_url": "https://www.shixiseng.com/intern/inn_cj3akujod6rm",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "德勤中国",
+      "job_title": "德勤咨询-上海-技术与转型-数字化-项目实习生",
+      "location": "上海",
+      "site_job_id": "inn_xrm5pzjrwxqg",
+      "job_url": "https://www.shixiseng.com/intern/inn_xrm5pzjrwxqg",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "大众点评城市运营实习生（东北区域）",
+      "location": "沈阳",
+      "site_job_id": "inn_kdhvubkemgc4",
+      "job_url": "https://www.shixiseng.com/intern/inn_kdhvubkemgc4",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "赛诺菲",
+      "job_title": "Communication Intern-Beijing-R2876243",
+      "location": "北京",
+      "site_job_id": "inn_3vmiomn9tqr2",
+      "job_url": "https://www.shixiseng.com/intern/inn_3vmiomn9tqr2",
+      "recruitment_batch": "",
+      "jd_text": "JOB PURPOSE:\n\nSupport corporate communications, especially vaccine related projects (including project coordination, communication, logistics, administrative tasks and other relevant activities)\n\nKEY ACCOUNTABILITIES:\n\nSupport project daily coordination and documentation (e.g., drafting key internal documents, keep track of project implementation, taking meetings minutes, scheduling internal meetings, etc.)\n\nSupport administrative tasks/processes when needed.\n\nSupport relevant communication tasks, including media registration, social media contents creation and daily monitoring.\n\nSupport onsite event execution and corporate initiatives when needed.\n\nSupport translation tasks when needed.\n\nWilling to work 4 months or longer; 3-5 days a week.\n\nJOB-HOLDER ENTRY REQUIREMENTS:\n\nEducation:\n\nJunior undergraduate students and above in Communications, Public Relations, Event Management, Business Management, International Relations, relevant major, or Language related fields\n\nExperience & knowledge:\n\nHigh interest for healthcare industry and communications\n\nHighly proficient in spoken and written English\n\nSolid graphic/visual design skills: Good knowledge of PowerPoint, Photoshop and other photo/video editing software is a plus\n\nExperience in corporate communications preferred\n\nCore competencies & Profile:\n\nExcellent communication and interpersonal skills\n\nHigh attention to details and customer expectations- Setting high standards of performance\n\nHigh sense of responsibility on work assigned\n\nPositive, self-driven, resilient, and reliable",
+      "evidence": {
+        "header": "首页\n \n校招\n \n实习僧TV\n \n实习僧教育\n \n职位百科\n企业入口\n 登录/注册\nCommunication Intern-Beijing-R2876243\n2026-10-25 20:34:16 刷新\n120-150/天 北京 不限 5天／周 实习4个月\n地铁周边留学生实习周末双休不打卡一对一导师实习津贴\n扫码手机查看\n投个简历\n职位描述：\nJOB PURPOSE:\n\nSupport corporate communications, especially vaccine related ",
+        "jd_end": "mer expectations- Setting high standards of performance\n\nHigh sense of responsibility on work assigned\n\nPositive, self-driven, resilient, and reliable"
+      }
+    },
+    {
+      "company_name": "芒果TV",
+      "job_title": "道具组",
+      "location": "长沙",
+      "site_job_id": "inn_pbvru9vpkkcx",
+      "job_url": "https://www.shixiseng.com/intern/inn_pbvru9vpkkcx",
+      "recruitment_batch": "",
+      "jd_text": "1.负责《后会友期》节目组的需求，协助完成道具的设计、制作、测试与备料，确保道具在镜头前视觉契合节目调性。\n2. 录制前完成道具清点、检查与现场布置；录制中负责道具摆放、递送、回收及突发问题的现场应急处理。\n3. 录制后完成道具收纳、维护与归还，对可复用道具进行分类存档。\n4. 与导演组、舞美、服装、摄影等工种配合，确保道具与角色造型、灯光画面不冲突。\n任职要求（最好是男生，可立即到岗）\n1. 做事细致谨慎\n2. 沟通与协作能力良好，踏实肯干，做事不拖沓\n3. 现场应变快、抗压能力好\n4. 能适应节目录制周期的工作节奏，接受演播厅/外景录制地灵活调配。",
+      "evidence": {
+        "header": "首页\n \n校招\n \n实习僧TV\n \n实习僧教育\n \n职位百科\n企业入口\n 登录/注册\n道具组\n2026-10-25 19:08:31 刷新\n薪资面议 长沙 不限 5天／周 实习3个月\n留学生实习地铁周边\n扫码手机查看\n投个简历\n职位描述：\n1.负责《后会友期》节目组的需求，协助完成道具的设计、制作、测试与备料，确保道具在镜头前视觉契合节目调性。\n2. 录制前完成道具清点、检查与现场布置；录制中负责道具摆放、递送、回收及突发问题的现场应急处理。\n3. 录制后完成道具收纳、维护与归还，对可复用道具进",
+        "jd_end": "行分类存档。\n4. 与导演组、舞美、服装、摄影等工种配合，确保道具与角色造型、灯光画面不冲突。 \n任职要求（最好是男生，可立即到岗）\n1. 做事细致谨慎\n2. 沟通与协作能力良好，踏实肯干，做事不拖沓\n3. 现场应变快、抗压能力好\n4. 能适应节目录制周期的工作节奏，接受演播厅/外景录制地灵活调配。"
+      }
+    },
+    {
+      "company_name": "小米",
+      "job_title": "国际电商运营-实习生-2027届-西语/法语/德语/荷兰语(A01550A)",
+      "location": "武汉",
+      "site_job_id": "inn_difhbijfhat5",
+      "job_url": "https://www.shixiseng.com/intern/inn_difhbijfhat5",
+      "recruitment_batch": "",
+      "jd_text": "职责描述：\n1. 负责国际电商平台的店铺维护、商品上架、页面持续优化\n2. 参与平台活动促销的活动方案规划，执行活动配置\n3. 店铺销售运营相关的数据运维、分析和报告\n4. 参与店铺的流量分析 or 投放\n5. 监控商品状态和用户评论情况，改善店铺的订单运营和消费者满意\n任职要求：\n1、本科及以上学历；有电商实习经验者优先\n2、英语6级及以上可用作工作语言，小语种加分\n3、具备良好的沟通协调能力，逻辑思维能力强，思维敏捷\n4、责任心强，自主性强，目标感强，富有团队精神\n5、具备主流办公软件的操作能力",
+      "evidence": {
+        "header": "首页\n \n校招\n \n实习僧TV\n \n实习僧教育\n \n职位百科\n企业入口\n 登录/注册\n国际电商运营-实习生-2027届-西语/法语/德语/荷兰语(A01550A)\n2026-10-23 16:07:43 刷新\n150-250/天 武汉 本科 5天／周 实习3个月\n上市公司世界五百强餐补\n扫码手机查看\n投个简历\n职位描述：\n职责描述：\n1. 负责国际电商平台的店铺维护、商品上架、页面持续优化\n2. 参与平台活动促销的活动方案规划，执行活动配置\n3. 店铺销售运营相关的数据运维、分析和报告\n4. 参",
+        "jd_end": "\n5. 监控商品状态和用户评论情况，改善店铺的订单运营和消费者满意\n任职要求：\n1、本科及以上学历；有电商实习经验者优先\n2、英语6级及以上可用作工作语言，小语种加分\n3、具备良好的沟通协调能力，逻辑思维能力强，思维敏捷\n4、责任心强，自主性强，目标感强，富有团队精神\n5、具备主流办公软件的操作能力"
+      }
+    }
+  ]
+}

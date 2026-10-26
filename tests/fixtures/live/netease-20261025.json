@@ -1,0 +1,130 @@
+{
+  "site": "netease",
+  "sampled_at": "2026-10-25T12:14:33.257Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://hr.163.com/job-list.html",
+  "click_selector": ".posi-list-card .f-title",
+  "list": [
+    {
+      "company_name": "网易",
+      "job_title": "资深服务端开发（社区业务）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=60238&lang=zh",
+      "site_job_id": "60238",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏UGC策划（永劫无间）-派遣",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=79518&lang=zh",
+      "site_job_id": "79518",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "核心人才交流岗位",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=19159&lang=zh",
+      "site_job_id": "19159",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏技术美术（动画向）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=18565&lang=zh",
+      "site_job_id": "18565",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "资深/专家引擎开发工程师",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=23198&lang=zh",
+      "site_job_id": "23198",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深技术美术工程师",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=29002&lang=zh",
+      "site_job_id": "29002",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏引擎开发工程师",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=33992&lang=zh",
+      "site_job_id": "33992",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "技术策划专家",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=50959&lang=zh",
+      "site_job_id": "50959",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "关卡技术策划（归唐）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=52722&lang=zh",
+      "site_job_id": "52722",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深叙事策划（归唐）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=56448&lang=zh",
+      "site_job_id": "56448",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "网易",
+      "job_title": "资深服务端开发（社区业务）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=60238&lang=zh",
+      "site_job_id": "60238",
+      "recruitment_batch": "",
+      "jd_text": "1. 负责乐评、笔记、艺粉活动等社区核心业务的系统设计与研发，支撑大规模、高并发场景下的业务增长。\n2. 探索AI在社区业务中的应用，将 AI 能力与现有服务、数据和业务流程结合，推动方案从原型验证走向生产落地。\n\n1. 本科及以上学历，计算机、软件工程等相关专业，具有3年及以上互联网开发经验。\n2. Java 基础扎实，熟练使用 Spring 等主流框架。\n3. 熟悉分布式数据库、缓存、消息队列等中间件，理解其工作原理及在高并发系统中的应用。\n4. 了解 Hive、Spark、Flink 等大数据框架，具备批/流处理任务实践经验。\n5. 了解设计模式，具备复杂业务系统的开发经验，能够独立分析、解决技术难题，并有效推动跨团队协作。\n6. 熟练使用AI Coding工具完成逻辑实现、测试与问题排查，并对最终质量负责。\n7. 具备AI应用工程化意识：理解提示词调优、上下文设计、工具调用、工作流编排等工程技术，能够综合考虑模型效果、成本与稳定性，将 AI 能力可靠地接入业务系统。\n\n加分项\n• 有大模型应用、Agent项目的实际落地经验，熟悉效果评测与持续优化方法。\n• 理解并实践过 SDD（规约驱动开发），能用规约约束 AI 辅助研发。\n• 有ACM-ICPC等程序设计竞赛经历，具备扎实的算法与数据结构功底。",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n资深服务端开发（社区业务）\n\n全职  |  杭州市   |  2026-10-25 更新\n\n所属产品\n\n网易云音乐\n\n职位类别\n\n技术\n\n招聘人数\n\n2\n\n学历\n\n本科\n\n工作年限\n\n3-5年\n\n微信扫码分享该职位\n\n职位描述\n\n1. 负责乐评、笔记、艺粉活动等社区核心业务的系统设计与研发，支撑大规模、高并发场景下的业务增长。\n2. 探索AI在社区业务中的应用，将 AI 能力与现有服务、数据和业务流程结合，推动方案从原型验证走向生产落地。\n\n职位要求\n\n1. 本科及以上学历，计算机、软件工程等相关专业，具有3年及以上互联网开发经验。\n2. Java 基础扎实，熟练使用 Spring 等主流框架。\n3. 熟悉分布式数据库、",
+        "jd_end": "合考虑模型效果、成本与稳定性，将 AI 能力可靠地接入业务系统。\n\n加分项\n• 有大模型应用、Agent项目的实际落地经验，熟悉效果评测与持续优化方法。\n• 理解并实践过 SDD（规约驱动开发），能用规约约束 AI 辅助研发。\n• 有ACM-ICPC等程序设计竞赛经历，具备扎实的算法与数据结构功底。"
+      }
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏UGC策划（永劫无间）-派遣",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=79518&lang=zh",
+      "site_job_id": "79518",
+      "recruitment_batch": "",
+      "jd_text": "1、设计并跟进UGC系统，推进UGC游玩互动生态的进步，包括但不限于作品推荐、社交互动、限时与长期活动。\n2、设计并跟进UGC系统，推进UGC创作生态的进步，包括但不限于创作管理、新手教学、签约激励、创作大赛、资源中心等。\n3、跟进周期更新的UGC内容推荐模块，完善管线，深入探索玩家喜好。\n4、深入探索UGC内购，推进UGC商业化相关业务。\n\n1.有系统策划、内容运营，或UGC品类策划经验者优先；\n2.是《永劫无间》端游或手游爱好者，有较多的体验时长或一定操作实力；\n3.有较强的动手能力，熟悉《蛋仔派对》、《马里奥制造》、《Roblox》等UGC游戏，或War3、Dota2、星际2等编辑器者优先；\n4. 对市面上的新玩法、新体验、新话题有敏锐的捕捉能力，冲浪速度快，能快速迎合玩家喜好；\n5. 有良好的团队合作精神，较强的沟通能力，抗压能力强，有不错的同理心，能融入团队。",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n游戏UGC策划（永劫无间）-派遣\n\n派遣  |  杭州市   |  2026-10-25 更新\n\n所属产品\n\n网易游戏（雷火）\n\n职位类别\n\n游戏策划\n\n招聘人数\n\n1\n\n学历\n\n本科\n\n工作年限\n\n3-5年\n\n微信扫码分享该职位\n\n职位描述\n\n1、设计并跟进UGC系统，推进UGC游玩互动生态的进步，包括但不限于作品推荐、社交互动、限时与长期活动。\n2、设计并跟进UGC系统，推进UGC创作生态的进步，包括但不限于创作管理、新手教学、签约激励、创作大赛、资源中心等。\n3、跟进周期更新的UGC内容推荐模块，完善管线，深入探索玩家喜好。\n4、深入探索UGC内购，推进UGC商业化相关业务。\n\n职位要求\n\n1.有系统策划、内容运营",
+        "jd_end": "强的动手能力，熟悉《蛋仔派对》、《马里奥制造》、《Roblox》等UGC游戏，或War3、Dota2、星际2等编辑器者优先；\n4. 对市面上的新玩法、新体验、新话题有敏锐的捕捉能力，冲浪速度快，能快速迎合玩家喜好；\n5. 有良好的团队合作精神，较强的沟通能力，抗压能力强，有不错的同理心，能融入团队。"
+      }
+    },
+    {
+      "company_name": "网易",
+      "job_title": "核心人才交流岗位",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=19159&lang=zh",
+      "site_job_id": "19159",
+      "recruitment_batch": "",
+      "jd_text": "核心人才交流\n\n核心人才交流",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n核心人才交流岗位\n\n全职  |  杭州市   |  2026-10-24 更新\n\n所属产品\n\n网易游戏（雷火）\n\n职位类别\n\n游戏艺术\n\n招聘人数\n\n1\n\n学历\n\n大专\n\n工作年限\n\n5-10年\n\n微信扫码分享该职位\n\n职位描述\n\n核心人才交流\n\n\n职位要求\n\n核心人才交流\n申 请\n相关职位\n查看更多 \n\n场景原画设计师（归唐）\n\n全职 / 杭州市 / 经验不限 / 2026-10-23\n\n资深/专家特效设计师（归唐）\n\n全职 / 杭州市 / 经验3-5年 / 2026-10-23\n\n资深/专家角色原画（归唐）\n\n全职 / 杭州市 / 经验5-10年 / 2026-10-23\n\n专家/资深关卡美术（归唐）\n\n全职 / 杭",
+        "jd_end": "核心人才交流\n\n核心人才交流"
+      }
+    }
+  ]
+}

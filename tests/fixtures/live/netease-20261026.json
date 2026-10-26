@@ -1,0 +1,130 @@
+{
+  "site": "netease",
+  "sampled_at": "2026-10-26T01:09:58.339Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://hr.163.com/job-list.html",
+  "click_selector": ".posi-list-card .f-title",
+  "list": [
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深游戏特效设计师（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=35057&lang=zh",
+      "site_job_id": "35057",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏战斗策划（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=36764&lang=zh",
+      "site_job_id": "36764",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深关卡策划 （无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=37191&lang=zh",
+      "site_job_id": "37191",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏关卡策划 （永劫无间）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=37887&lang=zh",
+      "site_job_id": "37887",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏文案编剧（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=37957&lang=zh",
+      "site_job_id": "37957",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏运营策划（永劫无间）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=38233&lang=zh",
+      "site_job_id": "38233",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深战斗策划（永劫无间）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=39042&lang=zh",
+      "site_job_id": "39042",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏数值策划（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=39526&lang=zh",
+      "site_job_id": "39526",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深游戏配乐师",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=42794&lang=zh",
+      "site_job_id": "42794",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏关卡策划（永劫无间）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=42907&lang=zh",
+      "site_job_id": "42907",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深游戏特效设计师（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=35057&lang=zh",
+      "site_job_id": "35057",
+      "recruitment_batch": "",
+      "jd_text": "-擅长偏写实风格的特效设计工作；\n-需要保持与策划，设计，技术等相关部门保持紧密的合作与沟通；\n-参与具体特效设计任务，制定质量标准及规范制作流程，参与审核；\n-具备良好的语言表达能力及合作态度。\n\n-有3年以上的游戏特效设计工作经历；大专以上学历；\n-设计/绘画相关专业的创新设计思维；\n-对于写实的各种动态效果有很好的观察及分析能力；\n-熟悉掌握unity3D,3dmax/Maya,AE,PS等其他相关游戏特效制作软件；\n-具备良好的沟通能力，自学能力及学习意愿；\n-具备良好的性能优化意识；\n-有参与过商业化外观特效资源规划与制作流程者优先。",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n高级/资深游戏特效设计师（无限大）\n\n全职  |  杭州市   |  2026-10-25 更新\n\n所属产品\n\n网易游戏（雷火）\n\n职位类别\n\n游戏艺术\n\n招聘人数\n\n1\n\n学历\n\n大专\n\n工作年限\n\n3-5年\n\n微信扫码分享该职位\n\n职位描述\n\n-擅长偏写实风格的特效设计工作；\n-需要保持与策划，设计，技术等相关部门保持紧密的合作与沟通；\n-参与具体特效设计任务，制定质量标准及规范制作流程，参与审核；\n-具备良好的语言表达能力及合作态度。\n\n职位要求\n\n-有3年以上的游戏特效设计工作经历；大专以上学历；\n-设计/绘画相关专业的创新设计思维；\n-对于写实的各种动态效果有很好的观察及分析能力；\n-熟悉掌握unity3D,3",
+        "jd_end": "\n-设计/绘画相关专业的创新设计思维；\n-对于写实的各种动态效果有很好的观察及分析能力；\n-熟悉掌握unity3D,3dmax/Maya,AE,PS等其他相关游戏特效制作软件；\n-具备良好的沟通能力，自学能力及学习意愿；\n-具备良好的性能优化意识；\n-有参与过商业化外观特效资源规划与制作流程者优先。"
+      }
+    },
+    {
+      "company_name": "网易",
+      "job_title": "游戏战斗策划（无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=36764&lang=zh",
+      "site_job_id": "36764",
+      "recruitment_batch": "",
+      "jd_text": "1.配置角色的战斗技能，战斗AI；配置关卡流程中怪物的行为；\n2.根据给出的人物设定，独立设计战斗表现；\n3.发现战斗体验上可以优化的点，并推动迭代。\n\n1.、有2年以上相关工作经验，对游戏有热情，对主流动作游戏有深入体验；\n2.、对游戏里怪物行为逻辑，关卡流程有一定思考和了解；\n3、有敬业精神，热衷游戏开发，有良好的团队协作精神，积极主动。",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n游戏战斗策划（无限大）\n\n全职  |  杭州市   |  2026-10-25 更新\n\n所属产品\n\n网易游戏（雷火）\n\n职位类别\n\n游戏策划\n\n招聘人数\n\n1\n\n学历\n\n本科\n\n工作年限\n\n3-5年\n\n微信扫码分享该职位\n\n职位描述\n\n1.配置角色的战斗技能，战斗AI；配置关卡流程中怪物的行为；\n2.根据给出的人物设定，独立设计战斗表现；\n3.发现战斗体验上可以优化的点，并推动迭代。\n\n职位要求\n\n1.、有2年以上相关工作经验，对游戏有热情，对主流动作游戏有深入体验；\n2.、对游戏里怪物行为逻辑，关卡流程有一定思考和了解；\n3、有敬业精神，热衷游戏开发，有良好的团队协作精神，积极主动。\n申 请\n相关职位\n查看更多 \n\n游",
+        "jd_end": "程中怪物的行为；\n2.根据给出的人物设定，独立设计战斗表现；\n3.发现战斗体验上可以优化的点，并推动迭代。\n\n1.、有2年以上相关工作经验，对游戏有热情，对主流动作游戏有深入体验；\n2.、对游戏里怪物行为逻辑，关卡流程有一定思考和了解；\n3、有敬业精神，热衷游戏开发，有良好的团队协作精神，积极主动。"
+      }
+    },
+    {
+      "company_name": "网易",
+      "job_title": "高级/资深关卡策划 （无限大）",
+      "location": "杭州市",
+      "job_url": "https://hr.163.com/job-detail.html?id=37191&lang=zh",
+      "site_job_id": "37191",
+      "recruitment_batch": "",
+      "jd_text": "1、负责游戏中的大地图或箱庭关卡的设计规划、白盒搭建及后续制作跟进。\n2、与IP、美术、程序与策划密切合作，保证关卡地图的叙事、玩法体验和质量品质\n\n1、有2年以上相关工作经验，对开放世界大地图/箱庭关卡其一有一定的设计制作经验\n2、拥有白盒搭建、动线规划能力\n3、对关卡与叙事、玩法的结合有一定的理解和经验\n3、对游戏制作充满热情，能不断挑战自我，紧跟上下游，提高负责内容的综合品质",
+      "evidence": {
+        "header": "招贤纳士\n首页\n职位\n产品\nGPT极客热爱\n生活\n中EN\n登录/注册\n\n高级/资深关卡策划 （无限大）\n\n全职  |  杭州市   |  2026-10-25 更新\n\n所属产品\n\n网易游戏（雷火）\n\n职位类别\n\n游戏策划\n\n招聘人数\n\n1\n\n学历\n\n本科\n\n工作年限\n\n3-5年\n\n微信扫码分享该职位\n\n职位描述\n\n1、负责游戏中的大地图或箱庭关卡的设计规划、白盒搭建及后续制作跟进。\n2、与IP、美术、程序与策划密切合作，保证关卡地图的叙事、玩法体验和质量品质\n\n职位要求\n\n1、有2年以上相关工作经验，对开放世界大地图/箱庭关卡其一有一定的设计制作经验\n2、拥有白盒搭建、动线规划能力\n3、对关卡与叙事、玩法的结合有一定的理解和经验\n3、对游戏制作充满热情，能不断挑战自我，紧跟上下游，提高负责内",
+        "jd_end": "术、程序与策划密切合作，保证关卡地图的叙事、玩法体验和质量品质\n\n1、有2年以上相关工作经验，对开放世界大地图/箱庭关卡其一有一定的设计制作经验\n2、拥有白盒搭建、动线规划能力\n3、对关卡与叙事、玩法的结合有一定的理解和经验\n3、对游戏制作充满热情，能不断挑战自我，紧跟上下游，提高负责内容的综合品质"
+      }
+    }
+  ]
+}

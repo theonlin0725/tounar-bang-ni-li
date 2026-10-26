@@ -81,6 +81,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
       h('span', { class: 'tn-flag tn-flag-precision', text: PRECISION_LABELS[app.applied_at_precision] || '精度未知' }));
     fact('已投天数（上海口径）', daysText(app.days_since_applied));
     fact('投递渠道', app.channel || '未知');
+    if (app.capture_source) fact('发现方式', {list:'列表发现',capture:'主动采集',detail:'详情浏览'}[app.capture_source] || app.capture_source);
     fact('招聘批次 / 城市', [field('recruitment_batch'), field('location')].join(' · '));
     fact('最近有效进展', fmtDateTime(app.last_progress_at));
     fact('官网最近采集', app.last_site_observed_at ? fmtDateTime(app.last_site_observed_at) : '尚无（官网仅在你访问时采集）');
@@ -98,14 +99,16 @@ export function openDetail(id, { gen, onChanged } = {}) {
       : h('div', { class: 'tn-link-disabled', text: '摘要待补充（纯文本，不渲染网页 HTML）' })));
 
     /* JD 全文（插件采集的完整职责/要求；没有则回退摘要） */
-    if (app.jd_text && String(app.jd_text).trim().length > (app.jd_summary || '').length) {
-      bodyEl.append(section('JD 全文', h('div', {
+    if (app.jd_text && String(app.jd_text).trim()) {
+      bodyEl.append(section(app.jd_status === 'truncated' || app.jd_status === 'partial' ? 'JD 正文（不完整）' : 'JD 全文', h('div', {
         class: 'tn-evidence tn-jd-full',
         'data-test': 'detail-jd-text',
         style: 'white-space:pre-wrap;max-height:320px;overflow:auto',
         text: app.jd_text
       })));
     }
+
+    if (!app.jd_text) bodyEl.append(section('JD 待补充', h('p', { text: app.jd_status === 'too_long' ? '原页正文超过支持上限，本次未保存。' : '打开岗位详情后，插件会自动补充正文。' })));
 
     /* 链接 */
     const links = h('div', { class: 'tn-links-row' });

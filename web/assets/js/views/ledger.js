@@ -468,7 +468,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   const updatesTimer = setInterval(() => {
     if (isStale(gen) || !main.isConnected) { mounted = false; clearInterval(updatesTimer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); }
     else checkUpdates();
-  }, 60000);
+  }, 2000);
 
   /* ---------- 首次加载 ---------- */
   buildToolbar();

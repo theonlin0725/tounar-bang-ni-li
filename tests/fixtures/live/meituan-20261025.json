@@ -1,0 +1,130 @@
+{
+  "site": "meituan",
+  "sampled_at": "2026-10-25T12:24:24.826Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://zhaopin.meituan.com/web/social",
+  "click_selector": ".position_list_item",
+  "list": [
+    {
+      "company_name": "美团",
+      "job_title": "业务分析目标管理专家",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4798450784&highlightType=social",
+      "site_job_id": "4798450784",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "供给策略专家",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4778925460&highlightType=social",
+      "site_job_id": "4778925460",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "Logistics Operations Analysis & Enablement Expert 履约经营分析与赋能专家",
+      "location": "利雅得",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4751700815&highlightType=social",
+      "site_job_id": "4751700815",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "业务分析目标管理专家",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4267516677&highlightType=social",
+      "site_job_id": "4267516677",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "商家增长策略负责人",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4230442551&highlightType=social",
+      "site_job_id": "4230442551",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "路线规划研发工程师",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4862385789&highlightType=social",
+      "site_job_id": "4862385789",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "Keeta Finance Business Partner (Saudi Arabia)",
+      "location": "利雅得、北京市、迪拜、多哈",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4722312213&highlightType=social",
+      "site_job_id": "4722312213",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "生鲜食品核心品类策略",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4687742689&highlightType=social",
+      "site_job_id": "4687742689",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "生鲜食品用户体验策略运营",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4687316417&highlightType=social",
+      "site_job_id": "4687316417",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "餐饮系统-高级客户成功（北京）",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4641915941&highlightType=social",
+      "site_job_id": "4641915941",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "美团",
+      "job_title": "业务分析目标管理专家",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4798450784&highlightType=social",
+      "site_job_id": "4798450784",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\n1. 业务目标/绩效体系搭建 承接组织目标和业务节奏，负责业务团队目标体系的系统性设计与拆解，涵盖中长期业务规划、季度/月度目标设定、业务达成路径拆解及资源匹配；确保组织目标的一致性与可承接性，同时主导绩效体系的设计和运营，确保业务团队绩效方案的及时和准确性，支持业务团队拿到结果。 2. 市场与业务动态跟踪分析 系统跟踪市场动态、竞争格局与业务节奏，持续评估目标合理性，及时主动调整目标以匹配业务阶段与策略变化；建立健全、整合的目标追踪机制，输出有数据支撑的经营分析报告（MBR/WBR/DBR），支持管理层决策。探索将AI/机器学习工具应用于业务异动预警与趋势预测，提升分析的前瞻性与时效性。 3. 专项经营分析与决策支持 针对重点业务问题开展深度专项研究，综合运用数据分析、用户洞察、市场研究等手段，输出有落地价值的策略建议；能够独立承接从问题定义、框架设计到结论呈现的全链路分析工作，为管理层提供高质量的经营洞察。\n岗位基本要求\n1.本科及以上学历，数学、统计学、商业分析或商科相关专业； 2.5年及以上商业分析/目标管理/经营分析相关经验；有头部互联网或咨询公司背景者优先；有外卖/本地生活/电商平台经历者优先； 3.具备优秀的结构化思维能力，能够对复杂业务问题进行独立拆解与量化建模； 4.熟练使用SQL进行数据提取与分析，掌握至少一种数据可视化/分析工具；具备扎实的数理统计基本功； 5.对AI工具在商业分析/目标管理场景的应用有实战经验或浓厚兴趣，了解LLM辅助分析、AI预测模型等在经营管理中的落地逻辑；在使用AI工具过程中，严格遵守公司及所在国家/地区的数据安全与合规要求，确保业务数据、用户数据不被违规输入外部AI系统，具备数据安全意识与合规操作习惯； 6.具备优秀的跨部门沟通与协作能力，能够高效推动多方资源对齐，将分析结论转化为可执行的业务动作。\n具备以下条件优先\n1.具有良好的英文听说读写能力； 2.熟练使用SQL。\n岗位亮点\n1.战略核心角色：直接参与业务目标体系的顶层设计，工作成果影响整个业务团队的经营节奏与方向； 2.全链路经营管理视野：从市场洞察到目标拆解再到落地追踪，快速积累系统化的经营管理方法论； 3.AI × 经营分析前沿实践：公司正系统推进AI在业务分析中的落地，BA岗是最核心的实验场，你将有机会主导智能化经营分析工具的探索与应用； 4.国际化多元团队：在快速成长的出海业务中工作，积累稀缺的跨文化经营管理经验； 5.高速成长通道：广阔的新兴市场空间+扁平决策链条，优秀者成长路径清晰且快速。",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\n业务分析目标管理专家\n社招-正式\n更新时间：2026/10/25\n工作地点：圣保罗\n部门：Keeta\n工作经验：3年\n分享\n立即申请\n部门介绍\nKeeta是全球领先外卖平台美团旗下的独立品牌，肩负着“帮大家吃得更好，生活更好”的使命。依托美团深耕中国市场15年的技术与运营积淀，我们正引领全球餐饮与商品即时配送服务的创新与发展。\n自2023年成立以来，Keeta始终扎根社区并创造价值。我们为用户提供可靠的外卖体验，以智慧技术助餐厅提升经营效率，在为骑手拓宽收入来源的同时，也充分提供安全保障措施。基于这份多方共赢、共同成长的理念，我们的业务已从中国香港稳步拓展至中东及巴西，并持续向",
+        "jd_end": "3.AI × 经营分析前沿实践：公司正系统推进AI在业务分析中的落地，BA岗是最核心的实验场，你将有机会主导智能化经营分析工具的探索与应用； 4.国际化多元团队：在快速成长的出海业务中工作，积累稀缺的跨文化经营管理经验； 5.高速成长通道：广阔的新兴市场空间+扁平决策链条，优秀者成长路径清晰且快速。"
+      }
+    },
+    {
+      "company_name": "美团",
+      "job_title": "供给策略专家",
+      "location": "圣保罗",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4778925460&highlightType=social",
+      "site_job_id": "4778925460",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\n1. 负责供给商家的策略制定与优化，提升商户端供给质量和覆盖效率。\n2. 分析市场趋势与用户需求，设计并落地供给增长策略，推动关键指标达成。\n3. 协同产品、技术、市场等团队，推动供给相关功能迭代与运营机制优化。\n4. 建立并维护商家分层运营体系，提升高价值商家活跃度与留存率。\n5. 监控供给运营数据，定期输出分析报告，驱动业务决策与策略调整。\n岗位基本要求\n1. 大学本科及以上学历，6年以上产品运营或商家运营相关工作经验。\n2. 具备较强的数据分析能力，熟练使用办公及AI工具，能通过数据驱动业务增长。\n3. 熟悉本地生活服务或电商平台的供给运营逻辑，有南美市场经验者优先。\n4. 优秀的跨团队沟通与项目管理能力，能独立推动复杂项目落地。\n5. 英语/葡萄牙语流利，具备在多元文化环境中高效工作的能力。\n岗位亮点\n1. 深入参与拉美核心市场业务拓展，直接影响平台供给战略方向。\n2. 与国际化团队紧密协作，获得跨区域业务经验与职业成长机会。",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\n供给策略专家\n社招-正式\n更新时间：2026/10/25\n工作地点：圣保罗\n部门：Keeta\n工作经验：6年\n分享\n立即申请\n部门介绍\nKeeta是全球领先外卖平台美团旗下的独立品牌，肩负着“帮大家吃得更好，生活更好”的使命。依托美团深耕中国市场15年的技术与运营积淀，我们正引领全球餐饮与商品即时配送服务的创新与发展。\n自2023年成立以来，Keeta始终扎根社区并创造价值。我们为用户提供可靠的外卖体验，以智慧技术助餐厅提升经营效率，在为骑手拓宽收入来源的同时，也充分提供安全保障措施。基于这份多方共赢、共同成长的理念，我们的业务已从中国香港稳步拓展至中东及巴西，并持续向世界迈进",
+        "jd_end": "给运营逻辑，有南美市场经验者优先。\n4. 优秀的跨团队沟通与项目管理能力，能独立推动复杂项目落地。\n5. 英语/葡萄牙语流利，具备在多元文化环境中高效工作的能力。\n岗位亮点\n1. 深入参与拉美核心市场业务拓展，直接影响平台供给战略方向。\n2. 与国际化团队紧密协作，获得跨区域业务经验与职业成长机会。"
+      }
+    },
+    {
+      "company_name": "美团",
+      "job_title": "Logistics Operations Analysis & Enablement Expert 履约经营分析与赋能专家",
+      "location": "利雅得",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4751700815&highlightType=social",
+      "site_job_id": "4751700815",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\nThis is a high-impact, strategy-and-execution hybrid role responsible for building the analytical framework and frontline enablement engine that drives operational excellence across our instant delivery network. You will directly influence company-wide operations strategy while shaping the performance and growth culture of our frontline teams across multiple markets.\n这是一个高影响力、战略与执行并重的复合型岗位，负责构建支撑即时配送网络卓越运营的分析框架和前线赋能引擎。你将直接影响公司整体的运营战略，同时塑造多个市场前线团队的绩效与成长文化。\n1. Instant Delivery Business Analysis: Own the logistics analytical engine behind our on-demand delivery operations. You will define how we measure success across on-time rate, cancellation rate, capacity-to-demand balance, and rider productivity, then dig into the data when numbers move, find the real story behind anomalies, and turn findings into strategy leadership actually acts on.\n1.即时配送业务经营\n掌控我们按需配送业务背后的物流分析引擎。你将定义如何衡量准时率、取消率、运力与需求平衡以及骑手效率等核心指标的成功标准，在数据波动时深入挖掘异常背后的真实原因，并将研究发现转化为管理层切实可行的战略建议。\n2. Frontline Enablement & Training: Be the architect of how our frontline teams learn and grow. You will turn scattered best practices into a repeatable playbook, design recognition and incentive programs that make strong performance visible and rewarded, and build a culture where teams push themselves rather than waiting to be pushed.\n2. 前线赋能与培训\n成为前线团队学习与成长机制的设计者。你将把零散的最佳实践整理成可复用的方法论手册，设计让优秀表现可见且可奖励的认可与激励方案，并打造团队自我驱动而非被动推动的文化。\n3. Policy Localization: Be the bridge between headquarters strategy and regional reality. You will take company-wide policies and make them work on the ground across markets, adapting where local conditions demand it and proving the impact with measurable results.\n3. 政策本地化\n成为总部战略与区域实际之间的桥梁。你将把公司层面的政策在各个市场因地制宜地落地执行，在本地条件需要时做出灵活调整，并用可量化的成果证明其影响。\n4. Cross-Regional Process Optimization:Give regional teams a voice at headquarters. You will surface the operational pain points field teams live with every day, rally the right cross-functional owners to fix them, and keep the improvement loop running market by market.\n4. 跨区域流程优化\n让区域团队在总部拥有发声渠道。你将挖掘一线团队日常面临的运营痛点，协调各跨部门负责人加以解决，让改进循环在各个市场持续运转。\n岗位基本要求\n1. Bachelor's degree or above, 3+ years of experience in operations analytics, frontline enablement, or a similar hybrid strategy-and-execution role within high-volume logistics, on-demand delivery, or gig-economy platforms.\n1. 本科及以上学历，3年以上运营分析、前线赋能或类似战略与执行复合岗位经验，具备高体量物流、按需配送或零工经济平台背景。\n2. Proven track record in building operational frameworks, training programs, or performance management systems for frontline or field teams.\n2. 在为前线或一线团队搭建运营框架、培训项目或绩效管理体系方面有可验证的成果。\n3. Possess strong data analysis capabilities(SQL) and execution skills.\n3. 具备较强的数据分析能力（SQL）与执行能力。\n4. Excellent stakeholder management and cross-functional coordination skills, with experience working across regional and headquarters teams.\n4. 出色的跨部门协作能力，有区域团队与总部协同工作的经验。\n5. Fluency in English required; Arabic or additional regional languages strongly preferred given the localization scope.\n5. 英语流利为必备条件；鉴于本地化工作范围，掌握阿拉伯语或其他区域语言者优先。\n具备以下条件优先\nPrefer potentials from Amazon\\Careem\\Talabat\\UBER\\Dliveroo with background of training or enablement or logistics operations experience.\nStrong analytical skills with proficiency in SQL, and data visualization tools\n岗位亮点\nDirect ownership of the operational analytics and enablement function across multiple high-growth markets.\nHigh-visibility role with regular exposure to headquarters leadership and cross-functional strategy discussions.\nOpportunity to build regional operational frameworks from the ground up and define how frontline teams are enabled, measured, and motivated.\nClear growth path toward broader operations leadership as the function expands.\nCompetitive compensation and benefits package commensurate with seniority and scope.",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\nLogistics Operations Analysis & Enablement Expert  履约经营分析与赋能专家\n社招-正式\n更新时间：2026/10/25\n工作地点：利雅得\n部门：Keeta\n工作经验：5年\n分享\n立即申请\n部门介绍\nKeeta是全球领先外卖平台美团旗下的独立品牌，肩负着“帮大家吃得更好，生活更好”的使命。依托美团深耕中国市场15年的技术与运营积淀，我们正引领全球餐饮与商品即时配送服务的创新与发展。\n自2023年成立以来，Keeta始终扎根社区并创造价值。我们为用户提供可靠的外卖体验，以智慧技术助餐厅提升经营效率，在为骑手拓宽收入来源的同时，也充分",
+        "jd_end": "ath toward broader operations leadership as the function expands.\nCompetitive compensation and benefits package commensurate with seniority and scope."
+      }
+    }
+  ]
+}

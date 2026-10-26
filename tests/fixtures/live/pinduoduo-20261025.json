@@ -1,0 +1,130 @@
+{
+  "site": "pinduoduo",
+  "sampled_at": "2026-10-25T12:14:33.254Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://careers.pddglobalhr.com/campus/grad",
+  "click_selector": "a[class*=\"recruit-card_title\"]",
+  "list": [
+    {
+      "company_name": "拼多多",
+      "job_title": "AI Infra研发工程师",
+      "location": "上海",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=43b706c2-9d86-47de-a99d-fcd35405799f",
+      "site_job_id": "43b706c2-9d86-47de-a99d-fcd35405799f",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "物流运营管培生（上海）",
+      "location": "上海",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=5f91d23a-54c1-4fc1-93f7-c81af681ec84",
+      "site_job_id": "5f91d23a-54c1-4fc1-93f7-c81af681ec84",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "商务管培生（香港）",
+      "location": "中国香港",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=01bf6409-6ce9-44b8-b36f-494fc13a3785",
+      "site_job_id": "01bf6409-6ce9-44b8-b36f-494fc13a3785",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "运营管培生（区域业务）",
+      "location": "全国多省区",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=e22c34bf-9ef6-431b-a739-a4e94387413d",
+      "site_job_id": "e22c34bf-9ef6-431b-a739-a4e94387413d",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "仓配物流管培生（区域业务）",
+      "location": "全国多省区",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=b168e225-3034-4cac-8e3a-ea4aff372a67",
+      "site_job_id": "b168e225-3034-4cac-8e3a-ea4aff372a67",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "质控管培生（区域业务）",
+      "location": "全国多省区",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=1502839e-a636-46a8-856f-071c2542f3b7",
+      "site_job_id": "1502839e-a636-46a8-856f-071c2542f3b7",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "HR培训生（区域业务）",
+      "location": "全国多省区",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=64fe882f-b4b6-4b8c-9931-7b336b18e818",
+      "site_job_id": "64fe882f-b4b6-4b8c-9931-7b336b18e818",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "运营中台管培生（广东）",
+      "location": "广东省",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=2cc76787-d5a1-486b-81e4-b8847b135956",
+      "site_job_id": "2cc76787-d5a1-486b-81e4-b8847b135956",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "仓储管理管培生（广东）",
+      "location": "广东省",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=878ca01a-dfd0-402d-8844-f664de2e29b3",
+      "site_job_id": "878ca01a-dfd0-402d-8844-f664de2e29b3",
+      "recruitment_batch": "2027届"
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "质检管培生（广东）",
+      "location": "广东省",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=20a60163-e39f-4aa8-9886-1cc49b4c4432",
+      "site_job_id": "20a60163-e39f-4aa8-9886-1cc49b4c4432",
+      "recruitment_batch": "2027届"
+    }
+  ],
+  "details": [
+    {
+      "company_name": "拼多多",
+      "job_title": "AI Infra研发工程师",
+      "location": "上海",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=43b706c2-9d86-47de-a99d-fcd35405799f",
+      "site_job_id": "43b706c2-9d86-47de-a99d-fcd35405799f",
+      "recruitment_batch": "2027届",
+      "jd_text": "在本岗位，您将有机会深入基础设施技术本质，同时驱动大模型与业务高效落地，具体将参与：\n1. 大模型训练与推理基础设施研发：参与构建和优化面向大规模分布式训练/推理的Infra 平台，支持文本、图像、视频、语音等多模态大模型、扩散模型的训练与推理。涵盖集群资源调度、训练框架优化、高性能通信、混合精度训练、显存优化等关键环节，确保模型的训练效率与系统稳定性；\n2. 前沿Infra 技术探索与创新：持续跟踪并攻关大模型基础设施领域的前沿方向（如：超大规模异构集群管理、更高效的并行策略、MoE 训练/推理优化、量化与推理加速框架、多模态模型高效并行策略等），通过系统创新显著提升训练吞吐、降低推理成本、改善资源利用率；\n3. 大模型基础设施应用落地与赋能：将先进的Infra 能力与公司大模型业务场景深度结合，主导技术方案的设计与实现，具体支持方向包括但不限于：\n• 训练效率提升：支持Pretrain、SFT、RLHF 等全流程训练任务，优化端到端训练性能；\n• 推理服务优化：构建高并发、低延迟的在线推理平台，支持多模态大模型的实时服务；\n• 成本与弹性优化：实现智能资源调度、Spot 实例利用、自动扩缩容等，显著降低大模型训练与推理的算力成本；\n• 稳定性保障：打造高可用、故障自愈的分布式训练系统，确保7×24 小时稳定运行；\n4. 技术价值闭环：深度理解大模型训练与业务需求，利用平台海量算力与数据资源，推动Infra 技术创新落地，并通过性能指标、成本指标、实验验证等科学方法衡量技术价值，最终为大模型研发提效、降本，并支撑业务增长。\n\n1. 教育背景：2026.9-2027.8 期间已获得或即将获得博士/硕士学位的同学，计算机科学、软件工程、电子信息、自动化等相关专业优先；\n2. 技术根基：\n• 具备扎实的计算机系统基础（操作系统、计算机网络、分布式系统、编译原理等），出色的编程能力和工程实现能力（熟练掌握C/C++、Python，熟悉Go/Rust 者优先）；\n• 深入理解大规模分布式系统原理，熟悉至少一种主流大模型训练/推理框架（PyTorch、Megatron、DeepSpeed、vLLM、TVM 等）；\n• 有GPU/异构集群相关经验者优先，熟悉RDMA、NVLink、InfiniBand 等高性能网络者优先；\n3. 创新与问题解决能力：具备极强的学习能力、主动性和系统性思维，能够独立分析和解决复杂工程与性能问题，对将系统优化技术应用于大模型场景充满热情；\n4. 成果导向：在学术或工业项目中有突出表现者优先，例如但不限于：\n• 在系统/架构相关顶级会议/期刊发表过论文；\n• 在ACM/ICPC、知名编程或系统竞赛中获奖；\n• 主导或深度参与过高性能计算、分布式系统、大模型训练平台等具有较大技术影响力的项目。",
+      "evidence": {
+        "header": "校园招聘\n首页\n应届生招聘\n实习生招聘\n校招公告\n关于我们\n登录/注册\nAI Infra研发工程师\n研发\n上海\n2027届\n2026-09-02\n分享职位\n岗位职责\n在本岗位，您将有机会深入基础设施技术本质，同时驱动大模型与业务高效落地，具体将参与： \n1. 大模型训练与推理基础设施研发：参与构建和优化面向大规模分布式训练/推理的Infra 平台，支持文本、图像、视频、语音等多模态大模型、扩散模型的训练与推理。涵盖集群资源调度、训练框架优化、高性能通信、混合精度训练、显存优化等关键环节，确保模型的训练效率与系统稳定性； \n2. 前沿Infra 技术探索与创新：持续跟踪并攻关大模型基础设施领域的前沿方向（如：超大规模异构集群管理、更高效的并行策略、MoE 训练/推理优化、量化与推理加速框架、多",
+        "jd_end": "，对将系统优化技术应用于大模型场景充满热情；\n4. 成果导向：在学术或工业项目中有突出表现者优先，例如但不限于：\n• 在系统/架构相关顶级会议/期刊发表过论文；\n• 在ACM/ICPC、知名编程或系统竞赛中获奖；\n• 主导或深度参与过高性能计算、分布式系统、大模型训练平台等具有较大技术影响力的项目。"
+      }
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "物流运营管培生（上海）",
+      "location": "上海",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=5f91d23a-54c1-4fc1-93f7-c81af681ec84",
+      "site_job_id": "5f91d23a-54c1-4fc1-93f7-c81af681ec84",
+      "recruitment_batch": "2027届",
+      "jd_text": "1、通过物流模式创新，提升消费者购物体验，带来业务增长；\n2、分析运营数据和用户反馈，挖掘消费者和商家痛点，并推动解决；\n3、根据运营目标，制定体系化的运营策略，并达成阶段性的结果。\n\n1、2027届毕业生，本科及以上学历，专业不限；\n2、做事脚踏实地，上进且勤奋，靠谱的行动派；\n3、具有团队精神，自我驱动力强，喜欢有挑战的工作；\n4、具备较好的自驱力，能适应快节奏、多变化、高速成长的互联网行业。",
+      "evidence": {
+        "header": "校园招聘\n首页\n应届生招聘\n实习生招聘\n校招公告\n关于我们\n登录/注册\n物流运营管培生（上海）\n运营\n上海\n2027届\n2026-10-15\n分享职位\n岗位职责\n1、通过物流模式创新，提升消费者购物体验，带来业务增长；\n2、分析运营数据和用户反馈，挖掘消费者和商家痛点，并推动解决；\n3、根据运营目标，制定体系化的运营策略，并达成阶段性的结果。\n任职要求\n1、2027届毕业生，本科及以上学历，专业不限； \n2、做事脚踏实地，上进且勤奋，靠谱的行动派；\n3、具有团队精神，自我驱动力强，喜欢有挑战的工作；\n4、具备较好的自驱力，能适应快节奏、多变化、高速成长的互联网行业。\n简历投递\n拼多多集团 - PDD 校园招聘\n关注我们\nCopyright © 2026 pddglobalhr.com 版权所",
+        "jd_end": "家痛点，并推动解决；\n3、根据运营目标，制定体系化的运营策略，并达成阶段性的结果。\n\n1、2027届毕业生，本科及以上学历，专业不限；\n2、做事脚踏实地，上进且勤奋，靠谱的行动派；\n3、具有团队精神，自我驱动力强，喜欢有挑战的工作；\n4、具备较好的自驱力，能适应快节奏、多变化、高速成长的互联网行业。"
+      }
+    },
+    {
+      "company_name": "拼多多",
+      "job_title": "商务管培生（香港）",
+      "location": "中国香港",
+      "job_url": "https://careers.pddglobalhr.com/campus/grad/detail?positionId=01bf6409-6ce9-44b8-b36f-494fc13a3785",
+      "site_job_id": "01bf6409-6ce9-44b8-b36f-494fc13a3785",
+      "recruitment_batch": "2027届",
+      "jd_text": "1、负责区域内配送网络的规划与拓展，推动自提点开发及宅配覆盖范围扩展，持续提升区域订单量及市场渗透率；\n2、拓展并维护区域内合作资源，与自提点、屋苑/商业管理处等建立良好的合作关系，保障末端配送渠道的稳定运营；\n3、定期走访区域内的配送点位，监控服务标准的执行情况，及时发现并前置化解潜在舆情风险，维护平台品牌形象；\n4、通过数据监控与分析，识别区域运营中的问题与机会点，提出针对性改进方案并推动落地。\n\n1、本科及以上学历，专业不限；持有香港居民身份证，能以粤语作为日常工作语言；\n2、掌握基础数据处理技能，具备良好的逻辑思维与沟通协调能力，有团队合作意识，亲和力佳，善于耐心沟通；\n3、自驱力强，目标感与责任心突出，具备较强的运营意识与用户同理心。",
+      "evidence": {
+        "header": "校园招聘\n首页\n应届生招聘\n实习生招聘\n校招公告\n关于我们\n登录/注册\n商务管培生（香港）\n运营\n中国香港\n2027届\n2026-09-21\n分享职位\n岗位职责\n1、负责区域内配送网络的规划与拓展，推动自提点开发及宅配覆盖范围扩展，持续提升区域订单量及市场渗透率；\n2、拓展并维护区域内合作资源，与自提点、屋苑/商业管理处等建立良好的合作关系，保障末端配送渠道的稳定运营；\n3、定期走访区域内的配送点位，监控服务标准的执行情况，及时发现并前置化解潜在舆情风险，维护平台品牌形象；\n4、通过数据监控与分析，识别区域运营中的问题与机会点，提出针对性改进方案并推动落地。\n任职要求\n1、本科及以上学历，专业不限；持有香港居民身份证，能以粤语作为日常工作语言；\n2、掌握基础数据处理技能，具备良好的逻辑思维与",
+        "jd_end": "营中的问题与机会点，提出针对性改进方案并推动落地。\n\n1、本科及以上学历，专业不限；持有香港居民身份证，能以粤语作为日常工作语言；\n2、掌握基础数据处理技能，具备良好的逻辑思维与沟通协调能力，有团队合作意识，亲和力佳，善于耐心沟通；\n3、自驱力强，目标感与责任心突出，具备较强的运营意识与用户同理心。"
+      }
+    }
+  ]
+}

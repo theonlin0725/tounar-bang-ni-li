@@ -60,6 +60,22 @@ async function refresh() {
     show($('pairing-box'), false);
   }
   renderSites(status.grantedOrigins || []);
+  $('toggle-pause').textContent = s.capturePaused ? '恢复采集' : '暂停采集';
+  $('toggle-pause').dataset.paused = s.capturePaused ? '1' : '0';
+  if(s.lastCapture) {
+    if (s.lastCapture.client_event_ids?.length) {
+      const receipts = s.lastCapture.client_event_ids.map(id=>s.lastEventResults?.[id]);
+      s.lastCapture.counts = {
+        entered:receipts.filter(r=>r?.application_id && r.processing_state==='applied').length,
+        review:receipts.filter(r=>r?.review_item_id).length,
+        rejected:receipts.filter(r=>r?.error && !r.error.retryable).length,
+        queued:receipts.filter(r=>!r || r.error?.retryable).length
+      };
+    }
+    const receipt = s.lastEventResults?.[s.lastCapture.client_event_id];
+    const state = receipt?.processing_state === 'cancelled' ? 'cancelled' : receipt?.application_id && receipt.processing_state === 'applied' ? 'entered' : receipt?.review_item_id ? 'review' : receipt?.error && !receipt.error.retryable ? 'rejected' : s.lastCapture.status;
+    showCapture({...s.lastCapture,status:state,result:receipt||s.lastCapture});
+  }
 }
 
 function showCapture(status) {
@@ -68,17 +84,19 @@ function showCapture(status) {
   if (!status) { el.textContent = '尚未采集'; return; }
   const title = status.job?.job_title ? `：${status.job.job_title}` : '';
   const map = {
+    list_result: `列表发现 ${status.count || 0} 条：已入账 ${status.counts?.entered || 0}，待确认 ${status.counts?.review || 0}，待上传 ${status.counts?.queued || 0}，失败 ${status.counts?.rejected || 0}`,
     entered: `已自动入账（${status.elapsedMs}ms）${title}`,
     accepted: `服务端已接受，正在处理（${status.elapsedMs}ms）${title}`,
-    review: `已提交，但字段需要你确认（进了待确认）${title}`,
+    review: `待确认${title}（${status.result?.review_reason || status.review_reason || '关键字段或岗位身份需要核对'}）`,
     queued: `已入本地队列，等待上传（${status.elapsedMs}ms）${title}`,
+    cancelled: '未上传事件已清空',
     rejected: `服务端拒绝：${status.result?.error?.message || '校验未通过'}`,
     failed: `采集失败：${status.message || status.result?.error?.message || '未知错误'}`,
-    no_job: '已连接页面，但这一页没有识别到岗位（首页/列表请点开详情再采集）',
+    no_job: '当前页面没有识别到可靠的岗位详情或列表卡片',
     unauthorized: '该站点未授权，先点「将本站设为招聘网站并授权」',
     error: `采集失败：${status.message || '未知错误'}`
   };
-  el.textContent = map[status.status] || `状态：${status.status}`;
+  el.textContent = (map[status.status] || `状态：${status.status}`) + (status.count ? ` · ${status.count} 条列表发现` : '') + (status.jd_status === 'too_long' ? ' · JD 超出 100000 字上限，正文未保存' : '');
 }
 
 async function captureCurrentTab(reason) {
@@ -93,7 +111,7 @@ async function captureCurrentTab(reason) {
   $('capture-status').textContent = '已授权，正在识别当前页…';
   const result = await send({ type: 'capture_current_tab', tabId: tab.id, origin, reason });
   if (result?.ok) {
-    showCapture({ status: result.result?.status || result.status, elapsedMs: result.elapsedMs, job: result.result?.job, result: result.result });
+    showCapture({ ...result.result, status: result.result?.status || result.status, elapsedMs: result.elapsedMs, job: result.result?.job, result: result.result });
   } else {
     showCapture({ status: 'error', message: result?.error?.message });
   }
@@ -109,7 +127,7 @@ async function renderLearned() {
   if (!list.length) {
     const p = document.createElement('p');
     p.className = 'hint';
-    p.textContent = '还没有学习记录：在岗位上点「采集当前页」成功后会生成。';
+    p.textContent = '还没有学习记录：授权后浏览岗位，成功采集时会自动学习。';
     container.append(p);
     return;
   }
@@ -150,27 +168,29 @@ function renderSites(grantedOrigins) {
   }
 }
 
-async function ensureContentScript(origins) {
-  // 先按已授权来源全量重建注册，避免重复 id 与陈旧 matches。
-  const all = await chrome.permissions.getAll();
-  const patterns = (all.origins || []).filter((o) => o !== '*://*/*');
-  try { await chrome.scripting.unregisterContentScripts({ ids: (await chrome.scripting.getRegisteredContentScripts()).map((s) => s.id) }); } catch { /* ignore */ }
-  if (!patterns.length) return;
-  try {
-    await chrome.scripting.registerContentScripts([{
-      id: 'tounar-tracker',
-      matches: patterns,
-      js: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js'],
-      runAt: 'document_idle',
-      persistAcrossSessions: true
-    }]);
-  } catch (err) {
-    $('sites-status').textContent = `脚本注册失败：${err.message || err}`;
-  }
+async function ensureContentScript() {
+  const result = await send({type:'sync_permissions'});
+  if(!result.ok) throw new Error(result.error?.message || '脚本注册失败');
 }
 
 /* 本机服务探测：4311 是验收默认端口，4310 是历史默认端口。 */
 const LOCAL_CANDIDATES = [4311, 4310];
+
+async function authorizeBackend(raw) {
+  try {
+    const url = new URL(raw);
+    if (!/^https?:$/.test(url.protocol)) throw new Error('后台地址必须以 http:// 或 https:// 开头');
+    // Called directly from a click handler, before any asynchronous work, so
+    // Chrome retains the user gesture required for optional permissions.
+    const granted = await chrome.permissions.request({origins:[url.origin+'/*']});
+    if (!granted) throw new Error('未获得后台连接权限，请再次点击并允许；后台地址未更改。');
+    return true;
+  } catch (error) {
+    $('health').textContent=error.message || '后台地址格式不正确';
+    $('health').className='error';
+    return false;
+  }
+}
 
 async function probeOne(port, timeoutMs = 1500) {
   const url = `http://127.0.0.1:${port}`;
@@ -190,6 +210,7 @@ async function probeOne(port, timeoutMs = 1500) {
 }
 
 $('probe-local').addEventListener('click', async () => {
+  if (!await authorizeBackend('http://127.0.0.1')) return;
   const button = $('probe-local');
   button.disabled = true;
   $('probe-result').textContent = '正在检测 127.0.0.1:4311 / 4310…';
@@ -199,7 +220,7 @@ $('probe-local').addEventListener('click', async () => {
   const usable = results.filter((r) => r.ok);
   const lines = results.map((r) => `${r.ok ? '✅' : '❌'} ${r.url}${r.ok ? '' : `（${r.reason}）`}`);
   if (!usable.length) {
-    $('probe-result').textContent = `${lines.join('；')}。本机没有可用的后台，先在项目目录执行 npm run local:acceptance。`;
+    $('probe-result').textContent = `${lines.join('；')}。本次未连接成功；请核对后台是否运行，以及 Chrome 对本机网络的访问权限。`;
     return;
   }
   const target = usable[0];
@@ -212,6 +233,7 @@ $('probe-local').addEventListener('click', async () => {
 
 $('save-server').addEventListener('click', async () => {  const url = $('server-url').value.trim();
   if (!/^https?:\/\//.test(url)) { alert('请输入以 http(s):// 开头的后台地址'); return; }
+  if (!await authorizeBackend(url)) return;
   const result = await send({ type: 'set_server_url', serverUrl: url });
   if (!result.ok) {
     $('health').textContent = result.error?.message || '后台地址保存失败，请重试';
@@ -223,6 +245,7 @@ $('save-server').addEventListener('click', async () => {  const url = $('server-
 });
 
 $('start-pairing').addEventListener('click', async () => {
+  if (!await authorizeBackend($('server-url').value.trim())) return;
   const button = $('start-pairing');
   button.disabled = true;
   const result = await send({ type: 'start_pairing', serverUrl: $('server-url').value.trim(), deviceName: `Chrome · ${navigator.platform}` });
@@ -265,8 +288,9 @@ $('unpair').addEventListener('click', async () => {
 });
 
 $('grant-current').addEventListener('click', async () => {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const url = tabs[0]?.url;
+  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!/^https?:/.test(tab?.url || '')) tab = (await chrome.tabs.query({currentWindow:true})).filter(t => /^https?:/.test(t.url || '')).sort((a,b) => (b.lastAccessed||b.id)-(a.lastAccessed||a.id))[0];
+  const url = tab?.url;
   if (!url || !/^https?:/.test(url)) { $('sites-status').textContent = '当前标签页不是 http(s) 页面'; return; }
   const origin = `${new URL(url).origin}/*`;
   const startedAt = Date.now();
@@ -298,13 +322,15 @@ $('grant-selected').addEventListener('click', async () => {
 
 $('revoke-all').addEventListener('click', async () => {
   const all = await chrome.permissions.getAll();
-  const origins = (all.origins || []).filter((o) => o !== '*://*/*');
+  const origins = all.origins || [];
   if (origins.length) await chrome.permissions.remove({ origins });
   await chrome.scripting.unregisterContentScripts().catch(() => {});
   $('sites-status').textContent = '已撤销全部站点授权';
   await refresh();
 });
 
+$('toggle-pause').addEventListener('click', async () => { await send({type:'set_capture_paused',paused:$('toggle-pause').dataset.paused !== '1'}); await refresh(); });
+$('clear-queue').addEventListener('click', async () => { if(confirm('清空未上传事件？已入账记录和模板不受影响。')) { await send({type:'clear_queue'}); await refresh(); } });
 refresh();
 renderLearned();
 setInterval(refresh, 5000);

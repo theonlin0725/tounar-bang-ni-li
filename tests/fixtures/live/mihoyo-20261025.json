@@ -1,0 +1,130 @@
+{
+  "site": "mihoyo",
+  "sampled_at": "2026-10-25T12:14:55.942Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://jobs.mihoyo.com/#/position",
+  "click_selector": "[class*=\"jobItem___\"]",
+  "list": [
+    {
+      "company_name": "米哈游",
+      "job_title": "3D动画-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/6352",
+      "site_job_id": "6352",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "资深游戏测试工程师（系统大厅向）-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/9712",
+      "site_job_id": "9712",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "游戏测试工程师（第三方编制）-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/9711",
+      "site_job_id": "9711",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "LLM预训练数据算法研究员（Agentic Models）-基模",
+      "location": "上海、北京",
+      "job_url": "https://jobs.mihoyo.com/#/position/8460",
+      "site_job_id": "8460",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "战斗策划（技术向）-源初之结",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/8909",
+      "site_job_id": "8909",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "交互策划（UE）-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/8142",
+      "site_job_id": "8142",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "战斗策划（玩法）-绝区零",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/7606",
+      "site_job_id": "7606",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "系统策划（城市生态）-绝区零",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/7434",
+      "site_job_id": "7434",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "资深战斗策划（3C）-源初之结",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/7362",
+      "site_job_id": "7362",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "资深数值策划-Varsapura",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/6506",
+      "site_job_id": "6506",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "米哈游",
+      "job_title": "3D动画-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/6352",
+      "site_job_id": "6352",
+      "recruitment_batch": "",
+      "jd_text": "1.独立负责风格化角色的全套动画（含3C、战斗)的设计与制作；\n2.配合合作部门，最终能让角色的品质达到业内一线PC&主机端游戏品质（PVP向游戏）；\n3.与相关同事部门梳理总结动画设计规范与生产标准，搭建动画管线生产流程，指导外包生产符合项目需求的资产；\n4.配合相关专业同学，去制定整个游戏整体的动画表现风格并能够提供清晰的规范指引其它同学完成手头工作。\n\n1.具备5年以上游戏研发相关经验，具备扎实的动画设计与手K动画能力；\n2.对角色的性格、气质，战斗幻想有自己的想法和设计能力；\n3.热爱游戏，对于单局竞技类游戏，MOBA、第三人称射击、对抗类ACT等游戏表现有自己的理解加分；\n4.对UE引擎和动画的DCC工具与生产管线有经验和实操能力加分；\n5.有良好的沟通能力和合作精神；\n6.热爱游戏，对动画表现有追求极致的精神。",
+      "evidence": {
+        "header": "社招首页\n社招职位\n切换到校招\n登录\n3D动画-3D风格化MOBA预研全职\n上海\n美术&表现类\n工作职责\n1.独立负责风格化角色的全套动画（含3C、战斗)的设计与制作；\n2.配合合作部门，最终能让角色的品质达到业内一线PC&主机端游戏品质（PVP向游戏）；\n3.与相关同事部门梳理总结动画设计规范与生产标准，搭建动画管线生产流程，指导外包生产符合项目需求的资产；\n4.配合相关专业同学，去制定整个游戏整体的动画表现风格并能够提供清晰的规范指引其它同学完成手头工作。\n任职要求\n1.具备5年以上游戏研发相关经验，具备扎实的动画设计与手K动画能力；\n2.对角色的性格、气质，战斗幻想有自己的想法和设计能力；\n3.热爱游戏，对于单局竞技类游戏，MOBA、第三人称射击、对抗类ACT等游戏表现有自己的理解加分",
+        "jd_end": "2.对角色的性格、气质，战斗幻想有自己的想法和设计能力；\n3.热爱游戏，对于单局竞技类游戏，MOBA、第三人称射击、对抗类ACT等游戏表现有自己的理解加分；\n4.对UE引擎和动画的DCC工具与生产管线有经验和实操能力加分；\n5.有良好的沟通能力和合作精神；\n6.热爱游戏，对动画表现有追求极致的精神。"
+      }
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "资深游戏测试工程师（系统大厅向）-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/9712",
+      "site_job_id": "9712",
+      "recruitment_batch": "",
+      "jd_text": "1. 负责系统大厅的质量保证工作，保障产品品质；\n2. 负责后台性能测试，跨版本数据兼容等系统大厅专项测试；\n3. 主导具体功能模块的测试方案，培养测试团队用例编写和执行能力；\n4. 针对游戏业务测试中的难点和盲区给出有效测试方案，以技术手段提升测试覆盖面和测试效率；\n5. 和研发团队保持良好的沟通，完善研发测试流程，持续推动产品质量提升。\n\n1. 本科及以上学历，有至少3年游戏测试经验，经历完整大型游戏项目研发上线者优先；\n2. 具备PVP游戏线上项目大厅测试经验，熟悉项目研发及测试流程，有测试团队管理或带教经验更佳；\n3. 熟悉UE引擎，掌握至少一门编程语言，对自动化，后台性能，协议安全至少一类专项测试有应用经验；\n4. 对大厅弱网测试，跨版本数据兼容等大厅测试有深入了解；\n5. 热爱PVP类型游戏，对局外系统/成长线/商业化设计有独立判断。",
+      "evidence": {
+        "header": "社招首页\n社招职位\n切换到校招\n登录\n资深游戏测试工程师（系统大厅向）-3D风格化MOBA预研全职\n上海\n质量管理类\n工作职责\n1. 负责系统大厅的质量保证工作，保障产品品质；\n2. 负责后台性能测试，跨版本数据兼容等系统大厅专项测试；\n3. 主导具体功能模块的测试方案，培养测试团队用例编写和执行能力；\n4. 针对游戏业务测试中的难点和盲区给出有效测试方案，以技术手段提升测试覆盖面和测试效率；\n5. 和研发团队保持良好的沟通，完善研发测试流程，持续推动产品质量提升。\n任职要求\n1. 本科及以上学历，有至少3年游戏测试经验，经历完整大型游戏项目研发上线者优先；\n2. 具备PVP游戏线上项目大厅测试经验，熟悉项目研发及测试流程，有测试团队管理或带教经验更佳；\n3. 熟悉UE引擎，掌握至少一门编程",
+        "jd_end": "目大厅测试经验，熟悉项目研发及测试流程，有测试团队管理或带教经验更佳；\n3. 熟悉UE引擎，掌握至少一门编程语言，对自动化，后台性能，协议安全至少一类专项测试有应用经验；\n4. 对大厅弱网测试，跨版本数据兼容等大厅测试有深入了解；\n5. 热爱PVP类型游戏，对局外系统/成长线/商业化设计有独立判断。"
+      }
+    },
+    {
+      "company_name": "米哈游",
+      "job_title": "游戏测试工程师（第三方编制）-3D风格化MOBA预研",
+      "location": "上海",
+      "job_url": "https://jobs.mihoyo.com/#/position/9711",
+      "site_job_id": "9711",
+      "recruitment_batch": "",
+      "jd_text": "1. 分析产品需求，理解产品设计意图，设计和编写测试用例；\n2. 负责游戏具体模块的功能性测试和体验性测试；\n3. 运用UE引擎检查策划配置，美术资源等；\n4. 及时反馈缺陷并跟进修复闭环，沉淀模块测试文档，持续提升负责模块测试质量。\n\n1. 大专及以上学历，1年及以上测试经验；\n2. 具备较强的逻辑能力，耐心细致，有责任心；\n3. 热爱pvp品类游戏，有深刻游戏理解者优先；\n4. 经历完整大型项目研发上线流程者优先；\n5. 熟悉UE引擎，对弱网测试，自动化测试等专项测试有实际测试经验者优先。\n\n重度FPS/MOBA玩家加分。\n\n常规社招",
+      "evidence": {
+        "header": "社招首页\n社招职位\n切换到校招\n登录\n游戏测试工程师（第三方编制）-3D风格化MOBA预研第三方编制\n上海\n质量管理类\n常规社招\n工作职责\n1. 分析产品需求，理解产品设计意图，设计和编写测试用例；\n2. 负责游戏具体模块的功能性测试和体验性测试；\n3. 运用UE引擎检查策划配置，美术资源等；\n4. 及时反馈缺陷并跟进修复闭环，沉淀模块测试文档，持续提升负责模块测试质量。\n任职要求\n1. 大专及以上学历，1年及以上测试经验；\n2. 具备较强的逻辑能力，耐心细致，有责任心；\n3. 热爱pvp品类游戏，有深刻游戏理解者优先；\n4. 经历完整大型项目研发上线流程者优先；\n5. 熟悉UE引擎，对弱网测试，自动化测试等专项测试有实际测试经验者优先。\n加分项\n重度FPS/MOBA玩家加分。\n面向对象\n常",
+        "jd_end": "大专及以上学历，1年及以上测试经验；\n2. 具备较强的逻辑能力，耐心细致，有责任心；\n3. 热爱pvp品类游戏，有深刻游戏理解者优先；\n4. 经历完整大型项目研发上线流程者优先；\n5. 熟悉UE引擎，对弱网测试，自动化测试等专项测试有实际测试经验者优先。\n\n重度FPS/MOBA玩家加分。\n\n常规社招"
+      }
+    }
+  ]
+}

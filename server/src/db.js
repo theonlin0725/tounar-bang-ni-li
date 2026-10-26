@@ -31,6 +31,8 @@ function migrate(instance) {
   addColumn('notification_preferences', 'stage_followup_days', 'INTEGER NOT NULL DEFAULT 7 CHECK (stage_followup_days IN (0,7,14))');
   addColumn('notification_outbox', 'source_received_at', 'TEXT');
   addColumn('applications', 'jd_text', 'TEXT');
+  addColumn('applications', 'jd_status', "TEXT NOT NULL DEFAULT 'missing'");
+  addColumn('applications', 'capture_source', 'TEXT');
   addColumn('applications', 'stage_received_at', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');

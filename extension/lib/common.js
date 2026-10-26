@@ -15,7 +15,12 @@
     const stored = await chrome.storage.local.get(KEY);
     return { ...DEFAULTS, ...(stored[KEY] || {}) };
   }
-  async function setSettings(patch) {
+  let settingsWrite = Promise.resolve();
+  function setSettings(patch) {
+    settingsWrite = settingsWrite.catch(() => {}).then(() => writeSettings(patch));
+    return settingsWrite;
+  }
+  async function writeSettings(patch) {
     const current = await getSettings();
     const next = { ...current, ...patch };
     await chrome.storage.local.set({ [KEY]: next });

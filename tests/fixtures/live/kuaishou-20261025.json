@@ -1,0 +1,130 @@
+{
+  "site": "kuaishou",
+  "sampled_at": "2026-10-25T12:14:11.212Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://zhaopin.kuaishou.cn/#/official/social/?workLocationCode=domestic",
+  "click_selector": ".ant-table-tbody tr td:first-child div",
+  "list": [
+    {
+      "company_name": "快手",
+      "job_title": "策略产品经理（激励广告）-【商业化】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/30657",
+      "site_job_id": "30657",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "流量策略产品经理-【商业化】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/30708",
+      "site_job_id": "30708",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "大数据计算引擎SRE工程师",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/33095",
+      "site_job_id": "33095",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "AI公益产品经理",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/33092",
+      "site_job_id": "33092",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "电商达人B端产品",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/32702",
+      "site_job_id": "32702",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "平台产品经理（B端付费）-【主站】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/32954",
+      "site_job_id": "32954",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "垂类作者运营（资讯）-【主站】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/26623",
+      "site_job_id": "26623",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "垂类运营（青春娱乐）-【主站】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/30700",
+      "site_job_id": "30700",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "垂类创作者运营（时尚美妆）-【主站】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/32793",
+      "site_job_id": "32793",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "快手",
+      "job_title": "资深明星运营-【主站】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/13215",
+      "site_job_id": "13215",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "快手",
+      "job_title": "策略产品经理（激励广告）-【商业化】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/30657",
+      "site_job_id": "30657",
+      "recruitment_batch": "",
+      "jd_text": "1、负责商业化激励广告的变现工作，对收入负责；\n2、深入理解行业侧广告主的需求，通过业务逻辑和数据分析，设计落地能够平衡广告主投放效果与收入规模的优化方案；\n3、挖掘当前激励广告投放各环节存在的问题，并提出相应的优化方案；\n4、深度协同算法和数据团队，推动流量策略和模型策略的优化，提升广告的eCPM和转化效率；\n5、通过客户&用户调研、竞品分析、数据挖掘，学习和了解业界动态，设计策略产品的中长期规划及产品节奏，并落地执行，保障产品核心指标的良性可持续增长。\n\n1、3年左右商业产品工作经验，有行业变现产品经验者优先；\n2、有全局视野、思维不设限、优秀的沟通能力及企业服务意识；\n3、对流量策略、客户策略、模型策略的一个方向上有较深的理解，有明投、冷启动、深度转化、召回、粗排、精排经验优先；\n4、以收入为目标，具备能调动一切资源的能力和自驱力，对AI方向有持续的学习，能组织公司内多部门沟通协作，能独立负责和推进项目。",
+      "evidence": {
+        "header": "社会招聘\n日常实习\n校园招聘\n关于快手\n注册/登录\n策略产品经理（激励广告）-【商业化】\n职位类别：\n产品类\n职位性质：\n全职\n工作年限：\n3-5年\n工作地点：\n北京\n更新时间：\n2026.10.23\n职位描述\n1、负责商业化激励广告的变现工作，对收入负责；\n2、深入理解行业侧广告主的需求，通过业务逻辑和数据分析，设计落地能够平衡广告主投放效果与收入规模的优化方案；\n3、挖掘当前激励广告投放各环节存在的问题，并提出相应的优化方案；\n4、深度协同算法和数据团队，推动流量策略和模型策略的优化，提升广告的eCPM和转化效率；\n5、通过客户&用户调研、竞品分析、数据挖掘，学习和了解业界动态，设计策略产品的中长期规划及产品节奏，并落地执行，保障产品核心指标的良性可持续增长。\n\n任职要求\n1、3年左右商",
+        "jd_end": "2、有全局视野、思维不设限、优秀的沟通能力及企业服务意识；\n3、对流量策略、客户策略、模型策略的一个方向上有较深的理解，有明投、冷启动、深度转化、召回、粗排、精排经验优先；\n4、以收入为目标，具备能调动一切资源的能力和自驱力，对AI方向有持续的学习，能组织公司内多部门沟通协作，能独立负责和推进项目。"
+      }
+    },
+    {
+      "company_name": "快手",
+      "job_title": "流量策略产品经理-【商业化】",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/30708",
+      "site_job_id": "30708",
+      "recruitment_batch": "",
+      "jd_text": "1、负责信息流流量策略设计与规划，优化流量分配、竞价排序、广告召回的核心策略能力；基于目前广告场景定位问题，分析空间，从召回到混排优化全检索链路，提升变现效率；\n2、深入挖掘C端用户与B端预算的更优匹配关系，通过建模+策略迭代的方式交付大盘营收结果，为流量场域的竞价机制稳定性、公平性、变现效率负责；\n3、建立策略效果评估体系，通过数据驱动持续优化变现效率；\n4、与推荐算法团队深度合作，推动策略模型优化，与消费、直播协作，平衡收入与体验指标；\n\n1、大学本科及以上学历，计算机、数据挖掘、统计学、经济学、心理学等相关专业优先；\n2、3年以上互联网商业产品经验，对流量策略、检索链路、竞价系统等有深入的理解，有大型广告平台工作经验者；\n3、思路清晰、逻辑性强、数据敏感、结果导向，熟练掌握SQL、数据分析、效果评估等工具和方法；\n4、具备AI技术应用能力，能够结合业务场景推动AI模型的落地与优化；\n5、沟通能力强，有共赢意识，能协调多个团队共同完成产品目标。",
+      "evidence": {
+        "header": "社会招聘\n日常实习\n校园招聘\n关于快手\n注册/登录\n流量策略产品经理-【商业化】\n职位类别：\n产品类\n职位性质：\n全职\n工作年限：\n3-5年\n工作地点：\n北京\n更新时间：\n2026.10.23\n职位描述\n1、负责信息流流量策略设计与规划，优化流量分配、竞价排序、广告召回的核心策略能力；基于目前广告场景定位问题，分析空间，从召回到混排优化全检索链路，提升变现效率；\n2、深入挖掘C端用户与B端预算的更优匹配关系，通过建模+策略迭代的方式交付大盘营收结果，为流量场域的竞价机制稳定性、公平性、变现效率负责；\n3、建立策略效果评估体系，通过数据驱动持续优化变现效率；\n4、与推荐算法团队深度合作，推动策略模型优化，与消费、直播协作，平衡收入与体验指标；\n任职要求\n1、大学本科及以上学历，计算机、数据挖掘",
+        "jd_end": "，对流量策略、检索链路、竞价系统等有深入的理解，有大型广告平台工作经验者；\n3、思路清晰、逻辑性强、数据敏感、结果导向，熟练掌握SQL、数据分析、效果评估等工具和方法；\n4、具备AI技术应用能力，能够结合业务场景推动AI模型的落地与优化；\n5、沟通能力强，有共赢意识，能协调多个团队共同完成产品目标。"
+      }
+    },
+    {
+      "company_name": "快手",
+      "job_title": "大数据计算引擎SRE工程师",
+      "location": "北京",
+      "job_url": "https://zhaopin.kuaishou.cn/#/official/social/job-info/33095",
+      "site_job_id": "33095",
+      "recruitment_batch": "",
+      "jd_text": "1、负责快手大规模大数据集群与数据平台的稳定性建设，覆盖 Hive、Spark、Flink、ClickHouse、Doris、hudi等核心组件；\n2、建设并迭代平台级稳定性体系，包括监控告警、容量与性能治理、变更管理、故障应急与复盘改进；\n3、深入参与日常 Oncall 与故障处置，主导根因分析，推动问题在系统层面收敛而非重复应急；\n4、设计并落地自动化运维能力，持续提升巡检、告警处置、故障诊断、应急处置的自动化覆盖率；\n5、建设基于大模型的智能运维（AIOps），Agent 驱动的诊断与执行、知识沉淀与能力进化。\n\n1、本科及以上学历，具备 3 年以上大规模分布式系统或大数据平台运维经验；\n2、深入理解 Linux 操作系统、网络、存储、调度等基础设施原理，具备扎实的故障排查与性能调优能力；\n3、熟悉 Hadoop 生态或至少一个主流大数据组件的原理与运维，包括 HDFS、YARN、Hive、Spark、Flink、ClickHouse、Doris、Kafka 等；\n4、具备良好的复杂问题分析能力，能够主导跨系统、跨组件故障定位与根因分析；\n5、重视规范、文档与复盘，善于把应急经验沉淀为系统能力；\n6、能够承担 Oncall 责任，具备较强的抗压能力与跨团队沟通协调能力；\n7、对 AI Agent、大模型应用、自动化运维、AIOps 方向有热情或实践经验者优先；\n8、熟练使用Ai Coding工具，独立完成AIOps系统的研发。",
+      "evidence": {
+        "header": "社会招聘\n日常实习\n校园招聘\n关于快手\n注册/登录\n大数据计算引擎SRE工程师\n职位类别：\n工程类\n职位性质：\n全职\n工作年限：\n3-5年\n工作地点：\n北京\n更新时间：\n2026.10.23\n职位描述\n1、负责快手大规模大数据集群与数据平台的稳定性建设，覆盖 Hive、Spark、Flink、ClickHouse、Doris、hudi等核心组件；\n2、建设并迭代平台级稳定性体系，包括监控告警、容量与性能治理、变更管理、故障应急与复盘改进；\n3、深入参与日常 Oncall 与故障处置，主导根因分析，推动问题在系统层面收敛而非重复应急；\n4、设计并落地自动化运维能力，持续提升巡检、告警处置、故障诊断、应急处置的自动化覆盖率；\n5、建设基于大模型的智能运维（AIOps），Agent 驱动的诊断与执",
+        "jd_end": "分析；\n5、重视规范、文档与复盘，善于把应急经验沉淀为系统能力；\n6、能够承担 Oncall 责任，具备较强的抗压能力与跨团队沟通协调能力；\n7、对 AI Agent、大模型应用、自动化运维、AIOps 方向有热情或实践经验者优先；\n8、熟练使用Ai Coding工具，独立完成AIOps系统的研发。"
+      }
+    }
+  ]
+}

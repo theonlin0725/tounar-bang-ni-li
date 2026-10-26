@@ -1,0 +1,131 @@
+{
+  "site": "meituan",
+  "sampled_at": "2026-10-26T01:09:58.341Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://zhaopin.meituan.com/web/social",
+  "click_selector": ".position_list_item",
+  "list": [
+    {
+      "company_name": "美团",
+      "job_title": "美团外卖 - AI增长产品策略运营（连锁商家&BD方向）",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4863302334&highlightType=social",
+      "site_job_id": "4863302334",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "美团外卖-西式快餐品类运营",
+      "location": "上海市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4855161073&highlightType=social",
+      "site_job_id": "4855161073",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "会计报告-薪酬福利会计",
+      "location": "北京市、上海市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4842684316&highlightType=social",
+      "site_job_id": "4842684316",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "下沉市场-招商运营",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4830384462&highlightType=social",
+      "site_job_id": "4830384462",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "美团外卖-餐饮代购业务运营",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4826804920&highlightType=social",
+      "site_job_id": "4826804920",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "下沉市场-目标绩效管理（零售方向）",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4792874367&highlightType=social",
+      "site_job_id": "4792874367",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "工程财务BP",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4790953766&highlightType=social",
+      "site_job_id": "4790953766",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "财务报告专家",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4724789001&highlightType=social",
+      "site_job_id": "4724789001",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "商品传播专家",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4679759397&highlightType=social",
+      "site_job_id": "4679759397",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "美团",
+      "job_title": "无人车运力运营-生产力管理WFM",
+      "location": "武汉市、北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4677531715&highlightType=social",
+      "site_job_id": "4677531715",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "美团",
+      "job_title": "美团外卖 - AI增长产品策略运营（连锁商家&BD方向）",
+      "location": "北京市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4863302334&highlightType=social",
+      "site_job_id": "4863302334",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\n1. 业务策略制定与落地：围绕连锁商家经营增长或体验提升，对商家问题挖掘识别，通过商家分层设计差异化的运营策略，并利用AI落地直连品牌达成业务目标，例如：品类和商品机会洞察、用户洞察分析、门店经营诊断等\n2. AI 创新探索：主动洞察AI Agent 等新技术在连锁营销与运营场景中的应用机会，设计并推动 AI 赋能方案在品牌侧落地，在行业打造有竞争力的AI解决方案\n3. 找增长突破：负责品牌行业AI调研，持续调研电商B端、品牌KA 新的模式和AI能力，找到赋能品牌新的机会点，助力品牌经营增长\n\n岗位基本要求\n1. 大学本科及以上学历，3年以上连锁餐饮商家运营经验或供给策略运营经验，有 AI 热情和实践/相关工作经验优先，理解 AI 技术在产品中的应用和价值，对AI Agent、Agentic AI 等技术有一定的了解\n2.熟悉餐饮连锁或 O2O/电商业务逻辑，对行业有一定的业务认知和理解\n3.具有产品创新意识，能够从业务痛点出发提出创新解决方案，有将 AI 能力融入产品设计并推动落地的实际经验者优先\n4.具备良好的跨部门沟通协调能力，能推动产品、研发、BD 多方资源协同落地\n\n岗位亮点\n1.美团核心业务，连锁随餐饮连锁化加剧持续高速增长，业务空间大、成长机会多\n2.您的 AI 想法可以直接在亿级规模上验证\n3.随着竞争的加剧，连锁作为竞争的主战场，能深入其中挖掘到不同阶段的业务机会\n4.全链路产品视野，从品牌入驻到自营销，覆盖连锁品牌在外卖平台经营的完整生命周期，快速建立系统性认知",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\n美团外卖 - AI增长产品策略运营（连锁商家&BD方向）\n社招-正式\n更新时间：2026/10/26\n工作地点：北京市\n部门：核心本地商业-外卖事业部\n工作经验：3年\n分享\n立即申请\n部门介绍\n美团外卖秉承“帮大家吃得更好，生活更好”的使命，始终聚焦于消费者用餐需求。我们通过科技连接消费者和商家，依托庞大的骑手团队，以“线上+线下”的业务模式，为消费者提供品质化、精细化、多样化的餐饮外卖服务。\n外卖事业部是为用户与商家提供全链路交易服务的业务组织，围绕餐饮外卖搭建了包含外卖业务与创新孵化业务在内的多个部门。\n我们的目标是帮助商家开源增收、提高经营效率，促进餐饮行业数字化，以及为",
+        "jd_end": "1.美团核心业务，连锁随餐饮连锁化加剧持续高速增长，业务空间大、成长机会多\n2.您的 AI 想法可以直接在亿级规模上验证\n3.随着竞争的加剧，连锁作为竞争的主战场，能深入其中挖掘到不同阶段的业务机会\n4.全链路产品视野，从品牌入驻到自营销，覆盖连锁品牌在外卖平台经营的完整生命周期，快速建立系统性认知"
+      }
+    },
+    {
+      "company_name": "美团",
+      "job_title": "美团外卖-西式快餐品类运营",
+      "location": "上海市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4855161073&highlightType=social",
+      "site_job_id": "4855161073",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\n以西式快餐品类增长为目标，围绕品类经营进行分析诊断与机会识别，并驱动经营专项有效落地，主要包括：\n1、经营分析：围绕业务目标，输出经营优化建议及增长策略, 搭建指标体系和分析模型，建立数据监测机制，保障业务策略落地；\n2、增长专题：从品类、场景、城市、供给结构等维度做深入洞察，识别关键增长要素、输出策略方案，面向前线做有效传达并推动落地；\n3、策略复盘专题：对业务策略进行效果复盘，诊断策略表现，为策略优化提供支撑，能独立识别经营异常并给出调优建议；\n4、专项推进：跟进关键项目，以增长为目的，识别当前驱动增长的关键要素，面向团队以及合作方进行有效传达，并推动落地。\n\n岗位基本要求\n1、本科及以上学历，市场营销，商业管理，经济学能相关专业背景优先；\n2、具有丰富的品类业务分析经验，熟悉外卖市场情况，了解竞争格局和消费者需求；\n3、具备数据分析能力和逻辑思维能力，熟练运营工具，市场调研工具等数据分析工具；\n4、具备良好的沟通协调能力和团队合作精神，能够有效推动团队协作，完成业务目标。\n\n岗位亮点\n1、参与连锁品类业务的长期战略执行和落地，实现业务增长与市场份额提升；\n2、可以接触丰富的市场数据资源，培养数据分析和决策能力；\n3、推动团队合作，共同实现业务目标。",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\n美团外卖-西式快餐品类运营\n社招-正式\n更新时间：2026/10/26\n工作地点：上海市\n部门：核心本地商业-外卖事业部\n工作经验：2年\n分享\n立即申请\n部门介绍\n美团外卖秉承“帮大家吃得更好，生活更好”的使命，始终聚焦于消费者用餐需求。我们通过科技连接消费者和商家，依托庞大的骑手团队，以“线上+线下”的业务模式，为消费者提供品质化、精细化、多样化的餐饮外卖服务。\n外卖事业部是为用户与商家提供全链路交易服务的业务组织，围绕餐饮外卖搭建了包含外卖业务与创新孵化业务在内的多个部门。\n我们的目标是帮助商家开源增收、提高经营效率，促进餐饮行业数字化，以及为更多用户提供更便捷更有品质的外",
+        "jd_end": "熟练运营工具，市场调研工具等数据分析工具；\n4、具备良好的沟通协调能力和团队合作精神，能够有效推动团队协作，完成业务目标。\n岗位亮点\n1、参与连锁品类业务的长期战略执行和落地，实现业务增长与市场份额提升；\n2、可以接触丰富的市场数据资源，培养数据分析和决策能力；\n3、推动团队合作，共同实现业务目标。"
+      }
+    },
+    {
+      "company_name": "美团",
+      "job_title": "会计报告-薪酬福利会计",
+      "location": "北京市、上海市",
+      "job_url": "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4842684316&highlightType=social",
+      "site_job_id": "4842684316",
+      "recruitment_batch": "社招-正式",
+      "jd_text": "岗位职责\n1、日常月结工作，支持境内外薪酬福利各类场景完成结账，联动报账产研发解决各项系统类问题，确保业务场景入账及时性和准确性，并持续进行月结提效；\n2、定期对科目核算内容进行深入分析，对于异常科目及时发现问题，提出账务调整或流程优化建议，并推动问题解决；\n3、梳理日常运营流程，识别运营流程中的各项问题并推动运营优化；\n4、主导或支持各项跨团队及团队内部的横向运营类或系统化项目；\n5、内外部审计对接；\n6、及时高效地完成团队交办的其他事项。\n\n岗位基本要求\n1、本科及其以上学历，会计、经济、管理类等相关专业，5年及以上财会相关工作经验；\n2、熟悉中国会计准则或国际会计准则，熟悉企业的财务核算工作；\n3、工作认真细心、自趋力强、责任心强、具有良好的团队协作精神和服务意识；\n4、具备较强的沟通能力、协调能力，能主导跨团队项目开展，具备优秀的逻辑思维和分析能力。\n5、具备 AI 思维与工具应用能力，能将AI 能力主动引入日常工作。\n具备以下者优先：\n有大型互联网工作经验者优先、有会计师事务所工作经验优先、具备CPA等相关证书优先。\n\n具备以下条件优先\n有互联网行业从业经验、大型优秀企业从业经验、四大会计师事务所从业经验者优先、具备CPA等相关证书优先。\n\n岗位亮点\n1、学习成长机会大：我们拥有众多的业态，在这里，你可以学习到不同的复杂业态下会计处理的方案，带给你前所未有的成长速度；\n2、与行业内优秀的人共舞：我们拥有众多国内外知名企业的优秀人士，和优秀的人共事，让自己变得更加优秀；\n3、简单高效的团队氛围：我们注重结果导向，每个人都凭业绩说话，我们尊重专业，努力构造业界的财务标杆，同时，我们更加重视财务在业务中的价值体现。",
+      "evidence": {
+        "header": "首页\nLongCat人才招聘\n北斗计划\n社会招聘\n校园招聘\n美团赛事\n了解美团\nGlobal Careers\n登录\n会计报告-薪酬福利会计\n社招-正式\n更新时间：2026/10/26\n工作地点：北京市、上海市\n部门：财务平台\n工作经验：5年\n分享\n立即申请\n部门介绍\n财务平台负责公司整体和各业务层面的财务管理工作，通过建设专业、全面、复合的财务管理能力和与业务经营的紧密结合来支持公司健康发展。目前财务平台拥有财务会计、财务报告、资金管理、税务管理、财务共享、财务系统、规划分析、财务BP和内控内审等主要工作方向。我们的目标是建设业界一流的财务管理能力和经营支持体系，为公司战略的正确落地、投入效率的持续提升、业务价值的不断增长保驾护航。欢迎加入财务平台，携手一起向未来！\n岗位职责\n1、日常月结工",
+        "jd_end": "的复杂业态下会计处理的方案，带给你前所未有的成长速度；\n2、与行业内优秀的人共舞：我们拥有众多国内外知名企业的优秀人士，和优秀的人共事，让自己变得更加优秀；\n3、简单高效的团队氛围：我们注重结果导向，每个人都凭业绩说话，我们尊重专业，努力构造业界的财务标杆，同时，我们更加重视财务在业务中的价值体现。"
+      }
+    }
+  ],
+  "normalization": "Preserve inner-section rendered paragraphs; separate independently observed JD sections with one blank line; exclude department introduction."
+}

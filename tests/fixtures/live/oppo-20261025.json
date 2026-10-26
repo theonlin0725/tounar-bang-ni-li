@@ -1,0 +1,130 @@
+{
+  "site": "oppo",
+  "sampled_at": "2026-10-25T12:14:11.209Z",
+  "source": "Independent current homepage navigation and rendered DOM; API used only to resolve click-only list identities; no Tounar extractor executed during truth collection.",
+  "list_url": "https://career.oppo.com/official/oppo/recruitment/post?recruitType=SOCIAL-RECRUITMENT",
+  "click_selector": ".job_code",
+  "list": [
+    {
+      "company_name": "OPPO",
+      "job_title": "UI设计师",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1836284418896736257?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1836284418896736257",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级大模型算法工程师",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/2080486782073245698?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "2080486782073245698",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级热设计工程师",
+      "location": "东莞市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1563444621030670338?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1563444621030670338",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级公关经理(OPPO/一加)",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1663024335066836994?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1663024335066836994",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级电商运营经理",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/2113583138036854786?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "2113583138036854786",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "技术支持代表",
+      "location": "东莞市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1689519320599441409?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1689519320599441409",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "用户研究经理",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1916417335731867649?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1916417335731867649",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级GTM经理",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1806514763442524161?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1806514763442524161",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级广告客户运营经理",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/2082310323240374273?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "2082310323240374273",
+      "recruitment_batch": ""
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级安全攻防工程师",
+      "location": "成都市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1563450940542267393?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1563450940542267393",
+      "recruitment_batch": ""
+    }
+  ],
+  "details": [
+    {
+      "company_name": "OPPO",
+      "job_title": "UI设计师",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1836284418896736257?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1836284418896736257",
+      "recruitment_batch": "",
+      "jd_text": "1. 负责 ColorOS 操作系统核心业务领域的视觉定义设计；\n2. 分析行业与竞品设计趋势，能从目标用户出发，构建符合目标用户的输出高质量视觉设计方案；\n3. 负责看护所在领域的用户和市场反馈，持续优化该领域的设计质量；\n4. 与产品、研发团队紧密配合，共同达成一流的产品体验目标。\n\n1. 设计类专业本科及以上学历，从事设计工作3-5年，设计学、社会学、心理学或相关领域工作经验；\n2. 具备出色的审美能力与视觉敏感性，对设计风格与流行趋势有敏锐的洞察力；\n3. 熟悉设计相关的前沿理论知识、方法，对体验设计有成熟方法论，对系统工具类、移动应用类、AI 智慧类产品有丰富的设计经验\n4. 理解技术实现原理，保障设计效果的高质量落地；\n5. 对设计充满热忱，较好的韧性，能承受高强度的工作压力。",
+      "evidence": {
+        "header": "首页\n社会招聘\n校园招聘\n人在 OPPO\n工作地点\n员工故事\n个人中心\nUI设计师\n热招\n分享\n投递岗位\n深圳市\n设计类\n社招\n本科及以上\n2 - 12年\n职位ID：J240918000003\n2026-10-14 发布\nOPPO尊重并保护第三方保密信息，请勿非法披露您前雇主（及其客户）或他人的保密信息。\n岗位职责\n1. 负责 ColorOS 操作系统核心业务领域的视觉定义设计；\n2. 分析行业与竞品设计趋势，能从目标用户出发，构建符合目标用户的输出高质量视觉设计方案；\n3. 负责看护所在领域的用户和市场反馈，持续优化该领域的设计质量；\n4. 与产品、研发团队紧密配合，共同达成一流的产品体验目标。\n任职要求\n1. 设计类专业本科及以上学历，从事设计工作3-5年，设计学、社会学、心理学或相关领",
+        "jd_end": "出色的审美能力与视觉敏感性，对设计风格与流行趋势有敏锐的洞察力；\n3. 熟悉设计相关的前沿理论知识、方法，对体验设计有成熟方法论，对系统工具类、移动应用类、AI 智慧类产品有丰富的设计经验\n4. 理解技术实现原理，保障设计效果的高质量落地；\n5. 对设计充满热忱，较好的韧性，能承受高强度的工作压力。"
+      }
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级大模型算法工程师",
+      "location": "深圳市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/2080486782073245698?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "2080486782073245698",
+      "recruitment_batch": "",
+      "jd_text": "方向一：大模型方向\n1、负责轻量级大模型预训练，SFT以及后训练算法设计与优化；\n2、优化分布式系统中的训练与推理性能；\n3、对训练出的大模型效果和效率进行合理评估，构造评测体系。\n\n方向二：智能体方向\n（任意一项或多项）：\n1. Harness设计：构建具备长期记忆、自主规划、工具调用、多Agent协作能力的智能体系统，覆盖记忆管理、反思机制、技能进化全生命周期\n2. 模型后训练：提升模型在长程任务（Long-horizon）中的自主规划、多步推理及决策能力\n3. 智能体记忆：负责构建高质量智能体记忆能力，减少幻觉并支持高效终身持续学习\n4. 评测与迭代：搭建科学的Agent评测体系，设计覆盖核心场景的评估集，通过数据驱动方式持续优化算法性能\n5. 前沿技术落地：跟踪并验证Agentic AI最新范式，跟进真实业务场景落地\n\n方向一：大模型方向\n1、计算机科学、人工智能、机器学习等专业方向；\n2、熟悉大模型训练与推理全流程；对强化学习、多模态领域、推理模型有深度认知；\n3、在高水平国际会议或者学术期刊发表过相关论文，或有高水平竞赛获奖经历；\n4、有相关的实习经历，以及实际训练过大模型的经验者优先。\n\n方向二：智能体方向\n1. 硕士及以上学历，计算机、人工智能、数学等相关专业\n2. 扎实的强化学习理论基础，熟悉主流RL算法及其实现调优，有Agentic RL实操经历\n3. 熟悉Agent运行机制， 对Long-horizon、Memory以及主动智能有深入的理解\n4. 具备大规模分布式训练或高性能推理优化经验者优先\n5. 良好的沟通协作能力，能与产品、业务团队深度合作\n加分项：\n1. 在ICML/NeurIPS/ICLR/ACL/AAAI等顶会发表论文\n2. 有完整的智能体（Agent）系统搭建经历，或高质量开源项目贡献",
+      "evidence": {
+        "header": "首页\n社会招聘\n校园招聘\n人在 OPPO\n工作地点\n员工故事\n个人中心\n高级大模型算法工程师\n分享\n投递岗位\n深圳市\n软件类\n社招\n硕士及以上\n经验不限\n职位ID：J260724000001\n2026-10-23 发布\nOPPO尊重并保护第三方保密信息，请勿非法披露您前雇主（及其客户）或他人的保密信息。\n岗位职责\n方向一：大模型方向\n1、负责轻量级大模型预训练，SFT以及后训练算法设计与优化；\n2、优化分布式系统中的训练与推理性能；\n3、对训练出的大模型效果和效率进行合理评估，构造评测体系。\n\n\n方向二：智能体方向\n（任意一项或多项）：\n1. Harness设计：构建具备长期记忆、自主规划、工具调用、多Agent协作能力的智能体系统，覆盖记忆管理、反思机制、技能进化全生命周期\n2. 模型后训",
+        "jd_end": "Memory以及主动智能有深入的理解\n4. 具备大规模分布式训练或高性能推理优化经验者优先\n5. 良好的沟通协作能力，能与产品、业务团队深度合作\n加分项：\n1. 在ICML/NeurIPS/ICLR/ACL/AAAI等顶会发表论文\n2. 有完整的智能体（Agent）系统搭建经历，或高质量开源项目贡献"
+      }
+    },
+    {
+      "company_name": "OPPO",
+      "job_title": "高级热设计工程师",
+      "location": "东莞市",
+      "job_url": "https://career.oppo.com/official/oppo/recruitment/post/1563444621030670338?recruitType=SOCIAL-RECRUITMENT",
+      "site_job_id": "1563444621030670338",
+      "recruitment_batch": "",
+      "jd_text": "1. 前沿热技术研究：包括但不限于热材料开发，主动散热，芯片散热，整机热架构研究等，跟踪行业前沿散热技术 ，给出具有竞争力的散热技术解决方案；\n2. ​主动散热技术创新：深耕微型风扇、微泵液冷、TEC制冷等主动散热技术，联合高校、供应商资源完成技术开发与工艺优化，并推动落地；​\n3. 仿真与测试体系构建：运用 Icepak、Flotherm等工具开展新技术仿真分析，优化建模与网格划分方案；搭建性能-功耗-热测试评价体系，全面评估技术优劣势并持续迭代技术方案。\n\n1. 本科及以上学历，工程热物理、热能工程、制冷与低温技术、机械工程、材料学等相关专业；\n2. 具备3 年以上手机或消费电子热设计经验，熟练掌握至少一种计算流体力学软件；\n3. 具备较强的逻辑分析与问题解决能力，良好的跨团队沟通与项目推动能力；\n4. 具备主动散热技术预研经验者优先；",
+      "evidence": {
+        "header": "首页\n社会招聘\n校园招聘\n人在 OPPO\n工作地点\n员工故事\n个人中心\n高级热设计工程师\n分享\n投递岗位\n东莞市\n硬件类\n社招\n本科及以上\n3 - 8年\n职位ID：J220827000468\n2026-10-22 发布\nOPPO尊重并保护第三方保密信息，请勿非法披露您前雇主（及其客户）或他人的保密信息。\n岗位职责\n1. 前沿热技术研究：包括但不限于热材料开发，主动散热，芯片散热，整机热架构研究等，跟踪行业前沿散热技术 ，给出具有竞争力的散热技术解决方案；\n2. ​主动散热技术创新：深耕微型风扇、微泵液冷、TEC制冷等主动散热技术，联合高校、供应商资源完成技术开发与工艺优化，并推动落地；​\n3. 仿真与测试体系构建：运用 Icepak、Flotherm等工具开展新技术仿真分析，优化建模与网格划",
+        "jd_end": "代技术方案。\n\n1. 本科及以上学历，工程热物理、热能工程、制冷与低温技术、机械工程、材料学等相关专业；\n2. 具备3 年以上手机或消费电子热设计经验，熟练掌握至少一种计算流体力学软件；\n3. 具备较强的逻辑分析与问题解决能力，良好的跨团队沟通与项目推动能力；\n4. 具备主动散热技术预研经验者优先；"
+      }
+    }
+  ]
+}

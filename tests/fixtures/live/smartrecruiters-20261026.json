@@ -1,0 +1,21 @@
+{
+  "site": "smartrecruiters",
+  "sampled_at": "2026-10-26T01:16:10.014Z",
+  "source": "Independent inspection of live rendered headings, employer declaration and job-specific responsibility/qualification sections; no Tounar code executed.",
+  "list": [],
+  "details": [
+    {
+      "company_name": "Talan",
+      "job_title": "Systems Software Engineer",
+      "location": "Chicago",
+      "site_job_id": "744000155278024",
+      "job_url": "https://jobs.smartrecruiters.com/Talan/744000155278024-client-solution-software-engineer",
+      "recruitment_batch": "",
+      "jd_text": "Job Description\nLocation: Chicago (Hybrid – at least 3 days onsite/week)\n\nThis position is open to candidates who are currently located in the Greater Chicago area.\n\nVisa Sponsorship: We offer sponsorship under specific treaty-based U.S. work visas, including TN and E-2 (for eligible Canadian, Mexican, and French citizens). We do not support or transfer other visa types (e.g., H-1B). \n\nOne of our clients, a leading software company operating in the telecommunications and network optimization sector, is seeking a Client Solutions Software Engineer to join its technical team. This role focuses on software deployment, system integration, infrastructure support, and customer-facing technical activities within enterprise environments.\n\nRole and responsibilities\n\nDeploy, configure, and upgrade software solutions in customer environments.\nDesign and recommend optimal system architectures and deployment models.\nProvide technical support related to system integration, databases, licensing, and infrastructure.\nDeliver administration and technical training to customers.\nDevelop and maintain automation scripts for deployment, configuration, and troubleshooting activities.\nSupport pre-sales and post-sales technical engagements, including evaluations, proof of concepts, installations, and production support.\nCollaborate with internal engineering, support, and customer success teams to ensure successful implementations.\nParticipate in automation and process optimization initiatives.\n\nTechnical Environment\n\nWindows and Linux environments\nVirtualization technologies (VMware, Citrix)\nDatabases: Oracle, SQL Server, PostgreSQL, MongoDB\nScripting & Automation: PowerShell, Python, Bash\nCloud Platforms: AWS, Azure, GCP\nContainerization technologies such as Docker and Kubernetes (nice to have)\n\nQualifications\nMaster's degree in Computer Science, Information Systems, Software Engineering, or a related field.\n2-4 years of experience in system administration, software deployment, infrastructure support, or database administration.\nStrong troubleshooting and problem-solving skills.\nExperience working with virtualized environments.\nKnowledge of cloud platforms, particularly AWS.\nScripting experience, ideally with PowerShell, Python, or Bash.\nExcellent communication skills and ability to interact directly with customers.\nAbility to work across infrastructure, software, database, and cloud-related topics.\n\nPreferred Qualifications\n\nExperience with enterprise software deployment and support.\nKnowledge of automation platforms and workflow orchestration.\nFamiliarity with Docker and Kubernetes.\nPrevious customer-facing or consulting experience.\n\nCompany’s Benefits\n\nAt Talan, we invest in our employees' well-being and empower them with benefits, including:\n\n💵 Competitive salary between USD $65,000 - US$75,000\n💸401(k) retirement plan with company matching\n🌴15 days of paid vacation per year at hire and up to 27 according to seniority (annual untaken vacation days are cashed out)\n📴8 paid holidays + 5 sick days + 2 personal days per year\n❤️‍🩹Company health, dental, and vision insurance plans + FSA\n🦺Voluntary STD and LTD\n🚍 Commuter/transit benefits\n\nAll your information will be kept confidential according to EEO guidelines.",
+      "evidence": {
+        "header": "Systems Software Engineer\nFull-time\nContract Type: Permanent contract\nCompany Description\n\nTalan is an international group that supports its clients i",
+        "jd_end": "nsurance plans + FSA\n🦺Voluntary STD and LTD\n🚍 Commuter/transit benefits\n\nAll your information will be kept confidential according to EEO guidelines."
+      }
+    }
+  ]
+}

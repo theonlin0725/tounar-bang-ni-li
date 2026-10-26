@@ -7,10 +7,11 @@ import {
   normalizeWhitespace, nowIso, parseIso, safeJsonParse, sanitizeUrl, shanghaiDateKey, sourceMethods, stageFollowupState
 } from '../util.js';
 
-function clipLongText(value, max = 20000) {
+function clipLongText(value, max = 100000) {
   const text = String(value || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
   if (!text) return null;
-  return text.length > max ? text.slice(0, max) : text;
+  if (text.length > max) throw new AppError(400, 'JD_TEXT_TOO_LONG', 'JD 超过 100000 字符');
+  return text;
 }
 
 export const PUBLIC_APPLICATION_FIELDS = [
@@ -20,7 +21,7 @@ export const PUBLIC_APPLICATION_FIELDS = [
   'last_status_changed_at', 'last_progress_at', 'last_site_observed_at', 'last_reviewed_at',
   'deadline_at', 'deadline_precision', 'interview_round', 'round_label', 'interview_scheduled_at',
   'last_interview_completed_at', 'source_methods', 'latest_event_id', 'version', 'created_at',
-  'updated_at', 'archived_at', 'archive_reason', 'stage_received_at', 'stage_anchor_at'
+  'updated_at', 'archived_at', 'archive_reason', 'stage_received_at', 'stage_anchor_at', 'capture_source', 'jd_status'
 ];
 
 export function getPreferences(ownerId) {
@@ -103,6 +104,10 @@ export function findCandidates(ownerId, fields) {
   const seen = new Set();
   const add = (rows, reason) => {
     for (const row of rows) {
+      const origin = value => { try { return new URL(value).origin; } catch { return null; } };
+      // Numeric IDs are scoped to a recruiting site, never to all generic sites.
+      if (reason === 'site_job_id' && fields.job_url && row.job_url && origin(fields.job_url) !== origin(row.job_url)) continue;
+      if (reason === 'canonical_job_url' && fields.site_job_id && row.site_job_id && fields.site_job_id !== row.site_job_id) continue;
       if (seen.has(row.id)) continue;
       seen.add(row.id);
       candidates.push({ application: row, reason });
@@ -200,6 +205,8 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
     location: fields.location ? clipText(fields.location, 100) : null,
     jd_summary: fields.jd_summary ? clipText(fields.jd_summary, 80) : null,
     jd_text: clipLongText(fields.jd_text),
+    jd_status: fields.jd_status || (fields.jd_text ? 'complete' : 'missing'),
+    capture_source: fields.capture_source || null,
     channel: fields.channel ? clipText(fields.channel, 40) : '未知',
     job_url: sanitizeUrl(fields.job_url),
     canonical_job_url: canonical,
@@ -243,11 +250,16 @@ function fillMissingFields(app, fields, eventId, sourceMethod) {
   const fillable = ['company_name', 'job_title', 'jd_summary', 'jd_text', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
     'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at', 'round_label', 'interview_round'];
   const ranks={low:0,medium:1,high:2};
+  const jdRanks = { missing: 0, too_long: 0, truncated: 1, partial: 1, complete: 2 };
   for (const key of fillable) {
     const source=one('SELECT source_method, confidence FROM application_field_sources WHERE application_id = ? AND owner_id = ? AND field = ?', [app.id,app.owner_id,key]);
     const confidence=fields.field_confidence?.[key] || 'medium';
     if(source?.source_method==='manual' || confidence==='low')continue;
-    if(app[key]!=null && app[key]!=='' && ranks[confidence]<=(ranks[source?.confidence]??1))continue;
+    const jdUpgrade = ['jd_text','jd_summary'].includes(key) && jdRanks[fields.jd_status] > (jdRanks[app.jd_status] || 0)
+      || key === 'jd_text' && fields.jd_status === 'complete' && app.jd_text && fields.jd_text?.startsWith(app.jd_text)
+        && fields.jd_text.length > app.jd_text.length && ranks[confidence] >= (ranks[source?.confidence] ?? 1);
+    if (['jd_text','jd_summary'].includes(key) && jdRanks[fields.jd_status] < (jdRanks[app.jd_status] || 0)) continue;
+    if(!jdUpgrade && app[key]!=null && app[key]!=='' && ranks[confidence]<=(ranks[source?.confidence]??1))continue;
     let value=fields[key];
     if(key==='jd_summary'&&value)value=clipText(value,80);
     if(key==='jd_text'&&value)value=clipLongText(value);
@@ -256,6 +268,7 @@ function fillMissingFields(app, fields, eventId, sourceMethod) {
     if(['deadline_at','interview_scheduled_at'].includes(key))value=parseIso(value);
     if(value!=null&&value!==''&&value!==app[key])updates[key]=value;
   }
+  if (updates.jd_text) updates.jd_status = fields.jd_status || 'complete';
   if(updates.company_name)updates.company_key=normalizeCompanyKey(updates.company_name);
   if(updates.status_url)updates.status_url_scope=fields.status_url_scope||'application';
   if(!Object.keys(updates).length)return app;
@@ -346,7 +359,34 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
   return { ok: true, app: updated, changed: true };
 }
 
+function pageEvidence(event, fields = {}) {
+  const p = event.payload || {};
+  const pick = (key) => p[key] || fields[key] || null;
+  const missing = ['company_name', 'job_title', 'location', 'recruitment_batch', 'jd_summary']
+    .filter((key) => !pick(key));
+  return {
+    type: 'page',
+    site_key: event.site_key || p.site_key || null,
+    job_title: pick('job_title'),
+    company_name: pick('company_name'),
+    job_url: p.job_url || fields.job_url || null,
+    location: pick('location'),
+    recruitment_batch: pick('recruitment_batch'),
+    channel: p.channel || null,
+    jd_excerpt: (p.jd_text || p.jd_summary || fields.jd_text || fields.jd_summary || '').slice(0, 400) || null,
+    jd_chars: (p.jd_text || '').length || null,
+    jd_status: p.jd_status || null,
+    status_text: p.status_text || null,
+    field_confidence: p.field_confidence || null,
+    field_sources: p.field_sources || null,
+    missing_fields: missing,
+    captured_at: event.observed_at || event.occurred_at,
+    occurred_at: event.occurred_at
+  };
+}
+
 function reviewForEvent(event, details) {
+  const page = pageEvidence(event, details.fields || {});
   return createReviewForEvent(event, {
     kind: details.kind,
     reasonCode: details.reasonCode,
@@ -362,19 +402,24 @@ function reviewForEvent(event, details) {
       status_text: event.payload?.status_text || null,
       url_origin: (() => {
         try { return event.payload?.job_url ? new URL(event.payload.job_url).origin : null; } catch { return null; }
-      })()
+      })(),
+      page,
+      missing_fields: page.missing_fields
     }
   });
 }
 
-function processView(event, { explicit = false } = {}) {
+function processView(event, { explicit = false, discovered = false } = {}) {
   const p = event.payload;
   const existing = one('SELECT * FROM applications WHERE owner_id = ? AND latest_event_id = ?', [event.owner_id, event.id]);
   if (existing) return { state: 'applied', application: existing };
-  if (!p.company_name || !p.job_title || (!p.job_url && !p.site_job_id)) {
+  // 只要能追溯到具体岗位（稳定 ID 或岗位链接），就进「看过没投」；
+  // 公司/岗位/城市/批次缺了只标待补充，不再因为字段不全把普通浏览丢进待确认。
+  const hasStableIdentity = !!(p.site_application_id || p.site_job_id || p.job_url);
+  if (!hasStableIdentity) {
     const review = reviewForEvent(event, {
-      kind: 'field_missing', reasonCode: 'VIEW_FIELDS_INCOMPLETE',
-      summary: '浏览线索缺少可用于识别的公司、岗位或稳定标识',
+      kind: 'field_missing', reasonCode: 'VIEW_IDENTITY_MISSING',
+      summary: '这条浏览没有可追溯的岗位身份（既没有岗位链接，也没有站点岗位 ID），无法建立台账',
       suggested: { status: 'pending' }, fields: p
     });
     return { state: 'pending', review };
@@ -396,10 +441,12 @@ function processView(event, { explicit = false } = {}) {
     field_confidence: p.field_confidence,
     company_name: p.company_name, job_title: p.job_title, site_key: event.site_key,
     site_job_id: p.site_job_id, site_application_id: p.site_application_id,
-    job_url: p.job_url, jd_summary: p.jd_summary, jd_text: p.jd_text, location: p.location,
+    job_url: p.job_url, jd_summary: p.jd_summary, jd_text: discovered ? null : p.jd_text, location: p.location,
+    jd_status: discovered ? 'missing' : p.jd_status,
+    capture_source: discovered ? 'list' : explicit ? 'capture' : 'detail',
     recruitment_batch: p.recruitment_batch, channel: p.channel, status_url: p.status_url,
-    status_url_scope: p.status_url_scope, first_viewed_at: event.occurred_at,
-    last_viewed_at: event.observed_at
+    status_url_scope: p.status_url_scope, first_viewed_at: discovered ? null : event.occurred_at,
+    last_viewed_at: discovered ? null : event.observed_at
   };
   const candidates = findCandidates(event.owner_id, {
     ...fields, canonical_job_url: canonicalJobUrl(p.job_url)
@@ -424,25 +471,19 @@ function processView(event, { explicit = false } = {}) {
     }
     let app = fillMissingFields(strong[0].application, fields, event.id, 'plugin');
     const updates = {};
-    if (!app.first_viewed_at || Date.parse(event.occurred_at) < Date.parse(app.first_viewed_at)) updates.first_viewed_at = event.occurred_at;
-    if (!app.last_viewed_at || Date.parse(event.observed_at) >= Date.parse(app.last_viewed_at)) updates.last_viewed_at = event.observed_at;
+    if (!discovered && (!app.first_viewed_at || Date.parse(event.occurred_at) < Date.parse(app.first_viewed_at))) updates.first_viewed_at = event.occurred_at;
+    if (!discovered && (!app.last_viewed_at || Date.parse(event.observed_at) >= Date.parse(app.last_viewed_at))) updates.last_viewed_at = event.observed_at;
     if (Object.keys(updates).length) app = markApplicationChanged(app.owner_id, app.id, event.id, 'plugin', updates, { reason: '重复浏览' });
     app = ensureSource(app, 'plugin', event.id);
     return { state: 'applied', application: app };
   }
-  if (candidates.length > 0) {
-    const review = reviewForEvent(event, {
-      kind: 'ambiguous_match', reasonCode: 'COMPANY_TITLE_ONLY',
-      summary: '只有公司+岗位候选，不能自动合并', suggested: { status: 'pending' }, fields
-    });
-    return { state: 'pending', review };
-  }
+  // 同名不同 ID：保留为独立浏览记录，不合并、也不阻塞入账
   const app = createApplication({
     ownerId: event.owner_id, fields, eventId: event.id, sourceMethod: 'plugin', status: 'pending',
     at: event.occurred_at
   });
   run('UPDATE applications SET first_viewed_at = ?, last_viewed_at = ? WHERE id = ? AND owner_id = ?',
-    [event.occurred_at, event.observed_at, app.id, event.owner_id]);
+    [fields.first_viewed_at, fields.last_viewed_at, app.id, event.owner_id]);
   return { state: 'applied', application: getApplication(event.owner_id, app.id) };
 }
 
@@ -573,6 +614,7 @@ export function processPluginEvent(event) {
   switch (event.event_type) {
     case 'job_viewed': result = processView(event); break;
     case 'job_captured': result = processView(event, { explicit: true }); break;
+    case 'job_discovered': result = processView(event, { explicit: true, discovered: true }); break;
     case 'form_started': result = processFormStarted(event); break;
     case 'application_submitted': result = processSubmitted(event); break;
     case 'site_status_observed': result = processSiteStatus(event); break;

@@ -146,8 +146,12 @@ export function reviewList(ownerId, query = {}) {
   const status = query.status || 'open';
   const offset = Math.max(0, Number.parseInt(query.cursor || '0', 10) || 0);
   if (!['open', 'resolved', 'dismissed', 'all'].includes(status)) throw new AppError(400, 'VALIDATION_ERROR', 'status 无效');
-  const rows = all(`SELECT r.*, m.received_at AS mail_received_at
-    FROM review_items r LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
+  const rows = all(`SELECT r.*, m.received_at AS mail_received_at, e.payload_json AS source_payload_json,
+      e.occurred_at AS source_occurred_at, e.observed_at AS source_observed_at, e.site_key AS source_site_key,
+      e.event_type AS source_event_type
+    FROM review_items r
+    LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
+    LEFT JOIN events e ON e.id = r.source_event_id
     WHERE r.owner_id = ? ${status === 'all' ? '' : 'AND r.status = ?'}
     ORDER BY COALESCE(m.received_at, r.created_at) DESC, r.id DESC LIMIT ? OFFSET ?`, status === 'all' ? [ownerId, limit + 1, offset] : [ownerId, status, limit + 1, offset]);
   return {
@@ -170,7 +174,8 @@ export function reviewList(ownerId, query = {}) {
       matching_confidence: safeJsonParse(row.evidence_json, {}).matching_confidence ?? null,
       total_confidence: safeJsonParse(row.evidence_json, {}).total_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
       suggested_application_id: safeJsonParse(row.candidates_json, []).length === 1 ? safeJsonParse(row.candidates_json, [])[0].application_id : null,
-      resolved_at: row.resolved_at
+      resolved_at: row.resolved_at,
+      source: sourceFromRow(row)
     })),
     page: { next_cursor: rows.length > limit ? String(offset + limit) : null, has_more: rows.length > limit },
     total: one(`SELECT COUNT(*) AS n FROM review_items WHERE owner_id = ? ${status === 'all' ? '' : 'AND status = ?'}`, status === 'all' ? [ownerId] : [ownerId, status]).n
@@ -178,8 +183,12 @@ export function reviewList(ownerId, query = {}) {
 }
 
 export function reviewDetail(ownerId, reviewId) {
-  const row = one(`SELECT r.*, m.received_at AS mail_received_at FROM review_items r
+  const row = one(`SELECT r.*, m.received_at AS mail_received_at, e.payload_json AS source_payload_json,
+      e.occurred_at AS source_occurred_at, e.observed_at AS source_observed_at, e.site_key AS source_site_key,
+      e.event_type AS source_event_type
+    FROM review_items r
     LEFT JOIN mail_messages m ON m.id = r.source_mail_id AND m.owner_id = r.owner_id
+    LEFT JOIN events e ON e.id = r.source_event_id
     WHERE r.id = ? AND r.owner_id = ?`, [reviewId, ownerId]);
   if (!row) throw new AppError(404, 'NOT_FOUND', '复核项不存在');
   return {
@@ -193,7 +202,45 @@ export function reviewDetail(ownerId, reviewId) {
       evidence: safeJsonParse(row.evidence_json, {}),
       suggested_changes: safeJsonParse(row.suggested_changes_json, {}),
       candidates: safeJsonParse(row.candidates_json, []),
-      resolution: safeJsonParse(row.resolution_json, null)
+      resolution: safeJsonParse(row.resolution_json, null),
+      source: sourceFromRow(row)
     }
+  };
+}
+
+/* 复核项的来源：页面事件给可读的页面证据，邮件给主题/发件/收信时间。
+ * 老数据没有 evidence.page 时，用 events.payload_json 现场还原一份，避免面板空白。 */
+function sourceFromRow(row) {
+  const evidence = safeJsonParse(row.evidence_json, {}) || {};
+  if (row.source_payload_json) {
+    const p = safeJsonParse(row.source_payload_json, {}) || {};
+    const page = evidence.page || {
+      type: 'page',
+      site_key: row.source_site_key || null,
+      job_title: p.job_title || null,
+      company_name: p.company_name || null,
+      job_url: p.job_url || null,
+      location: p.location || null,
+      recruitment_batch: p.recruitment_batch || null,
+      channel: p.channel || null,
+      jd_excerpt: (p.jd_text || p.jd_summary || '').slice(0, 400) || null,
+      jd_chars: (p.jd_text || '').length || null,
+      jd_status: p.jd_status || null,
+      status_text: p.status_text || null,
+      field_confidence: p.field_confidence || null,
+      field_sources: p.field_sources || null,
+      missing_fields: ['company_name', 'job_title', 'location', 'recruitment_batch', 'jd_summary'].filter((k) => !p[k]),
+      captured_at: row.source_observed_at || row.source_occurred_at || null
+    };
+    return { ...page, event_type: row.source_event_type || null, occurred_at: row.source_occurred_at || null };
+  }
+  return {
+    type: 'mail',
+    subject_excerpt: evidence.subject_excerpt || null,
+    from_domain: evidence.from_domain || null,
+    body_excerpt: evidence.body_excerpt || null,
+    received_at: row.mail_received_at || null,
+    status_text: evidence.status_text || null,
+    missing_fields: []
   };
 }
