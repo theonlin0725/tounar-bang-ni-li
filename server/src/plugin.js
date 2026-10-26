@@ -5,7 +5,7 @@ import {
   AppError, assert, canonicalJobUrl, hashSecret, isSafeHttpUrl, newId, normalizeWhitespace, nowIso,
   parseIso, payloadHash, randomToken, safeEqualHex, sanitizeUrl, sha256, stableStringify
 } from './util.js';
-import { mapStatusText, processPluginEvent } from './domain/applications.js';
+import { mapStatusText, missingCoreFields, processPluginEvent } from './domain/applications.js';
 import { finalizeDeletionForOwner } from './domain/deletion.js';
 
 const ALLOWED_EVENT_TYPES = new Set(['job_viewed', 'job_captured', 'job_discovered', 'form_started', 'application_submitted', 'site_status_observed']);
@@ -317,6 +317,9 @@ export function ingestBatch(device, body) {
         event.payload = JSON.parse(event.payload_json);
         const processed = processPluginEvent(event);
         const current = one('SELECT * FROM events WHERE id = ?', [eventId]);
+        const app = processed.application || (current.application_id
+          ? one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [current.application_id, device.owner_id])
+          : null);
         return {
           client_event_id: normal.client_event_id,
           accepted: true,
@@ -325,7 +328,12 @@ export function ingestBatch(device, body) {
           processing_state: current.processing_state,
           application_id: current.application_id || null,
           review_item_id: processed.review?.id || null,
-          review_reason: processed.review?.reason_code || null
+          review_reason: processed.review?.reason_code || null,
+          // 给插件端「轻量反馈」用的最终结果：accepted / HTTP 200 都不等于入账
+          outcome: processed.review ? 'review' : (processed.change || 'applied'),
+          application_status: app?.status || null,
+          has_applied: app ? Number(app.has_applied) : null,
+          missing_fields: app ? missingCoreFields(app) : []
         };
       });
       results.push(result);

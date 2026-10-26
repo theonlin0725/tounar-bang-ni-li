@@ -305,6 +305,15 @@ $('grant-current').addEventListener('click', async () => {
 
 $('capture-now').addEventListener('click', async () => { await captureCurrentTab('manual'); });
 
+async function loadPageFeedback() {
+  const status = await send({ type: 'get_status' });
+  if (status?.ok) $('page-feedback').checked = status.settings.pageFeedback !== false;
+}
+$('page-feedback').addEventListener('change', async () => {
+  await send({ type: 'set_page_feedback', enabled: $('page-feedback').checked });
+  $('capture-status').textContent = $('page-feedback').checked ? '已开启页面采集提示' : '已关闭页面采集提示（仍可在插件里查看状态）';
+});
+
 $('clear-learned').addEventListener('click', async () => {
   await globalThis.TounarLearned?.clear?.();
   await renderLearned();
@@ -332,5 +341,6 @@ $('revoke-all').addEventListener('click', async () => {
 $('toggle-pause').addEventListener('click', async () => { await send({type:'set_capture_paused',paused:$('toggle-pause').dataset.paused !== '1'}); await refresh(); });
 $('clear-queue').addEventListener('click', async () => { if(confirm('清空未上传事件？已入账记录和模板不受影响。')) { await send({type:'clear_queue'}); await refresh(); } });
 refresh();
+loadPageFeedback();
 renderLearned();
 setInterval(refresh, 5000);

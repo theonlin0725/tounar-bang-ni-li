@@ -428,7 +428,22 @@
     if(verifiedAdapter) {
       const nodes = nodesFor(adapter.selectors.jd).filter(n => !n.querySelector('nav,aside,form,input,textarea') && !(adapter.jdExcludeHeaders||[]).includes(textOf(n.firstElementChild)));
       const leaves = nodes.filter(n => !nodes.some(other => other !== n && n.contains(other)));
-      const text = leaves.map(n => String(n.innerText || '').trim()).filter(Boolean).join('\n\n');
+      // 章节标题通常不在正文节点里，用父容器语义补回「岗位职责 / 任职要求 / 项目介绍」，
+      // 保证 JD 全文能看出职责与要求的分界（摘要值仍取第一段，兼容旧回归）。
+      const labelFor = (node) => {
+        const cls = String(node.parentElement?.className || '');
+        if (/requirement/i.test(cls)) return '任职要求';
+        if (/introduction/i.test(cls)) return '项目介绍';
+        if (/duty/i.test(cls)) return '岗位职责';
+        return null;
+      };
+      const parts = leaves.map(n => {
+        const text = String(n.innerText || '').trim();
+        if (!text) return '';
+        const label = labelFor(n);
+        return label ? `${label}\n${text}` : text;
+      }).filter(Boolean);
+      const text = parts.join('\n\n');
       if (text) add('jd_summary', textOf(leaves[0]), 88, 'verified_site_selector', text);
     }
     for(const value of labelled(/(?:工作地点|工作城市|城市|Location)\s*[:：]\s*([^，,;；\n]{1,40})/i))add('location',value,84,'label');
@@ -839,6 +854,111 @@
     } catch { /* ignore */ }
   }
 
+
+  // ---------- 页面轻量反馈（Toast，Shadow DOM 隔离） ----------
+
+  const toastState = { host: null, shadow: null, hideTimer: null, lastKey: '', lastAt: 0, pendingTimer: null };
+
+  function ensureToast() {
+    if (toastState.host && document.documentElement.contains(toastState.host)) return toastState;
+    const host = document.createElement('div');
+    host.setAttribute('data-tounar-toast', '1');
+    host.style.cssText = 'all:initial;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:min(360px,calc(100vw - 32px));';
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `<style>
+      :host{all:initial}
+      .box{font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:#0f172a;color:#f8fafc;border-radius:10px;box-shadow:0 8px 28px rgba(15,23,42,.28);padding:10px 12px;display:flex;gap:10px;align-items:flex-start;pointer-events:auto}
+      .brand{font-weight:600;color:#5eead4;white-space:nowrap}
+      .msg{flex:1;min-width:0;word-break:break-word}
+      .actions{display:flex;gap:8px;align-items:center;margin-top:6px}
+      button{all:unset;cursor:pointer;font-size:12px;color:#5eead4;text-decoration:underline;padding:2px 0}
+      .close{color:#94a3b8;text-decoration:none;font-size:14px;line-height:1;padding:0 2px}
+      @media (prefers-reduced-motion: reduce){.box{transition:none}}
+    </style><div class="box" role="status" aria-live="polite" aria-atomic="true">
+      <span class="brand">帮你理</span>
+      <div class="msg"><span class="text"></span><div class="actions"><button class="open" hidden>查看台账</button></div></div>
+      <button class="close" aria-label="关闭提示">×</button>
+    </div>`;
+    shadow.querySelector('.close').addEventListener('click', hideToast);
+    document.documentElement.append(host);
+    toastState.host = host; toastState.shadow = shadow;
+    return toastState;
+  }
+
+  function hideToast() {
+    if (toastState.hideTimer) clearTimeout(toastState.hideTimer);
+    toastState.hideTimer = null;
+    if (toastState.host) { toastState.host.remove(); toastState.host = null; toastState.shadow = null; }
+  }
+
+  function showToast(text, { action = null, ttl = 4000 } = {}) {
+    const state = ensureToast();
+    const box = state.shadow.querySelector('.box');
+    state.shadow.querySelector('.text').textContent = text;
+    const openBtn = state.shadow.querySelector('.open');
+    if (action) {
+      openBtn.hidden = false;
+      openBtn.onclick = () => { try { window.open(action, '_blank', 'noopener'); } catch { /* ignore */ } };
+    } else {
+      openBtn.hidden = true; openBtn.onclick = null;
+    }
+    if (state.hideTimer) clearTimeout(state.hideTimer);
+    state.hideTimer = ttl ? setTimeout(hideToast, ttl) : null;
+    return box;
+  }
+
+  function feedbackText(feedback, kind) {
+    const missing = Array.isArray(feedback.missing) && feedback.missing.length > 0;
+    const tail = missing ? '，部分信息待补充' : '';
+    switch (feedback.status) {
+      case 'created':
+        return `当前岗位已计入「看过没投」${tail}`;
+      case 'updated':
+        return '当前岗位信息已更新';
+      case 'unchanged':
+        return kind === 'job_captured' ? '该岗位已在台账中' : null;
+      case 'review':
+        return '当前岗位信息需要确认';
+      case 'queued':
+        return '当前岗位待同步，连接恢复后自动重试';
+      case 'failed':
+        return '尚未保存，请打开插件查看原因';
+      case 'batch': {
+        const parts = [];
+        if (feedback.entered) parts.push(`${feedback.entered} 个岗位已保存`);
+        if (feedback.review) parts.push(`${feedback.review} 个需要确认`);
+        if (feedback.queued) parts.push(`${feedback.queued} 个待同步`);
+        return `本页 ${parts.join('，') || '没有新的岗位'}`;
+      }
+      case 'saved':
+      default:
+        return '当前岗位已保存到台账';
+    }
+  }
+
+  function showFeedback(feedback = {}) {
+    const text = feedbackText(feedback, feedback.kind);
+    if (!text) return;
+    const key = `${feedback.status}|${feedback.applicationId || feedback.reviewId || ''}|${text}`;
+    const now = Date.now();
+    if (key === toastState.lastKey && now - toastState.lastAt < 5000) return; // 去重，避免重复刷屏
+    toastState.lastKey = key; toastState.lastAt = now;
+    const base = String(feedback.serverUrl || '').replace(/\/$/, '');
+    let action = null;
+    if (feedback.status === 'review' && base) action = `${base}/?panel=reviews`;
+    else if (feedback.applicationId && base) action = `${base}/?app=${encodeURIComponent(feedback.applicationId)}`;
+    else if (feedback.status === 'failed') action = base || null;
+    const ttl = (feedback.status === 'review' || feedback.status === 'queued' || feedback.status === 'failed') ? 8000 : 4000;
+    showToast(text, { action, ttl });
+  }
+
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg?.type === 'tounar_feedback') { showFeedback(msg.feedback || {}); sendResponse?.({ ok: true }); return false; }
+      return false;
+    });
+  } catch { /* ignore */ }
+
   // ---------- 显式采集（用户点「采集当前页」，不要求停留时长） ----------
 
   async function captureNow(reason = 'user') {
@@ -861,7 +981,13 @@
       evidenceCode: 'explicit_capture',
       payload: { capture_reason: reason, visible_dwell_ms: pageState.visibleMs }
     });
+    if (toastState.pendingTimer) clearTimeout(toastState.pendingTimer);
+    toastState.pendingTimer = setTimeout(() => {
+      if (toastState.lastKey && Date.now() - toastState.lastAt < 1000) return;
+      showToast('正在整理当前岗位…', { ttl: 12000 });
+    }, 800);
     const queued = await sendEvent(event);
+    if (toastState.pendingTimer) { clearTimeout(toastState.pendingTimer); toastState.pendingTimer = null; }
     if (!queued?.ok) {
       return { ok: false, detected: true, status: 'failed', error: queued?.error || 'ENQUEUE_FAILED', job: { job_title: job.job_title } };
     }
@@ -872,6 +998,9 @@
       } catch { resolve(null); }
     });
     const status = result?.status || 'queued';
+    if (status === 'queued' || status === 'failed') {
+      showFeedback({ status, serverUrl: result?.serverUrl, kind: 'job_captured' });
+    }
     pageState.viewSent = true;
     const learned = await auditTemplate(job);
     return {

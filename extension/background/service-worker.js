@@ -9,6 +9,8 @@ const FLUSH_ALARM = 'tounar-flush';
 const HEARTBEAT_ALARM = 'tounar-heartbeat';
 const PAIRING_ALARM = 'tounar-pairing-poll';
 const MAX_BATCH = 50;
+// 事件 → 来源标签页（仅内存，用于把回执送回正确页面；SW 休眠会丢，属于轻量提示的可接受降级）
+const pendingTabs = new Map();
 let flushPromise = null;
 
 async function updateBadge() {
@@ -17,6 +19,64 @@ async function updateBadge() {
     await chrome.action.setBadgeText({ text: count ? String(count) : '' });
     await chrome.action.setBadgeBackgroundColor({ color: count ? '#b45309' : '#00000000' });
   } catch { /* ignore */ }
+}
+
+
+/* ---------- 轻量反馈：把服务端确认的结果送回原始标签页 ---------- */
+
+function feedbackStatus(result) {
+  if (result?.error && !result.accepted) return 'failed';
+  if (result?.review_item_id) return 'review';
+  if (result?.outcome === 'created') return 'created';
+  if (result?.outcome === 'updated') return 'updated';
+  if (result?.outcome === 'unchanged') return 'unchanged';
+  if (result?.outcome === 'queued') return 'queued';
+  return 'saved';
+}
+
+function samePage(a, b) {
+  try { const x = new URL(a), y = new URL(b); return x.origin === y.origin && x.pathname === y.pathname; } catch { return false; }
+}
+
+async function deliverFeedback(resultMap) {
+  const settings = await getSettings();
+  const byTab = new Map();
+  for (const [clientId, result] of Object.entries(resultMap || {})) {
+    const target = pendingTabs.get(clientId);
+    if (!target) continue;
+    const key = `${target.tabId}:${target.frameId}`;
+    const bucket = byTab.get(key) || { ...target, ids: [] };
+    bucket.ids.push({ ...result, client_event_id: clientId });
+    byTab.set(key, bucket);
+    pendingTabs.delete(clientId);
+  }
+  if (settings.pageFeedback === false) return;
+  for (const bucket of byTab.values()) {
+    let tab;
+    try { tab = await chrome.tabs.get(bucket.tabId); } catch { continue; }
+    // 回执必须回到原始页面：A 岗上传途中切到 B 岗时不显示 A 的提示
+    if (!tab?.url || !samePage(tab.url, bucket.url)) continue;
+    const count = bucket.ids.length;
+    let feedback;
+    if (count > 1) {
+      const statuses = bucket.ids.map(feedbackStatus);
+      feedback = {
+        status: 'batch', total: count,
+        entered: statuses.filter((x) => ['created', 'updated', 'unchanged', 'saved'].includes(x)).length,
+        review: statuses.filter((x) => x === 'review').length,
+        queued: statuses.filter((x) => x === 'queued' || x === 'failed').length,
+        url: tab.url, serverUrl: settings.serverUrl || null
+      };
+    } else {
+      const r = bucket.ids[0];
+      feedback = {
+        status: feedbackStatus(r), applicationId: r.application_id || null, reviewId: r.review_item_id || null,
+        missing: r.missing_fields || [], hasApplied: r.has_applied, applicationStatus: r.application_status,
+        url: tab.url, kind: bucket.kind, serverUrl: settings.serverUrl || null
+      };
+    }
+    try { await chrome.tabs.sendMessage(bucket.tabId, { type: 'tounar_feedback', feedback }, { frameId: bucket.frameId }); } catch { /* 页面已关闭 */ }
+  }
 }
 
 function flushQueue() {
@@ -44,6 +104,7 @@ async function runFlush() {
       response = await Api.uploadEvents(settings.serverUrl, settings.deviceToken, pending.map(stripLocalFields));
     } catch (err) {
       await setSettings({ lastError: { code: err.code || 'UPLOAD_FAILED', message: err.message, at: new Date().toISOString() } });
+
       if (err.status === 401 || err.status === 403) {
         await setSettings({ lastError: { code: 'DEVICE_REVOKED_OR_INVALID', message: '设备凭证被服务端拒绝；如已撤销请在网页确认后解除本设备', at: new Date().toISOString() } });
       }
@@ -72,6 +133,10 @@ async function runFlush() {
         review_item_id: item.review_item_id || null,
         review_reason: item.review_reason || null,
         processing_state: item.processing_state || null,
+        outcome: item.outcome || null,
+        application_status: item.application_status || null,
+        has_applied: item.has_applied ?? null,
+        missing_fields: item.missing_fields || [],
         error: item.error || null,
         at: new Date().toISOString()
       };
@@ -80,6 +145,7 @@ async function runFlush() {
       const prev = (await getSettings()).lastEventResults || {};
       await setSettings({ lastEventResults: Object.fromEntries(Object.entries({ ...prev, ...resultMap }).sort((a,b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0,300)), lastEventResultsAt: new Date().toISOString() });
     }
+    await deliverFeedback(resultMap).catch(() => {});
     await Queue.remove([...acceptedIds, ...dropped]);
     if (acceptedIds.length) {
       await setSettings({ lastUploadAt: new Date().toISOString(), lastError: null });
@@ -229,6 +295,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!await chrome.permissions.contains({ origins:[origin+'/*'] })) { sendResponse({ok:false,error:'PERMISSION_REVOKED'}); return; }
         }
         const result = await Queue.add(message.event);
+        if (!result.duplicate && sender.tab?.id && message.event?.client_event_id) {
+          pendingTabs.set(message.event.client_event_id, {
+            tabId: sender.tab.id,
+            frameId: sender.frameId ?? 0,
+            url: sender.tab.url || sender.url || null,
+            kind: message.event.event_type || null
+          });
+          if (pendingTabs.size > 200) pendingTabs.delete(pendingTabs.keys().next().value);
+        }
         await updateBadge();
         flushQueue().catch(() => {});
         sendResponse({ ok: true, ...result, queued: await Queue.count() });
@@ -266,6 +341,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'set_server_url': {
         await setSettings({ serverUrl: String(message.serverUrl || '').replace(/\/$/, '') });
         flushQueue().catch(() => {});
+        sendResponse({ ok: true });
+        return;
+      }
+      case 'set_page_feedback': {
+        await setSettings({ pageFeedback: message.enabled !== false });
         sendResponse({ ok: true });
         return;
       }
@@ -307,7 +387,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           else if (result.review_item_id) status = 'review';
           else status = 'accepted';
         }
-        sendResponse({ ok: true, status, result, queued: await Queue.count() });
+        sendResponse({ ok: true, status, result, serverUrl: (await getSettings()).serverUrl || null, queued: await Queue.count() });
         return;
       }
       case 'read_visible_kuaishou_cards': {

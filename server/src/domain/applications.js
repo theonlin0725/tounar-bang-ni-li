@@ -33,6 +33,13 @@ export function reviewAnchor(app) {
   return maxIso(app.applied_at, app.last_progress_at, app.last_reviewed_at);
 }
 
+export function missingCoreFields(app) {
+  const checks = { company_name: app.company_name, job_title: app.job_title,
+    location: app.location, recruitment_batch: app.recruitment_batch,
+    jd: app.jd_text || app.jd_summary };
+  return Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+}
+
 export function applicationProjection(app, preferences, asOf = new Date()) {
   const methods = safeJsonParse(app.source_methods_json, []);
   const due = isDueForReview(app, preferences.review_threshold_days, asOf) || stageFollowupState(app, preferences.stage_followup_days, asOf).due;
@@ -412,7 +419,7 @@ function reviewForEvent(event, details) {
 function processView(event, { explicit = false, discovered = false } = {}) {
   const p = event.payload;
   const existing = one('SELECT * FROM applications WHERE owner_id = ? AND latest_event_id = ?', [event.owner_id, event.id]);
-  if (existing) return { state: 'applied', application: existing };
+  if (existing) return { state: 'applied', application: existing, change: 'unchanged' };
   // 只要能追溯到具体岗位（稳定 ID 或岗位链接），就进「看过没投」；
   // 公司/岗位/城市/批次缺了只标待补充，不再因为字段不全把普通浏览丢进待确认。
   const hasStableIdentity = !!(p.site_application_id || p.site_job_id || p.job_url);
@@ -480,7 +487,7 @@ function processView(event, { explicit = false, discovered = false } = {}) {
     if (!discovered && (!app.last_viewed_at || Date.parse(event.observed_at) >= Date.parse(app.last_viewed_at))) updates.last_viewed_at = event.observed_at;
     if (Object.keys(updates).length) app = markApplicationChanged(app.owner_id, app.id, event.id, 'plugin', updates, { reason: '重复浏览' });
     app = ensureSource(app, 'plugin', event.id);
-    return { state: 'applied', application: app };
+    return { state: 'applied', application: app, change: Object.keys(updates).length ? 'updated' : 'unchanged' };
   }
   // 同名不同 ID：保留为独立浏览记录，不合并、也不阻塞入账
   const app = createApplication({
@@ -489,7 +496,7 @@ function processView(event, { explicit = false, discovered = false } = {}) {
   });
   run('UPDATE applications SET first_viewed_at = ?, last_viewed_at = ? WHERE id = ? AND owner_id = ?',
     [fields.first_viewed_at, fields.last_viewed_at, app.id, event.owner_id]);
-  return { state: 'applied', application: getApplication(event.owner_id, app.id) };
+  return { state: 'applied', application: getApplication(event.owner_id, app.id), change: 'created' };
 }
 
 function processFormStarted(event) {

@@ -39,6 +39,7 @@ report.source_fingerprint=crypto.createHash('sha256').update(['extension/content
 report.working_tree_dirty=!!execFileSync('git',['status','--porcelain'],{cwd:ROOT,encoding:'utf8'}).trim();
 let server,fixture,context,sw,popup,web,jobPage,cookie,extensionId,launchOptions,failed=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function toastText(){try{return await jobPage.evaluate(()=>document.querySelector('[data-tounar-toast]')?.shadowRoot?.querySelector('.text')?.textContent||'');}catch{return '';}}
 async function wait(fn,label,timeout=15000){const end=Date.now()+timeout;while(Date.now()<end){const v=await fn();if(v)return v;await sleep(150);}throw new Error('等待超时：'+label);}
 async function check(name,fn){try{const detail=await fn();checks.push({name,ok:true,detail});console.log('✔ '+name);}catch(e){failed++;checks.push({name,ok:false,error:e.message});console.log('✖ '+name+' — '+e.message);}}
 function observeRuntime(){
@@ -122,12 +123,23 @@ try {
   await check('缺公司但岗位身份可追溯：直接进看过没投，不堆待确认',async()=>{
     await openPopup();await jobPage.goto(fixture.base+'/jobs/1004');await jobPage.bringToFront();await popup.click('#capture-now');
     await wait(async()=>/已自动入账/.test(await popup.locator('#capture-status').textContent()),'自动入账状态');
+    const toast=await wait(async()=>{const t=await toastText();return /看过没投/.test(t)?t:null;},'页面轻量提示');
+    assert.ok(toast.includes('看过没投'),toast);
+    await jobPage.screenshot({ path: path.join(out,'toast-viewed.png') });
     const e=events.find(e=>e.payload.site_job_id==='1004');
     const receipt=receipts.get(e.client_event_id);
     assert.ok(receipt.application_id,'应生成业务记录');
     assert.equal(receipt.review_reason,null);
     const row=(await ledger()).items.find(x=>x.site_job_id==='1004'||x.job_title==='公司缺失的岗位');
     assert.ok(row,'应在看过没投可见');assert.equal(row.has_applied,0);assert.equal(row.company_name,'');
+    // 关闭页面提示后，正常采集不应再弹 Toast（popup 状态仍更新）
+    await popup.locator('#page-feedback').uncheck();
+    await sleep(4600); // 等上一条 toast 自动消失
+    await jobPage.goto(fixture.base+'/jobs/1005');await jobPage.bringToFront();await popup.click('#capture-now');
+    await wait(async()=>/已自动入账|已提交|已更新/.test(await popup.locator('#capture-status').textContent()),'关闭提示后仍采集');
+    await sleep(1200);
+    assert.equal(await toastText(),'','关闭页面提示后不应出现 Toast');
+    await popup.locator('#page-feedback').check();
     await popup.close();
   });
   await check('首页、登录、过期岗位不污染台账',async()=>{const before=(await ledger()).items.length;for(const route of ['/','/login','/expired']){await jobPage.goto(fixture.base+route);await jobPage.bringToFront();await sleep(4200);}assert.equal((await ledger()).items.length,before);});
@@ -166,6 +178,8 @@ try {
     await popup.locator('#server-url').fill(`http://127.0.0.1:${await freePort()}`);await popup.click('#save-server');
     await jobPage.goto(fixture.base+'/jobs/1001');await jobPage.bringToFront();await popup.click('#capture-now');
     await wait(async()=>/等待上传/.test(await popup.locator('#capture-status').textContent()),'离线状态');
+    const queuedToast=await wait(async()=>{const t=await toastText();return /待同步/.test(t)?t:null;},'待同步提示');
+    assert.ok(queuedToast.includes('待同步'),queuedToast);
     assert.ok(await sw.evaluate(()=>TounarQueue.count())>0);
     await popup.locator('#server-url').fill(server.base);await popup.click('#save-server');
     await wait(async()=>await sw.evaluate(()=>TounarQueue.count())===0,'自动补传');

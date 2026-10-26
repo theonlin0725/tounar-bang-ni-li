@@ -9,7 +9,8 @@
     pendingPairing: null,
     lastUploadAt: null,
     lastError: null,
-    pairedOwnerHint: null
+    pairedOwnerHint: null,
+    pageFeedback: true
   };
   async function getSettings() {
     const stored = await chrome.storage.local.get(KEY);
