@@ -1,6 +1,10 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { startTestServer } from './helpers.js';
+import { encoderForTest } from '../src/modules/data-capture/mail/sync.js';
 import {
   classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
 } from '../src/domain/mailParser.js';
@@ -48,6 +52,47 @@ describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败�
       body: { email: 'demo@qq.com', auth_code: 'abcdefghijklmnop', mode: 'headers_only', consent_version: 'QQ_MAIL_READ_CONSENT_V1' }
     });
     assert.equal(conflict.status, 409);
+  });
+
+  it('新邮件入账后不能因 aiCandidate 作用域错误中断，重复邮件保持幂等', async () => {
+    const script = `
+      import { one, run } from './server/src/db.js';
+      import { encoderForTest } from './server/src/modules/data-capture/mail/sync.js';
+      import { classifyRecruitmentMail, extractMailFields } from './server/src/domain/mailParser.js';
+      const connection = one('SELECT * FROM mail_connections ORDER BY created_at LIMIT 1');
+      if (!connection) throw new Error('missing test connection');
+      const subject = '【同步修复测试】投递成功通知';
+      const parsed = { uidvalidity: 'test-uid-validity', subject, tentativeHeader: true,
+        classification: classifyRecruitmentMail({ subject, fromDomain: 'hr.example.com', bodyText: '', mode: 'headers_only' }),
+        fields: extractMailFields({ subject, fromAddress: 'hr@hr.example.com', bodyText: '' }) };
+      const message = { uid: 987654, messageId: '<mail-scope-regression@example.com>' };
+      const receivedAt = new Date().toISOString();
+      const result = await encoderForTest().ingestMessage(connection, message, parsed, '', receivedAt);
+      const duplicate = await encoderForTest().ingestMessage(connection, message, parsed, '', receivedAt);
+      // Recreate the crash window left by the old scope bug: mail + event were
+      // committed, but no review/application pipeline result was produced.
+      run('DELETE FROM review_items WHERE source_event_id = ?', [result.event.id]);
+      run("UPDATE events SET processing_state = 'pending', review_reason = NULL, processed_at = NULL WHERE id = ?", [result.event.id]);
+      run("UPDATE mail_messages SET processing_state = 'pending', review_item_id = NULL WHERE id = ?", [result.mail.id]);
+      const recovered = await encoderForTest().ingestMessage(connection, message, parsed, '', receivedAt);
+      const duplicateAfterRecovery = await encoderForTest().ingestMessage(connection, message, parsed, '', receivedAt);
+      const reviewCount = one('SELECT COUNT(*) AS n FROM review_items WHERE source_event_id = ?', [result.event.id]).n;
+      const uniqueCount = encoderForTest().firstScanProcessedCount(connection.id, 'test-uid-validity', 1);
+      console.log(JSON.stringify({
+        ingested: Boolean(result.event || result.mail), duplicate: duplicate.duplicate === true,
+        recovered: recovered.recovered === true && Boolean(recovered.result?.review),
+        duplicate_after_recovery: duplicateAfterRecovery.duplicate === true && duplicateAfterRecovery.recovered !== true,
+        review_count: Number(reviewCount), unique_first_scan_processed: Number(uniqueCount)
+      }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), {
+      ingested: true, duplicate: true, recovered: true, duplicate_after_recovery: true,
+      review_count: 1, unique_first_scan_processed: 1
+    });
   });
 
   it('重新授权 / 断开 / 断开后同步被拒；历史台账不受影响', async () => {
@@ -143,6 +188,17 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     const fromSubject = extractMailFields({ subject: '【银河网络】前端开发实习生 面试邀请', fromAddress: 'campus@hr.example.com', bodyText: '' });
     assert.equal(fromSubject.company_name, '银河网络');
     assert.ok(fromSubject.job_title.includes('前端开发实习生'), fromSubject.job_title);
+  });
+
+  it('ImapFlow 结构化鉴权/网络错误必须准确分类', () => {
+    const { classifyError } = encoderForTest();
+    const auth = Object.assign(new Error('Command failed'), {
+      authenticationFailed: true, responseStatus: 'NO', serverResponseCode: 'AUTHENTICATIONFAILED'
+    });
+    assert.equal(classifyError(auth).code, 'IMAP_AUTH_FAILED');
+    const network = Object.assign(new Error('Command failed'), { code: 'ECONNREFUSED' });
+    assert.equal(classifyError(network).code, 'IMAP_NETWORK_ERROR');
+    assert.equal(classifyError(new TypeError('unexpected')).code, 'IMAP_SYNC_FAILED');
   });
 
   it('证据留存：headers_only 不保留正文，recruitment_body 只留摘要', () => {

@@ -7,10 +7,10 @@ export const APPLIED_STATUSES = new Set(['applied', 'assessment', 'interview', '
 export const STATUS_LABELS = {
   pending: '待投递',
   applied: '已投递',
-  assessment: '笔试中',
+  assessment: '笔试/测评',
   interview: '面试中',
-  offer: 'offer',
-  rejected: '已拒',
+  offer: '录用',
+  rejected: '拒绝',
   closed: '已结束'
 };
 export const STATUS_RANK = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 };

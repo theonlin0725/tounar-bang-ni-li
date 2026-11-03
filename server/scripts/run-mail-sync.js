@@ -1,5 +1,5 @@
 import { getDb, closeDb } from '../src/db.js';
-import { syncAllConnections, syncConnection } from '../src/domain/mailSync.js';
+import { syncAllConnections, syncConnection } from '../src/modules/data-capture/mail/sync.js';
 
 getDb();
 const connectionId = process.argv.find((a) => a.startsWith('--connection='))?.split('=')[1] || null;

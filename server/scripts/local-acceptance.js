@@ -32,20 +32,22 @@ const ACCEPTANCE_BASE = path.join(os.homedir(), 'tounar-acceptance');
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
-    const key = argv[i];
+    const raw = argv[i];
+    const eqAt = raw.indexOf('=');
+    const key = eqAt >= 0 ? raw.slice(0, eqAt) : raw;
     if (!key.startsWith('--')) throw new Error(`无法识别的参数：${key}`);
     const name = key.slice(2);
     if (name === 'no-start') { out.noStart = true; continue; }
-    const value = argv[i + 1];
+    const value = eqAt >= 0 ? raw.slice(eqAt + 1) : argv[i + 1];
     if (value == null || value.startsWith('--')) throw new Error(`${key} 需要一个值`);
     if (name === 'env') {
       if (!/^[A-Za-z_][A-Za-z0-9_]*=/.test(value)) throw new Error(`--env 需要 KEY=VALUE，收到：${value}`);
       (out.env ||= []).push(value);
-      i += 1;
+      if (eqAt < 0) i += 1;
       continue;
     }
     out[name] = value;
-    i += 1;
+    if (eqAt < 0) i += 1;
   }
   return out;
 }
@@ -265,7 +267,10 @@ const envLines = [
   'ENABLE_SCHEDULER=false',
   'CLOUD_LLM_ENABLED=false',
   `ALLOWED_EMAILS=${childEnv.ALLOWED_EMAILS}`,
-  `MAIL_FROM=${childEnv.MAIL_FROM}`
+  `MAIL_FROM=${childEnv.MAIL_FROM}`,
+  `ADMIN_EMAILS=${childEnv.ADMIN_EMAILS || ''}`,
+  `TEST_MAIL_RECIPIENTS=${childEnv.TEST_MAIL_RECIPIENTS || ''}`,
+  `ENABLE_MAIL_BUSINESS_TEST=${childEnv.ENABLE_MAIL_BUSINESS_TEST || 'false'}`
 ];
 if (mailModeFlag === 'smtp') envLines.push(`SMTP_URL=${childEnv.SMTP_URL}`);
 const acceptanceEnv = path.join(targetDir, 'acceptance.env');

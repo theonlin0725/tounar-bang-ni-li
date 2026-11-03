@@ -1,7 +1,7 @@
 /* 验证 WorkBuddy 云端大模型链路：模型列表 → 一次真实识别调用。
  * 用法：npm run probe:llm
  */
-import { cloudLlmAvailable, llmClassifyMail, llmExtractPageLead } from '../server/src/cloud/llm.js';
+import { cloudLlmAvailable, llmClassifyMail, llmExtractPageLead } from '../server/src/modules/data-capture/cloud/llm.js';
 import { config } from '../server/src/config.js';
 
 if (!cloudLlmAvailable()) {

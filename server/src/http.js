@@ -4,9 +4,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { AppError, newId } from './util.js';
+import { cloudPersistenceStatus, flushCloudPersistence } from './cloud/persistence.js';
 
 const routes = [];
-const MAX_BODY = 1_500_000;
+// 简历上传走 base64 JSON；5 MB 文件编码后约 6.7 MB，留出余量。
+const MAX_BODY = 8_500_000;
 
 export function route(method, pathPattern, handler, options = {}) {
   const names = [];
@@ -139,6 +141,9 @@ function serveStatic(req, res, pathname, requestId) {
   if (isHtml) {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  } else if (ext === '.js' || ext === '.css') {
+    // 前端没有构建步骤；不能让旧模块在 5 分钟内继续运行旧确认流程。
+    res.setHeader('Cache-Control', 'no-store');
   } else {
     res.setHeader('Cache-Control', 'public, max-age=300');
   }
@@ -175,7 +180,7 @@ export function createServer() {
       sendJson(res, 200, {
         ok: true,
         service: 'tounar-bang-ni-li',
-        version: 'phase3-20261024e',
+        version: config.appVersion,
         share_code: Boolean(config.shareCode),
         tick_token_source: process.env.INTERNAL_TICK_TOKEN ? 'env' : 'file',
         tick_sha8: crypto.createHash('sha256').update(config.internalTickToken).digest('hex').slice(0, 8),
@@ -184,6 +189,7 @@ export function createServer() {
         x_device_token_seen: Boolean(req.headers['x-device-token']),
         x_session_token_seen: Boolean(req.headers['x-session-token']),
         x_custom_probe_seen: Boolean(req.headers['x-custom-probe']),
+        cloud_persistence: cloudPersistenceStatus(),
         time: new Date().toISOString()
       });
       return;
@@ -218,6 +224,11 @@ export function createServer() {
         req.body = body;
         const result = await r.handler(req, res);
         if (res.headersSent || res.writableEnded) return;
+        try {
+          await flushCloudPersistence();
+        } catch {
+          throw new AppError(503, 'PERSISTENCE_UNAVAILABLE', '数据暂未安全保存，请稍后重试', { retryable: true });
+        }
         const status = result?.__status || 200;
         const headers = {};
         if (result?.__headers) Object.assign(headers, result.__headers);

@@ -159,9 +159,9 @@ it('P2: 邮件推断投递日期有标记，撤回恢复浏览态；开关关闭
   config.d12AllowMailInferredAppliedAt=false;
   try{assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-infer',mapped_status:'interview',confidence:1})).state,'pending');}finally{config.d12AllowMailInferredAppliedAt=true;}
 });
-it('P2: 不回退状态、不覆盖终态、搜索相似度不混淆两条岗位',()=>{
+it('P2: 不按固定阶段阶梯拦截、不覆盖终态、搜索相似度不混淆两条岗位',()=>{
   const app=apps.createApplication({ownerId:owner,fields:{company_name:'保护企业',job_title:'产品经理',site_key:'test',site_application_id:'phase2-protect',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'interview'});
-  assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'assessment',confidence:1})).review.reason_code,'STATUS_REGRESSION');
+  assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'assessment',confidence:1})).application.status,'assessment');
   db.markApplicationChanged(owner,app.id,null,'manual',{status:'offer'});
   assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'rejected',confidence:1})).review.reason_code,'TERMINAL_LOCKED');
 });

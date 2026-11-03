@@ -1,7 +1,7 @@
 import { all, dataRevision, getApplication, one } from '../db.js';
 import { config } from '../config.js';
 import {
-  AppError, STATUSES, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse, stageFollowupState
+  AppError, STATUSES, STATUS_LABELS, TERMINAL, daysBetweenShanghai, isDueForReview, nowIso, safeJsonParse, stageFollowupState
 } from '../util.js';
 import { applicationProjection, getPreferences, reviewAnchor } from './applications.js';
 
@@ -141,6 +141,99 @@ export function applicationDetail(ownerId, applicationId) {
   };
 }
 
+
+const SITE_LABELS = {
+  tencent: '腾讯招聘', bytedance: '字节跳动招聘', alibaba: '阿里巴巴招聘', meituan: '美团招聘',
+  jd: '京东招聘', xiaomi: '小米招聘', baidu: '百度招聘', netease: '网易招聘', generic: '招聘网站',
+  boss: 'BOSS直聘', nowcoder: '牛客', shixiseng: '实习僧', xiaohongshu: '小红书招聘',
+  mihoyo: '米哈游招聘', airbnb: 'Airbnb Careers'
+};
+function siteLabel(siteKey, url, domain) {
+  if (siteKey && siteKey !== 'generic' && SITE_LABELS[siteKey]) return SITE_LABELS[siteKey];
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, '');
+    return host || domain || null;
+  } catch { return domain || null; }
+}
+function clipPlain(value, max = 280) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+function reviewPresentation(row, { full = false } = {}) {
+  const evidence = safeJsonParse(row.evidence_json, {}) || {};
+  const suggested = safeJsonParse(row.suggested_changes_json, {}) || {};
+  const payload = safeJsonParse(row.source_payload_json, {}) || {};
+  const source = sourceFromRow(row);
+  const isMail = source.type === 'mail';
+  const page = source.type === 'page' ? source : (evidence.page || {});
+  const jobTitle = isMail ? (payload.job_title || page.job_title || '') : (page.job_title || payload.job_title || '');
+  const company = isMail ? (payload.company_name || page.company_name || '') : (page.company_name || payload.company_name || '');
+  const location = isMail ? (payload.location || page.location || '') : (page.location || payload.location || '');
+  const batch = isMail ? (payload.recruitment_batch || page.recruitment_batch || '') : (page.recruitment_batch || payload.recruitment_batch || '');
+  const salary = payload.salary || page.salary || null;
+  const subject = isMail ? (source.subject_excerpt || payload.subject_excerpt || '') : '';
+  const body = isMail
+    ? (source.body_excerpt || evidence.body_excerpt || payload.body_excerpt || '')
+    : (payload.jd_text || page.jd_excerpt || payload.jd_summary || page.status_text || '');
+  const preview = clipPlain(body, 260);
+  const link = isMail ? (payload.job_url || null) : (page.job_url || payload.job_url || null);
+  const time = isMail
+    ? (source.received_at || row.mail_received_at || payload.source_received_at || null)
+    : (page.captured_at || row.source_observed_at || row.source_occurred_at || null);
+  const suggestedStatus = suggested.status || (isMail ? 'applied' : 'pending');
+  let appliedHint = suggested.applied_at || null;
+  if (!appliedHint && row.source_event_type === 'application_submitted') appliedHint = row.source_occurred_at || null;
+  if (!appliedHint && isMail && config.d12AllowMailInferredAppliedAt) appliedHint = row.mail_received_at || null;
+  if (appliedHint && !Number.isFinite(Date.parse(appliedHint))) appliedHint = null;
+  const appliedPrecisionHint = appliedHint
+    ? (suggested.applied_at_precision || (row.source_event_type === 'application_submitted' ? 'exact' : 'inferred_before'))
+    : null;
+  let linked = null;
+  let matchedApplication = null;
+  const candidates = safeJsonParse(row.candidates_json, []);
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    const strong = ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.match_reason)
+      || Number(c.matching_confidence || 0) >= 0.8;
+    if (strong) {
+      const app = one('SELECT id, version, company_name, job_title, jd_text, job_url, has_applied, status FROM applications WHERE id = ? AND owner_id = ?', [c.application_id, row.owner_id]);
+      if (app) {
+        matchedApplication = {
+          id: app.id, version: app.version, company_name: app.company_name, job_title: app.job_title,
+          has_applied: !!app.has_applied, status: app.status
+        };
+        if (isMail && app.jd_text) linked = { application_id: app.id, job_title: app.job_title, jd_text: app.jd_text, job_url: app.job_url || null };
+      }
+    }
+  }
+  const fullText = linked ? linked.jd_text : body;
+  return {
+    source: isMail ? 'mail' : 'plugin',
+    source_label: isMail ? '邮件' : '插件',
+    site_name: isMail ? (source.from_domain || null) : siteLabel(row.source_site_key, link, page.site_key ? null : null),
+    title: isMail ? (subject || jobTitle || company || '招聘邮件') : (jobTitle || subject || company || '网页线索'),
+    company: company || null,
+    job_title: jobTitle || null,
+    location: location || null,
+    recruitment_batch: batch || null,
+    salary: salary || null,
+    subject: subject || null,
+    preview,
+    time,
+    time_label: isMail ? '收信时间' : '采集时间',
+    link: link && /^https?:\/\//i.test(link) ? link : null,
+    has_full_text: Boolean(fullText && fullText.length > preview.length),
+    full_text: full ? fullText : null,
+    linked_application: linked ? { id: linked.application_id, job_title: linked.job_title, job_url: linked.job_url } : null,
+    matched_application: matchedApplication,
+    suggested_status: suggestedStatus,
+    suggested_status_label: STATUS_LABELS[suggestedStatus] || suggestedStatus,
+    applied_at_hint: appliedHint,
+    applied_at_precision_hint: appliedPrecisionHint,
+    source_event_type: row.source_event_type || null,
+    read_mode: isMail ? (source.read_mode || null) : null
+  };
+}
+
 export function reviewList(ownerId, query = {}) {
   const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit || '20', 10) || 20));
   const status = query.status || 'open';
@@ -175,7 +268,8 @@ export function reviewList(ownerId, query = {}) {
       total_confidence: safeJsonParse(row.evidence_json, {}).total_confidence ?? safeJsonParse(row.evidence_json, {}).confidence ?? null,
       suggested_application_id: safeJsonParse(row.candidates_json, []).length === 1 ? safeJsonParse(row.candidates_json, [])[0].application_id : null,
       resolved_at: row.resolved_at,
-      source: sourceFromRow(row)
+      source: sourceFromRow(row),
+      display: reviewPresentation(row)
     })),
     page: { next_cursor: rows.length > limit ? String(offset + limit) : null, has_more: rows.length > limit },
     total: one(`SELECT COUNT(*) AS n FROM review_items WHERE owner_id = ? ${status === 'all' ? '' : 'AND status = ?'}`, status === 'all' ? [ownerId] : [ownerId, status]).n
@@ -203,7 +297,8 @@ export function reviewDetail(ownerId, reviewId) {
       suggested_changes: safeJsonParse(row.suggested_changes_json, {}),
       candidates: safeJsonParse(row.candidates_json, []),
       resolution: safeJsonParse(row.resolution_json, null),
-      source: sourceFromRow(row)
+      source: sourceFromRow(row),
+      display: reviewPresentation(row, { full: true })
     }
   };
 }

@@ -109,19 +109,64 @@ it('缺字段但岗位身份可追溯：进「看过没投」，不进待确认'
   assert.equal(data.location, '深圳');
 });
 
-it('没有岗位身份才进待确认，且证据里能读到页面信息', async () => {
+it('有明确岗位内容但无稳定 ID：建立可追溯浏览记录，不强行进待确认', async () => {
   const e = strongViewEvent({ event_type: 'job_viewed', payload: {
     company_name: '无链接公司', job_title: '产品经理', site_job_id: null, job_url: null,
-    jd_summary: '负责产品规划', visible_dwell_ms: 4200
+    jd_summary: '负责产品规划', visible_dwell_ms: 4200, page_url: 'https://jobs.example.com/company/no-link'
   } });
   const result = await ingest(e);
-  assert.ok(result.review_item_id, JSON.stringify(result));
-  const detailRes = await server.request(`/api/v1/review-items/${result.review_item_id}`, { cookie });
-  const src = detailRes.json.data.source;
-  assert.equal(src.type, 'page');
-  assert.equal(src.company_name, '无链接公司');
-  assert.ok(src.missing_fields.includes('job_url') || src.missing_fields.length >= 0);
-  assert.ok(detailRes.json.data.evidence.page, 'evidence.page 应存在');
+  assert.ok(result.application_id, JSON.stringify(result));
+  assert.equal(result.review_item_id, null);
+  const detailRes = await server.request(`/api/v1/applications/${result.application_id}`, { cookie });
+  assert.equal(detailRes.json.data.company_name, '无链接公司');
+  assert.equal(detailRes.json.data.job_title, '产品经理');
+});
+
+it('空状态/导航占位没有岗位内容：自动忽略，不建台账不建待确认', async () => {
+  const before = (await server.request('/api/v1/ledger?view=viewed&limit=100', { cookie })).json.data;
+  const reviewsBefore = (await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json.total;
+  const result = await ingest(strongViewEvent({ event_type: 'job_viewed', payload: {
+    company_name: null, job_title: '批次待补充 · 城市待补充', site_job_id: null, job_url: null,
+    jd_summary: null, page_url: 'https://jobs.example.com/empty-state', visible_dwell_ms: 4200
+  } }));
+  assert.equal(result.accepted, true);
+  assert.equal(result.processing_state, 'ignored');
+  assert.equal(result.review_item_id, null);
+  const after = (await server.request('/api/v1/ledger?view=viewed&limit=100', { cookie })).json.data;
+  const reviewsAfter = (await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json.total;
+  assert.equal(after.items.length, before.items.length);
+  assert.equal(reviewsAfter, reviewsBefore);
+});
+
+it('事件页面 URL 指向本项目自身页面：服务端兜底拒绝，即使岗位字段看似正常', async () => {
+  const before = (await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json.total;
+  const result = await ingest(strongViewEvent({ event_type: 'job_viewed', payload: {
+    company_name: '正常公司', job_title: '正常岗位', site_job_id: 'self-page-url-1',
+    job_url: 'https://jobs.example.com/jobs/self-page-url-1', jd_summary: '正常 JD',
+    page_url: server.base + '/?panel=reviews', visible_dwell_ms: 4200
+  } }));
+  assert.equal(result.accepted, false);
+  assert.equal(result.error.code, 'SELF_APP_EVENT');
+  assert.equal((await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json.total, before);
+});
+
+it('指向本项目自身页面的插件事件服务端拒绝，不建台账也不建待确认', async () => {
+  const beforeLedger = (await server.request('/api/v1/ledger?view=viewed&limit=100', { cookie })).json.data;
+  const beforeReviews = (await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json;
+  const e = strongViewEvent({ event_type: 'job_viewed', payload: {
+    company_name: 'Tounar 帮你理', job_title: '系统判断：待补充公司',
+    site_job_id: 'self-page-1', job_url: server.base + '/?panel=reviews',
+    jd_summary: '这是产品自己的待确认页面', visible_dwell_ms: 4200
+  } });
+  const result = await ingest(e);
+  assert.equal(result.accepted, false);
+  assert.equal(result.error.code, 'SELF_APP_EVENT');
+  const afterLedger = (await server.request('/api/v1/ledger?view=viewed&limit=100', { cookie })).json.data;
+  const afterReviews = (await server.request('/api/v1/review-items?status=all&limit=1', { cookie })).json;
+  assert.equal(afterLedger.items.length, beforeLedger.items.length);
+  assert.equal(afterReviews.total, beforeReviews.total);
+  const normal = await ingest(event('after-self-guard', { job_title: '正常招聘岗位', job_url: 'https://jobs.example.com/jobs/after-self-guard' }));
+  assert.ok(normal.application_id, JSON.stringify(normal));
 });
 
 it('缺标题岗位后续补出标题：补全同一条，不回到待确认', async () => {

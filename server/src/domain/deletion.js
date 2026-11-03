@@ -102,6 +102,13 @@ export function processDeletionJob(jobId) {
       run('DELETE FROM reminder_links WHERE owner_id = ?', [ownerId]);
       run('DELETE FROM notification_batch_items WHERE owner_id = ?', [ownerId]);
       run('DELETE FROM notification_batches WHERE owner_id = ?', [ownerId]);
+      const mailOwner = one('SELECT email_display,email_normalized FROM users WHERE id=?', [ownerId]);
+      run('DELETE FROM mail_test_runs WHERE owner_id=?', [ownerId]);
+      run('DELETE FROM ai_ingest_runs WHERE owner_id=?', [ownerId]);
+      run('DELETE FROM ai_reports WHERE owner_id=?', [ownerId]);
+      run('DELETE FROM resumes WHERE owner_id=?', [ownerId]);
+      run('DELETE FROM mail_deliveries WHERE owner_id=? OR lower(recipient)=?', [ownerId, mailOwner?.email_normalized || '']);
+      if (mailOwner) run("UPDATE mail_template_versions SET actor='已删除管理员' WHERE actor=? OR actor LIKE ?", [mailOwner.email_normalized, mailOwner.email_normalized+'（%']);
       run('DELETE FROM notification_outbox WHERE owner_id = ?', [ownerId]);
       run('DELETE FROM notification_preferences WHERE owner_id = ?', [ownerId]);
       run('DELETE FROM review_resolutions WHERE owner_id = ?', [ownerId]);

@@ -18,7 +18,7 @@ export function companyIdentity(name, domain='') {
   return named?.[0] || (n?n:host?.[0]) || null;
 }
 export function normalizedJobTitle(value) {
-  return String(value||'').toLowerCase().replace(/20\d{2}\s*届?/g,'').replace(/校园招聘|社会招聘|校招|社招|秋招|春招|面试邀请|笔试邀请|测评邀请|面试通知|笔试通知|招聘进展/g,'')
+  return String(value||'').toLowerCase().replace(/20\d{2}\s*届?/g,'').replace(/校园招聘|社会招聘|校招|社招|秋招|春招|面试邀请|笔试邀请|测评邀请|面试通知|笔试通知|招聘进展/g,'').replace(/(?:岗位|职位)$/g,'')
     .replace(/[-—·|（(]\s*(北京|上海|深圳|广州|杭州|成都|武汉|西安|南京|苏州|远程)[)）]?/g,'').replace(/[\s\p{P}\p{S}]/gu,'');
 }
 export function similarJob(a,b) {
