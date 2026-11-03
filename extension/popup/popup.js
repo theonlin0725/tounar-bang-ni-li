@@ -2,6 +2,8 @@
 const $ = (id) => document.getElementById(id);
 let pollTimer = null;
 let serverUrlEdited = false;
+// Show the packaged official default immediately; the saved setting (if any) still wins after status refresh.
+try { if (!serverUrlEdited && globalThis.TounarCommon?.DEFAULTS?.serverUrl) $('server-url').value = TounarCommon.DEFAULTS.serverUrl; } catch { /* popup status will fill it */ }
 let refreshSequence = 0;
 $('server-url').addEventListener('input', () => { serverUrlEdited = true; });
 
@@ -226,10 +228,8 @@ $('probe-local').addEventListener('click', async () => {
   }
   const target = usable[0];
   $('server-url').value = target.url;
-  const saved = await send({ type: 'set_server_url', serverUrl: target.url });
-  if (saved.ok) serverUrlEdited = false;
-  $('probe-result').textContent = `${lines.join('；')}。已填入并保存 ${target.url}`;
-  await refresh();
+  serverUrlEdited = true;
+  $('probe-result').textContent = `${lines.join('；')}。已填入 ${target.url}，尚未保存；确认切换会解除旧后台绑定，请再点击“保存并授权连接”。`;
 });
 
 $('save-server').addEventListener('click', async () => {  const url = $('server-url').value.trim();
@@ -283,8 +283,12 @@ $('heartbeat').addEventListener('click', async () => {
 });
 
 $('unpair').addEventListener('click', async () => {
-  if (!confirm('解除本设备绑定？未上传事件将留在本地队列，直到你确认清理或重新配对。')) return;
-  await send({ type: 'unpair', cleanup: false });
+  if (!confirm('解除本设备绑定？有未上传事件时会先阻止解绑，避免之后串入其他账号或后台。')) return;
+  const result = await send({ type: 'unpair', cleanup: false });
+  if (!result.ok) {
+    $('last-error').textContent = result.error?.message || '解除绑定失败';
+    show($('last-error'), true);
+  }
   await refresh();
 });
 

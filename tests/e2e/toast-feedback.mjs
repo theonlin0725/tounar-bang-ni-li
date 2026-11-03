@@ -13,7 +13,8 @@ import {startCaptureFixtures} from './capture-fixtures.mjs';
 const ROOT=path.resolve(import.meta.dirname,'../..');
 const out=fs.mkdtempSync(path.join(ROOT,'.tmp','toast-feedback-'));
 const checks=[];const receipts=[];const uploads=[];
-const report={commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim(),generated_at:new Date().toISOString(),scope:'A only. Actual product scripts, isolated Chrome, local fixtures/backend. Manifest host pregrant; native permission dialog and real websites not tested.',checks,out};
+let commit='unknown';try{commit=execFileSync('git',['rev-parse','--short','HEAD'],{cwd:ROOT,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();}catch{/* isolated release source has no .git */}
+const report={commit,generated_at:new Date().toISOString(),scope:'A only. Actual product scripts, isolated Chrome, local fixtures/backend. Manifest host pregrant; native permission dialog and real websites not tested.',checks,out};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function wait(fn,label,timeout=12000){const end=Date.now()+timeout;while(Date.now()<end){const r=await fn();if(r)return r;await sleep(100);}throw Error('timeout: '+label);}
 async function check(name,fn){try{const detail=await fn();checks.push({name,pass:true,detail});console.log('PASS '+name);}catch(e){checks.push({name,pass:false,error:e.message});console.log('FAIL '+name+' '+e.message);}}
@@ -57,11 +58,11 @@ try{
  sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');extensionId=new URL(sw.url()).host;
  const cdp=await context.newCDPSession(context.pages()[0]);report.browser=(await cdp.send('Browser.getVersion')).product;await cdp.detach();
  web=await context.newPage();await web.goto(server.base);await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();await web.locator('[data-test=tab-viewed]').waitFor();cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
- popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);await popup.locator('#server-url').fill(server.base);await popup.click('#save-server');await popup.click('#start-pairing');
+ popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);await popup.locator('#server-url').fill(proxyBase);await popup.click('#save-server');await popup.click('#start-pairing');
  const code=await wait(async()=>{const t=await popup.locator('#pairing-code').textContent();return /^[A-HJ-NP-Z2-9]{8}$/.test(t)?t:null;},'pair code');
  await web.goto(server.base+'/?panel=settings');await web.locator('[data-test=settings-tab-data]').click();await web.locator('[data-test=pair-code]').fill(code);await web.locator('[data-test=pair-approve]').click();await popup.click('#poll-pairing');await popup.locator('#paired').waitFor({state:'visible'});
  await web.getByRole('button',{name:'关闭',exact:true}).click();await web.locator('[data-test=tab-viewed]').click();
- await popup.locator('#server-url').fill(proxyBase);await popup.click('#save-server');
+ await popup.locator('#server-url').fill(proxyBase+'/?sharecode=test-gateway');await popup.click('#save-server');
  page=await context.newPage();await page.goto(fixtures.base+'/jobs/1001');await page.bringToFront();await popup.click('#grant-current');
  await check('成功提示对应真实业务记录，提供正确深链且不抢焦点',async()=>{
   const text=await wait(async()=>{const t=await toast();return t.includes('看过没投')?t:null;},'created toast');
@@ -69,7 +70,7 @@ try{
   const actual=(await server.request('/api/v1/applications/'+receipt.application_id,{cookie})).json.data;assert.equal(actual.has_applied,0);
   const aria=await page.locator('[data-tounar-toast] [role=status]').getAttribute('aria-live');assert.equal(aria,'polite');assert.equal(await page.evaluate(()=>document.activeElement?.hasAttribute('data-tounar-toast')),false);
   const screenshot=await shot('success');
-  const promise=context.waitForEvent('page');await page.locator('[data-tounar-toast]').getByRole('button',{name:'查看台账'}).click();const opened=await promise;await opened.waitForLoadState('domcontentloaded');assert.equal(new URL(opened.url()).searchParams.get('app'),receipt.application_id);assert.equal(new URL(opened.url()).origin,proxyBase);await opened.close();
+  const promise=context.waitForEvent('page');await page.locator('[data-tounar-toast]').getByRole('button',{name:'查看台账'}).click();const opened=await promise;await opened.waitForLoadState('domcontentloaded');assert.equal(new URL(opened.url()).searchParams.get('app'),receipt.application_id);assert.equal(new URL(opened.url()).searchParams.get('sharecode'),'test-gateway');assert.equal(new URL(opened.url()).origin,proxyBase);await opened.close();
   await closeToast();assert.equal(await toast(),'');return {text,aria,application_id:receipt.application_id,screenshot};
  });
  await popup.close();

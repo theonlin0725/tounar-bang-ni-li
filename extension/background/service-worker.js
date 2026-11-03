@@ -73,6 +73,48 @@ function jobIdentity(payload = {}, siteKey = '') {
   } catch { return null; }
 }
 
+/* 本项目自身页面的地址即后台地址；同时覆盖 127.0.0.1/localhost 的等价写法。
+ * 只在 event.payload 明确指向该 origin 时丢弃，不按关键词或来源站点误伤招聘页。 */
+function selfOrigins(serverUrl) {
+  const out = new Set();
+  try {
+    const u = new URL(serverUrl);
+    if (!/^https?:$/.test(u.protocol)) return out;
+    out.add(u.origin);
+    if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') {
+      const port = u.port ? `:${u.port}` : '';
+      out.add(`${u.protocol}//127.0.0.1${port}`);
+      out.add(`${u.protocol}//localhost${port}`);
+    }
+  } catch { /* invalid server URL: later API call will report it */ }
+  return out;
+}
+function isSelfEvent(event, serverUrl) {
+  const origins = selfOrigins(serverUrl);
+  if (!origins.size) return false;
+  for (const key of ['job_url', 'status_url', 'page_url']) {
+    try {
+      const url = new URL(event?.payload?.[key]);
+      if (origins.has(url.origin)) return true;
+      // 旧版/其他端口：本项目页面通常是 loopback 根路径、panel、自测页或静态资源。
+      if (['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+        && (url.pathname === '/' || url.pathname === '/mail-selftest.html'
+          || url.pathname.startsWith('/api/') || url.pathname.startsWith('/assets/')
+          || url.searchParams.has('panel'))) return true;
+    } catch { /* field absent or invalid */ }
+  }
+  return false;
+}
+async function purgeSelfEvents(settings) {
+  if (!settings?.serverUrl) return 0;
+  const events = await Queue.list(1000);
+  const ids = events.filter((event) => isSelfEvent(event, settings.serverUrl)).map((event) => event.client_event_id);
+  if (!ids.length) return 0;
+  await Queue.remove(ids);
+  await updateBadge();
+  return ids.length;
+}
+
 /* 成功判定必须同时满足：accepted、processing_state=applied、有业务记录 ID。
  * 仅入队 / HTTP 200 / accepted / ignored / cancelled / 无 ID 一律不算保存成功。 */
 function feedbackStatus(result) {
@@ -164,18 +206,20 @@ function flushQueue() {
 async function runFlush() {
   try {
     const settings = await getSettings();
+    const selfPurged = await purgeSelfEvents(settings);
     if (!settings.deviceToken) {
       await updateBadge();
-      return { skipped: 'not_paired', queued: await Queue.count() };
+      return { skipped: 'not_paired', queued: await Queue.count(), self_purged: selfPurged };
     }
     const available = await Queue.list(MAX_BATCH);
     const pending = []; let bytes = 0;
     for (const item of available) {
+      if (isSelfEvent(item, settings.serverUrl)) continue;
       const size = new TextEncoder().encode(JSON.stringify(item)).length;
       if (pending.length && bytes + size > 1000000) break;
       pending.push(item); bytes += size;
     }
-    if (!pending.length) return { flushed: 0 };
+    if (!pending.length) return { flushed: 0, self_purged: selfPurged };
     let response;
     try {
       response = await Api.uploadEvents(settings.serverUrl, settings.deviceToken, pending.map(stripLocalFields));
@@ -290,11 +334,45 @@ async function checkRevocation() {
   }
 }
 
+function normalizedBackend(raw) {
+  const url = new URL(String(raw || ''));
+  if (!/^https?:$/.test(url.protocol)) throw { code: 'INVALID_SERVER_URL', message: '后台地址必须以 http:// 或 https:// 开头' };
+  url.hash = '';
+  return url.toString().replace(/\/$/, '');
+}
+function backendIdentity(raw) {
+  const url = new URL(normalizedBackend(raw));
+  // sharecode is a gateway credential, not a different backend.
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+}
+async function changeBackend(raw) {
+  const base = normalizedBackend(raw);
+  if (!base) throw { code: 'NO_SERVER', message: '请先填写后台地址' };
+  await flushPromise?.catch(() => {});
+  const settings = await getSettings();
+  if (backendIdentity(settings.serverUrl) === backendIdentity(base)) {
+    await setSettings({ serverUrl: base, lastError: null });
+    return { changed: false, serverUrl: base };
+  }
+  const queued = await Queue.count();
+  if (queued) {
+    throw { code: 'QUEUE_CLEAR_REQUIRED', message: `还有 ${queued} 条未上传事件。请先同步到原后台或明确清空，再切换后台，避免串入其他台账。` };
+  }
+  await clearPendingFeedback();
+  await clearPairing();
+  await setSettings({
+    serverUrl: base, lastUploadAt: null, lastError: null,
+    lastEventResults: {}, lastEventResultsAt: null, lastCapture: null
+  });
+  await updateBadge();
+  return { changed: true, serverUrl: base };
+}
+
 async function startPairing({ serverUrl, deviceName }) {
   const settings = await getSettings();
-  const base = String(serverUrl || settings.serverUrl || '').replace(/\/$/, '');
+  const base = String(serverUrl || settings.serverUrl || '');
   if (!base) throw { code: 'NO_SERVER', message: '请先填写后台地址' };
-  await setSettings({ serverUrl: base });
+  await changeBackend(base);
   const created = await Api.createPairing(base, deviceName || `Chrome 扩展 ${new Date().toLocaleDateString('zh-CN')}`);
   const pair = created.data || created;
   const pending = {
@@ -346,6 +424,11 @@ async function pollPairing() {
 }
 
 async function unpair({ cleanup = true } = {}) {
+  await flushPromise?.catch(() => {});
+  const queued = await Queue.count();
+  if (!cleanup && queued) {
+    throw { code: 'QUEUE_CLEAR_REQUIRED', message: `还有 ${queued} 条未上传事件。请先同步或明确清空，再解除绑定，避免之后上传到其他账号。` };
+  }
   await clearPendingFeedback();
   const settings = await getSettings();
   let cleanupResult = null;
@@ -376,6 +459,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'enqueue_event': {
         const settings = await getSettings();
         if (settings.capturePaused) { sendResponse({ok:false,error:'CAPTURE_PAUSED'}); return; }
+        let senderOrigin = null;
+        try { senderOrigin = new URL(sender.url || sender.tab?.url || '').origin; } catch { /* internal page */ }
+        if (isSelfEvent(message.event, settings.serverUrl) || (senderOrigin && selfOrigins(settings.serverUrl).has(senderOrigin))) {
+          sendResponse({ ok:false, error:{ code:'SELF_APP_PAGE', message:'这是帮你理自身页面，不采集为招聘岗位', retryable:false } });
+          return;
+        }
         if (sender.tab) {
           const origin = new URL(sender.url || sender.tab.url).origin;
           if (!await chrome.permissions.contains({ origins:[origin+'/*'] })) { sendResponse({ok:false,error:'PERMISSION_REVOKED'}); return; }
@@ -430,9 +519,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       case 'set_server_url': {
-        await setSettings({ serverUrl: String(message.serverUrl || '').replace(/\/$/, '') });
-        flushQueue().catch(() => {});
-        sendResponse({ ok: true });
+        try {
+          const result = await changeBackend(message.serverUrl);
+          if (!result.changed) flushQueue().catch(() => {});
+          sendResponse({ ok: true, result });
+        } catch (err) {
+          sendResponse({ ok: false, error: { code: err.code || 'BACKEND_SWITCH_FAILED', message: err.message || String(err) } });
+        }
         return;
       }
       case 'set_page_feedback': {
@@ -549,7 +642,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       case 'unpair': {
-        sendResponse({ ok: true, result: await unpair({ cleanup: message.cleanup !== false }) });
+        try {
+          sendResponse({ ok: true, result: await unpair({ cleanup: message.cleanup !== false }) });
+        } catch (err) {
+          sendResponse({ ok: false, error: { code: err.code || 'UNPAIR_FAILED', message: err.message || String(err) } });
+        }
         return;
       }
       default:
