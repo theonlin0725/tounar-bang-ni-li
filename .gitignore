@@ -13,6 +13,9 @@ data/*.sqlite-wal
 data/*.sqlite-shm
 data/*.backup
 data/outbox/
+data/mail-selftest/
+data/mail-selftest-profile.json
+data/recovery-backups/
 
 # 本地日志与临时脚本
 *.log
@@ -20,3 +23,14 @@ data/outbox/
 # 本地配置（含发信凭据），绝不入库；模板见 .env.example
 .env
 .env.local
+
+# Review/source repositories exclude all runtime data and deployment bundles
+data/
+dist/
+web/downloads/
+.env.*
+!.env.example
+*.genie
+
+# Also exclude local dependency symlinks used for isolated review checks
+/node_modules

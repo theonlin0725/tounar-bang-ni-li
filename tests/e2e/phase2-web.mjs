@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { execFileSync } from 'node:child_process';
-import { startTestServer } from '../../server/test/helpers.js';
+import { startTestServer, strongViewEvent } from '../../server/test/helpers.js';
 import { resolveChromiumExecutable } from './browser.mjs';
 import { chromium } from 'playwright';
 export async function phase2Web(check) {
@@ -11,32 +11,73 @@ export async function phase2Web(check) {
     const app=(await server.request('/api/v1/applications/manual',{method:'POST',cookie,headers:{'Idempotency-Key':'phase2-app'},body:{company_name:'二期测试公司',job_title:'产品经理',has_applied:true,status:'applied',applied_at:'2026-10-01T02:00:00Z',jd_summary:'产品设计',job_url:'https://example.com/jobs/p2'}})).json.data;
     const app2=(await server.request('/api/v1/applications/manual',{method:'POST',cookie,headers:{'Idempotency-Key':'phase2-app2'},body:{company_name:'二期手工公司',job_title:'手工前的岗位',has_applied:true,status:'applied',applied_at:'2026-10-02T02:00:00Z',jd_summary:'手工修改测试',job_url:'https://example.com/jobs/p2b'}})).json.data;
     const db=new DatabaseSync(server.dir+'/tounar.sqlite');const owner=db.prepare('SELECT owner_id FROM applications WHERE id=?').get(app.id).owner_id;
-    const add=(id,candidates=[])=>db.prepare(`INSERT INTO review_items (id,owner_id,kind,reason_code,summary,evidence_json,suggested_changes_json,candidates_json,created_at) VALUES (?,?,'mail_progress','MAIL_MATCH_UNCONFIRMED','二期邮件进展',?,?,?,?)`).run(id,owner,JSON.stringify({confidence:0.85,subject_excerpt:'测试面邀',from_domain:'example.com'}),JSON.stringify({status:'interview'}),JSON.stringify(candidates),new Date().toISOString());
-    add('p2-no-candidate');
     const resolved=await resolveChromiumExecutable();browser=await chromium.launch({executablePath:resolved.path,headless:true});
     const context=await browser.newContext({baseURL:server.base});const page=await context.newPage();
     await page.goto('/?panel=reviews');await page.fill('[data-test=login-email]','demo@tounar.local');await page.click('[data-test=login-send]');await page.waitForSelector('[data-test=login-code]',{state:'visible'});await page.fill('[data-test=login-code]',await server.readOtpCode('demo@tounar.local'));await page.click('[data-test=login-submit]');await page.waitForSelector('[data-test=reviews-view]');
     check('P1-登录后保留待确认深链',true);
-    const card=page.locator('[data-review-id=p2-no-candidate]');await card.locator('[data-test=review-confirm]').click();
-    check('P1-无候选时确认按钮可用并展开搜索',await card.locator('[data-test=review-search]').isVisible());
-    await card.locator('[data-test=review-search]').fill('二期测试');await card.locator(`[data-test=review-target] option[value="${app.id}"]`).waitFor({state:'attached'});await card.locator('[data-test=review-target]').selectOption(app.id);
-    await page.waitForFunction(()=>document.querySelector('[data-test=review-switch-at]')?.parentElement.hidden);
-    await card.locator('[data-test=review-switch-status]').click();await card.waitFor({state:'detached'});
-    check('P1-搜索关联本人台账，已有时间无需重复填写',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
-    await page.locator('[data-test=review-undo]').first().click();await card.waitFor();
-    check('P1-10秒内撤销恢复台账并重开待确认',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='applied');
-    await card.locator('[data-test=review-dismiss]').click();await page.click('[data-test=confirm-ok]');await card.waitFor({state:'detached'});
-    add('p2-batch',[{application_id:app.id,company_name:'二期测试公司',job_title:'产品经理'}]);await page.click('[data-test=reviews-refresh]');await page.locator('[data-review-id=p2-batch]').waitFor();await page.click('[data-test=reviews-batch]');await page.click('[data-test=confirm-ok]');await page.locator('[data-review-id=p2-batch]').waitFor({state:'detached'});
-    check('P1-批量确认逐条提交并更新台账',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
-    // 人工修改：待确认里必须能直接改公司/岗位并写回已有台账
-    add('p2-manual',[{application_id:app2.id,company_name:'二期手工公司',job_title:'手工前的岗位'}]);
+    const reviewDevice=await server.pairDevice(cookie,'phase2-review');
+    const reviewEvent=strongViewEvent({event_type:'job_viewed',evidence_level:'weak',payload:{
+      company_name:'二期测试公司',job_title:'产品经理',site_job_id:null,job_url:null,
+      jd_summary:'负责二期产品设计与用户研究。',location:'上海',visible_dwell_ms:4200
+    }});
+    const createdReview=(await server.eventBatch(reviewDevice.device_token,[reviewEvent])).json.results[0];
     await page.click('[data-test=reviews-refresh]');
-    const manual=page.locator('[data-review-id=p2-manual]');await manual.waitFor();
-    await manual.locator('[data-test=review-change]').click();
-    await manual.locator('[data-test=review-create-title]').fill('手工改过的岗位');
-    await manual.locator('[data-test=review-switch-status]').click();
+    const card=page.locator(`[data-review-id="${createdReview.review_item_id}"]`);await card.waitFor();
+    check('P1-待确认卡片直接显示来源/标题/正文，无需先选台账',
+      (await card.locator('[data-test=review-source]').textContent()).includes('插件')
+      && (await card.locator('[data-test=review-title]').textContent()).includes('产品经理')
+      && (await card.locator('[data-test=review-preview]').textContent()).includes('用户研究'));
+    await card.locator('[data-test=review-confirm]').click();
+    await page.waitForSelector(`[data-review-id="${createdReview.review_item_id}"] [data-test=review-manual]`);
+    await card.locator('[data-test=review-manual]').click();
+    await page.waitForSelector('[data-test=intake-modal]');
+    await page.selectOption('[data-test=intake-status]', 'applied');
+    await page.fill('[data-test=intake-applied-at]', '2026-10-01');
+    await page.click('[data-test=intake-save]');
+    await card.waitFor({state:'detached'});
+    const createdApp=db.prepare("SELECT * FROM applications WHERE owner_id=? AND job_title='产品经理' ORDER BY created_at DESC LIMIT 1").get(owner);
+    check('P1-无候选时选择状态直接创建并写入实际投递时间',
+      createdApp?.status==='applied' && createdApp.has_applied===1 && String(createdApp.applied_at).startsWith('2026-10-01'),
+      `status=${createdApp?.status} applied_at=${createdApp?.applied_at}`);
+    await page.locator('[data-test=review-undo]').first().click();
+    await card.waitFor();
+    check('P1-10秒内撤销恢复台账并重开待确认',
+      db.prepare('SELECT archived_at FROM applications WHERE id=?').get(createdApp.id).archived_at !== null
+      && db.prepare('SELECT status FROM review_items WHERE id=?').get(createdReview.review_item_id).status === 'open');
+    await card.locator('[data-test=review-dismiss]').click();await card.waitFor({state:'detached'});
+
+    // 缺公司/岗位时：失败不丢待确认，内联补充后直接入账
+    const missingEvent=strongViewEvent({event_type:'job_viewed',evidence_level:'weak',payload:{
+      company_name:null,job_title:null,site_job_id:null,job_url:null,
+      jd_summary:'这条页面只有正文，公司和岗位缺失。',visible_dwell_ms:4200
+    }});
+    const missingReview=(await server.eventBatch(reviewDevice.device_token,[missingEvent])).json.results[0];
+    await page.click('[data-test=reviews-refresh]');
+    const manual=page.locator(`[data-review-id="${missingReview.review_item_id}"]`);await manual.waitFor();
+    await manual.locator('[data-test=review-confirm]').click();
+    await page.waitForSelector(`[data-review-id="${missingReview.review_item_id}"] [data-test=review-manual]`);
+    await manual.locator('[data-test=review-manual]').click();
+    await page.waitForSelector('[data-test=intake-modal]');
+    await page.click('[data-test=intake-cancel]');
+    await page.waitForSelector('[data-test=intake-modal]',{state:'detached'});
+    const cancelReviewState = db.prepare('SELECT status FROM review_items WHERE id=?').get(missingReview.review_item_id);
+    const cancelApp = db.prepare("SELECT id FROM applications WHERE owner_id=? AND job_title='手工补出的岗位'").get(owner);
+    check('P1-取消补录保持待确认，不创建空白台账',
+      cancelReviewState?.status==='open' && !cancelApp,
+      JSON.stringify({review:cancelReviewState?.status, app:cancelApp?.id || null, review_id:missingReview.review_item_id}));
+    await manual.locator('[data-test=review-confirm]').click();
+    await page.waitForSelector(`[data-review-id="${missingReview.review_item_id}"] [data-test=review-manual]`);
+    await manual.locator('[data-test=review-manual]').click();
+    await page.waitForSelector('[data-test=intake-modal]');
+    await page.fill('[data-test=intake-company]','二期手工公司');
+    await page.fill('[data-test=intake-title]','手工补出的岗位');
+    await page.selectOption('[data-test=intake-status]','pending');
+    await page.click('[data-test=intake-save]');
     await manual.waitFor({state:'detached'});
-    check('P1-待确认可人工改公司/岗位并写回台账',db.prepare('SELECT job_title FROM applications WHERE id=?').get(app2.id).job_title==='手工改过的岗位');
+    const manualApp=db.prepare("SELECT * FROM applications WHERE owner_id=? AND job_title='手工补出的岗位' ORDER BY created_at DESC LIMIT 1").get(owner);
+    check('P1-补录公司和岗位后入账，原线索保留',
+      manualApp?.status==='pending' && manualApp?.company_name==='二期手工公司' && manualApp?.latest_event_id,
+      `app=${manualApp?.id} status=${manualApp?.status}`);
     // 归档掉辅助记录，后面的台账计数/行数断言仍按单条记录算
     db.prepare('UPDATE applications SET archived_at=? WHERE id=?').run(new Date().toISOString(),app2.id);
     await page.goto('/?app='+app.id);await page.waitForSelector('[data-test=detail-company]');
@@ -56,7 +97,7 @@ export async function phase2Web(check) {
     check('P2-重新获焦检查修订，邮件更新提示并高亮行',await page.locator('.tn-row-updated').count()===1&&await page.locator('[data-test=mail-update-banner]').textContent()==='刚刚根据邮件更新了 1 条记录');
     await page.locator('[data-test=ledger-row]').click();await page.locator('[data-test=undo-mail]').first().click();await page.click('[data-test=confirm-ok]');
     await page.waitForFunction(()=>[...document.querySelectorAll('.tn-toast')].some(x=>x.textContent.includes('已撤回邮件自动更新')));
-    check('P2-详情撤回邮件自动判断并留历史',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='interview');
+    check('P2-详情撤回邮件自动判断并留历史',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='applied');
     await page.click('[data-test=detail-drawer] .tn-drawer-close');
     await page.click('[data-test=open-settings-reminder]');
     await page.waitForSelector('[data-test=pref-stage-followup]');

@@ -174,9 +174,10 @@ async function main() {
   await popup.click('#probe-local');
   const probeText = await waitFor(async () => {
     const text = (await popup.textContent('#probe-result')) || '';
-    return text.includes('已填入并保存') ? text : null;
+    return text.includes('尚未保存') ? text : null;
   }, { label: '检测本机服务结果' });
-  check('6. 「检测本机服务」发现 4311 并自动填入保存', probeText.includes('✅') && probeText.includes('已填入并保存'), probeText);
+  check('6. 「检测本机服务」只填入候选地址，不自动保存或解绑', probeText.includes('✅') && probeText.includes('尚未保存'), probeText);
+  await popup.click('#save-server');
   await popup.screenshot({ path: path.join(SHOT_DIR, '02-probe-local.png') });
 
   const healthText = await waitFor(async () => {

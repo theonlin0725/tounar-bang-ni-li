@@ -1,6 +1,6 @@
 # 线上核心功能验收（2026-10-24 10:50，发布后实测）
 
-实例：`https://bangnili.app.workbuddy.host/?sharecode=SMDT7CDZYS`（沙箱重建后重新发布，代码 `2258bc8`，已含 phase3 全部修复）
+实例：`https://bangnili.app.workbuddy.host/?sharecode=YOUR_SHARE_CODE_CONFIG_VALUE`（沙箱重建后重新发布，代码 `2258bc8`，已含 phase3 全部修复）
 
 ## 1. 本轮我实际做了什么
 
@@ -32,19 +32,19 @@
 
 ### 3.1 `SHARE_CODE`——决定邮件链接能不能点开
 
-代码已支持：设置后提醒邮件里的链接自动带 `?sharecode=`。本机已验证（把 `SHARE_CODE=SMDT7CDZYS` 注入后跑提醒，链接变成）：
+代码已支持：设置后提醒邮件里的链接自动带 `?sharecode=`。本机已验证（把 `SHARE_CODE=REDACTED_CONFIG_VALUE` 注入后跑提醒，链接变成）：
 
 ```
-…/r/rl_xxx?sharecode=SMDT7CDZYS
-…/?app=app_xxx&sharecode=SMDT7CDZYS
-…/?panel=settings&sharecode=SMDT7CDZYS
+…/r/rl_xxx?sharecode=YOUR_SHARE_CODE_CONFIG_VALUE
+…/?app=app_xxx&sharecode=YOUR_SHARE_CODE_CONFIG_VALUE
+…/?panel=settings&sharecode=YOUR_SHARE_CODE_CONFIG_VALUE
 ```
 
 **但线上是否真的有这个变量，我从外部无法确认**（没有任何接口会回显它；唯一可观察点是真实提醒邮件里的链接）。
 如果 WorkBuddy 的环境变量是你在后台手工配的，请在应用设置里加一条：
 
 ```
-SHARE_CODE=SMDT7CDZYS
+SHARE_CODE=REDACTED_CONFIG_VALUE
 ```
 
 ### 3.2 `INTERNAL_TICK_TOKEN`——决定我能不能手动触发提醒验收

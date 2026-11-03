@@ -2,7 +2,7 @@
    allowed_actions 以服务端为准；纠错必须带原因与 expected_version；409/D05/D12 如实解释。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { isStale } from '../app.js';
+import { isStale } from '../app.js?v=20261102-1';
 import {
   h, clear, toast, confirmDialog, statusChip, fmtDateTime, fmtDate, daysText,
   idemKey, extLink, STATUS_LABELS, STATUS_ORDER
@@ -11,7 +11,7 @@ import {
 const SOURCE_LABELS = { plugin: '插件采集', mail: '招聘邮件', manual: '用户确认' };
 const PRECISION_LABELS = { exact: '精确时间', date: '日期级记录', inferred_before: '据邮件推断的最晚投递日期', unknown: '时间未知' };
 
-export function openDetail(id, { gen, onChanged } = {}) {
+export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
   const layer = document.getElementById('tn-drawer-layer');
   clear(layer);
   layer.hidden = false;
@@ -20,6 +20,7 @@ export function openDetail(id, { gen, onChanged } = {}) {
   let busy = false;
   let inlineForm = null; // 'correct' | 'archive' | null
   let closed = false;
+  let autoCorrectPending = Boolean(autoCorrect);
 
   const headEl = h('div', { class: 'tn-drawer-head' });
   const bodyEl = h('div', { class: 'tn-drawer-body' });
@@ -114,11 +115,8 @@ export function openDetail(id, { gen, onChanged } = {}) {
     const links = h('div', { class: 'tn-links-row' });
     if (app.job_url) links.append(extLink(app.job_url, '查看岗位'));
     else links.append(h('span', { class: 'tn-link-disabled', text: '岗位链接缺失（可在纠错中补充）' }));
-    if (app.primary_status_url) {
-      links.append(h('span', {}, extLink(app.primary_status_url, '查看状态'),
-        h('span', { class: 'tn-scope-note', text: app.primary_status_url_scope === 'application' ? '（申请状态页，需登录官网）' : '（回退到岗位页）' })));
-    } else {
-      links.append(h('span', { class: 'tn-link-disabled', text: '无查看状态链接' }));
+    if (app.status_url) {
+      links.append(extLink(app.status_url, '查看申请状态'));
     }
     bodyEl.append(section('链接', links));
 
@@ -224,6 +222,12 @@ export function openDetail(id, { gen, onChanged } = {}) {
       row.append(h('span', { class: 'tn-faint tn-small', style: { alignSelf: 'center' }, text: '终态记录机器不再自动改动；可通过「纠错」人工修改（必填原因，全程留痕）。' }));
     }
     footEl.append(row, h('div', { class: 'tn-faint tn-tiny', style: { width: '100%' }, text: `记录版本 v${app.version} · 台账更新 ≠ 官网实时同步` }));
+    if (autoCorrectPending) {
+      autoCorrectPending = false;
+      inlineForm = 'correct';
+      renderForm(formHost);
+      formHost.scrollIntoView({ block: 'center' });
+    }
   }
 
   function section(title, content) {

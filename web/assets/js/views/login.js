@@ -3,6 +3,7 @@
 
 import { api, ApiError, errorText } from '../api.js';
 import { h, clear } from '../util.js';
+import { pluginDownloadLink, openPluginHelp } from './plugin-help.js';
 
 export function renderLogin(root, options = {}) {
   const { notice = null, compact = false, onSuccess = () => {}, heading = null } = options;
@@ -14,6 +15,10 @@ export function renderLogin(root, options = {}) {
   });
   const sendBtn = h('button', {
     class: 'tn-btn tn-btn-primary', type: 'button', text: '获取验证码', 'data-test': 'login-send'
+  });
+  const inviteInput = h('input', {
+    class: 'tn-input', type: 'text', name: 'invite', autocomplete: 'off',
+    placeholder: '首次激活邀请码（已激活账号可留空）', 'data-test': 'login-invite'
   });
   const codeInput = h('input', {
     class: 'tn-input', type: 'text', name: 'code', inputmode: 'numeric', autocomplete: 'one-time-code',
@@ -86,7 +91,12 @@ export function renderLogin(root, options = {}) {
       sentEmail = email;
       codeBlock.hidden = false;
       const ttlMin = data.expires_in ? Math.round(data.expires_in / 60) : 10;
-      setMsg(`验证码已发送，请查收（中性提示：不确认该邮箱是否注册）。有效期约 ${ttlMin} 分钟。`, 'ok');
+      if (data.selftest_code) {
+        codeInput.value = data.selftest_code;
+        setMsg(`本机管理员自测模式：验证码 ${data.selftest_code} 已自动填入，未发送邮件。有效期约 ${ttlMin} 分钟。`, 'ok');
+      } else {
+        setMsg(`验证码已发送，请查收（中性提示：不确认该邮箱是否注册）。有效期约 ${ttlMin} 分钟。`, 'ok');
+      }
       startCountdown(data.resend_after != null ? data.resend_after : 60);
       codeInput.focus();
     } catch (err) {
@@ -110,12 +120,14 @@ export function renderLogin(root, options = {}) {
     codeInput.classList.remove('err');
     setVerifying(true);
     try {
-      const res = await api.post('/api/v1/auth/verify-otp', { email, code }, { silent401: true });
+      const res = await api.post('/api/v1/auth/verify-otp', { email, code, invite_code: inviteInput.value.trim() }, { silent401: true });
       if (countdownTimer) clearInterval(countdownTimer);
       onSuccess(res);
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'NOT_ALLOWLISTED') {
-        setMsg('当前账号暂未获得内测资格。本产品仅开放给受邀用户；获得邀请后再回来即可。', 'err');
+      if (err instanceof ApiError && ['NOT_ALLOWLISTED', 'INVITE_REQUIRED', 'INVITE_INVALID', 'INVITE_FULL', 'INVITE_CLOSED'].includes(err.code)) {
+        const text = err.code === 'INVITE_FULL' ? '内测名额已满，暂不能激活新账号。' : err.code === 'INVITE_INVALID' ? '邀请码不正确，请核对后重试。' : err.code === 'INVITE_REQUIRED' ? '首次激活需要内测邀请码；老账号可直接登录。' : err.code === 'INVITE_CLOSED' ? '内测邀请尚未开放，请稍后再试。' : '当前账号暂未获得内测资格。';
+        inviteInput.classList.add('err'); inviteInput.focus();
+        setMsg(text, 'err');
       } else if (err instanceof ApiError && err.code === 'DELETION_IN_PROGRESS') {
         setMsg('该账号的数据删除任务尚未完成，暂不能登录；删除完成后会有明确回执。', 'err');
       } else {
@@ -154,6 +166,11 @@ export function renderLogin(root, options = {}) {
       h('label', { text: '邮箱' }),
       h('div', { class: 'tn-row' }, h('div', { class: 'tn-grow' }, emailInput), sendBtn)
     ),
+    h('div', { class: 'tn-field' },
+      h('label', { text: '内测邀请码（首次激活必填）' }),
+      inviteInput,
+      h('p', { class: 'tn-small tn-muted', text: '邀请码只用于首次激活；已激活账号再次登录无需填写。平台分享码不是应用邀请码。' })
+    ),
     codeBlock,
     msgBox
   );
@@ -171,7 +188,8 @@ export function renderLogin(root, options = {}) {
     h('h2', { text: '登录 / 注册' }),
     h('p', { class: 'tn-muted tn-small', style: { marginTop: '2px' } }, '使用邮箱验证码登录；无密码、无匿名演示账号、无社交登录。'),
     form,
-    h('div', { class: 'tn-login-note' }, '内测说明：仅开放给受邀用户。白名单/邀请码方案以 D10 为准；前端不自行模拟准入控制。')
+    h('div', { class: 'tn-login-note' }, '内测说明：仅开放给受邀用户；首次激活需邀请码，服务端校验为准。'),
+    h('div', { class: 'tn-action-row', style: { justifyContent: 'center', marginTop: '10px' } }, pluginDownloadLink({ label: '下载插件', test: 'login-download-plugin' }), h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '安装指引', 'data-test': 'login-plugin-help', onclick: openPluginHelp }))
   );
 
   root.append(h('div', { class: 'tn-login-wrap' },

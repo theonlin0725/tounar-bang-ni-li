@@ -1,7 +1,7 @@
 /* 提醒设置 + 数据与授权：全部敏感操作显式、可解释；外部条件失败如实展示，不伪装成功。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { App } from '../app.js';
+import { App } from '../app.js?v=20261102-1';
 import {
   h, clear, toast, openModal, confirmDialog, fmtDateTime, relativeTime, idemKey,
   STATUS_LABELS

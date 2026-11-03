@@ -124,7 +124,7 @@ SHARE_CODE=TEST123 node --env-file="$D/acceptance.env" server/scripts/run-remind
 
 （环境变量优先于 `--env-file`，实测 `SHARE_CODE= TEST123` 生效。）
 注意同一天已发过批次会复用，想再看一封就换一个新副本。
-邮件里的链接应变成 `…/?app=xxx&sharecode=TEST123`、`…/r/rl_xxx?sharecode=TEST123`。
+邮件里的链接应变成 `…/?app=xxx&sharecode=YOUR_SHARE_CODE`、`…/r/rl_xxx?sharecode=YOUR_SHARE_CODE`。
 
 ---
 

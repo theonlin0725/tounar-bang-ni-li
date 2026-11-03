@@ -32,15 +32,26 @@ async function request(method, path, options = {}) {
   if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
   if (options.tounarAction) headers['X-Tounar-Action'] = options.tounarAction;
   let res;
+  const controller = options.timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), options.timeoutMs) : null;
   try {
     res = await fetch(path, {
       method,
       credentials: 'same-origin',
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller?.signal
     });
   } catch (cause) {
+    if (cause?.name === 'AbortError') {
+      const timeout = new NetworkError(cause);
+      timeout.code = 'TIMEOUT';
+      timeout.message = '请求超时，页面没有卡死；请重试';
+      throw timeout;
+    }
     throw new NetworkError(cause);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   let payload = null;
   try { payload = await res.json(); } catch { payload = null; }

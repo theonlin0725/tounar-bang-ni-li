@@ -42,7 +42,7 @@
 | 请求 | 结果 |
 |---|---|
 | `https://bangnili.app.workbuddy.host/api/v1/health` | **403** 「链接不完整」 |
-| `https://bangnili.app.workbuddy.host/api/v1/health?sharecode=SMDT7CDZYS` | **200** `{"ok":true,...}` |
+| `https://bangnili.app.workbuddy.host/api/v1/health?sharecode=YOUR_SHARE_CODE_CONFIG_VALUE` | **200** `{"ok":true,...}` |
 | 带 sharecode 访问过一次后，同 IP 再不带 sharecode | 200（网关已放行该来源） |
 
 **结论：分享链接必须带 `?sharecode=<码>`，否则新访客（未激活的来源）一律 403。**
@@ -67,7 +67,7 @@
 - 本项目已注册的发布身份：`appId = wbapp_Yw3dKlnEp4jVVAuyNDilAW`，名称「帮你理」，类型 `web`
   （本地记录：`.wbapp_Yw3dKlnEp4jVVAuyNDilAW.genie`、`.workbuddy/applications.yaml`）。
 - **2026-10-23 已重新发布成功**，域名沿用不变：`https://bangnili.app.workbuddy.host`
-  （发布返回的分享链接：`https://bangnili.app.workbuddy.host/?sharecode=SMDT7CDZYS`）。
+  （发布返回的分享链接：`https://bangnili.app.workbuddy.host/?sharecode=YOUR_SHARE_CODE_CONFIG_VALUE`）。
   实测 `health` 200、`/api/v1/me` 401（鉴权生效）。
   ⚠️ 但**访问必须带 sharecode**，详见第 1.5 节。
 - 补充说明：重新发布前该地址曾返回 403「链接不完整」——

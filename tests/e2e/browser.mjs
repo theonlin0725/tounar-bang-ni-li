@@ -11,6 +11,12 @@ const CFT_DIR = path.join(ROOT, '.tmp', 'cft');
 export const CFT_EXE = path.join(CFT_DIR, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing');
 
 export async function resolveChromiumExecutable() {
+  if (process.env.E2E_BROWSER === 'playwright') {
+    try {
+      const bundled = chromium.executablePath();
+      if (bundled && fs.existsSync(bundled)) return { path: bundled, source: 'playwright 自带 chromium（E2E_BROWSER=playwright）' };
+    } catch { /* fall through */ }
+  }
   if (fs.existsSync(CFT_EXE)) return { path: CFT_EXE, source: `chrome-for-testing ${CFT_VERSION}（npmmirror 镜像）` };
   if (process.platform === 'darwin') {
     try {
