@@ -140,7 +140,7 @@ function serveStatic(req, res, pathname, requestId) {
   securityHeaders(res, !isHtml);
   if (isHtml) {
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'self' chrome-extension:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
   } else if (ext === '.js' || ext === '.css') {
     // 前端没有构建步骤；不能让旧模块在 5 分钟内继续运行旧确认流程。
     res.setHeader('Cache-Control', 'no-store');

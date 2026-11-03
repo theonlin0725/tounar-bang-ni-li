@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Tounar 帮你理 · 投递线索采集",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "description": "在用户授权的招聘页面识别岗位详情、投递成功与申请状态，只上传必要的结构化线索。",
-  "permissions": ["storage", "tabs", "scripting", "alarms"],
-  "optional_host_permissions": ["*://*/*"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
   "background": {
     "service_worker": "background/service-worker.js"
   },
@@ -19,8 +26,35 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/adapters.js", "content/tracker.js"],
-      "matches": ["*://*/*"]
+      "resources": [
+        "content/adapters.js",
+        "content/tracker.js"
+      ],
+      "matches": [
+        "*://*/*"
+      ]
+    },
+    {
+      "resources": [
+        "popup/permissions.html"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1/*",
+        "http://localhost/*",
+        "https://bangnili.app.workbuddy.host/*"
+      ],
+      "js": [
+        "content/app-bridge.js"
+      ],
+      "run_at": "document_start"
     }
   ]
 }

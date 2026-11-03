@@ -1,7 +1,7 @@
 /* 插件下载与手动安装指引：只链接静态 ZIP，不读取或传递任何登录/设备/内部令牌。 */
 import { h, clear } from '../util.js';
 
-export const PLUGIN_VERSION = '0.2.3';
+export const PLUGIN_VERSION = '0.2.5';
 export const PLUGIN_ZIP = `/downloads/bangnili-extension-${PLUGIN_VERSION}.zip`;
 
 export function currentShareCode() {
@@ -41,9 +41,9 @@ export function openPluginHelp() {
           h('li', { text: '打开右上角「开发者模式」。' }),
           h('li', { text: '点击「加载已解压的扩展程序」。' }),
           h('li', { text: `选择解压后直接包含 manifest.json 的目录；不要把 ZIP 本身或上一级目录选进去。当前版本 v${PLUGIN_VERSION}。` }),
-          h('li', { text: '打开插件弹窗，确认后台地址已指向帮你理正式域名，点击「保存并授权连接」，再按网页「数据与授权 → 插件绑定」的配对流程完成绑定。' })
+          h('li', { text: '回到帮你理网页并刷新，登录后会自动弹出连接请求。点击「确认连接」，随后在网页选择授权网站，无需打开插件栏或输入配对码。' })
         ),
-        h('p', { class: 'tn-small tn-muted', text: '平台分享码、应用邀请码、插件配对码是三件事：分享码用于打开托管页面；邀请码用于首次激活账号；配对码用于把插件设备绑定到当前账号。' }),
+        h('p', { class: 'tn-small tn-muted', text: '平台分享码用于打开托管页面，应用邀请码用于首次激活账号；插件连接由网页弹窗确认，无需填写配对码。' }),
         h('p', { class: 'tn-small tn-muted', text: '插件只上传岗位字段与 JD；不会上传登录 Cookie、密码或设备令牌给其他账号。' })
       )
     )

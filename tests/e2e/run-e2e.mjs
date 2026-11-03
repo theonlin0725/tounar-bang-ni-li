@@ -139,15 +139,14 @@ try {
   check('E2E-01 地址编辑期间后台刷新不覆盖输入', await popup.inputValue('#server-url') === server.base);
   await popup.click('#save-server');
   await popup.click('#start-pairing');
-  const pairingCode = await waitFor(async () => {
-    const text = (await popup.textContent('#pairing-code')) || '';
-    return /^[A-Z2-9]{8}$/.test(text.trim()) ? text.trim() : null;
-  }, { label: '弹出配对码' });
+  const pairingCode = await waitFor(async () => popup.evaluate(async () =>
+    (await send({type:'get_status'})).settings?.pendingPairing?.code), {label:'内部配对请求'});
   const approved = await server.request('/api/v1/plugin-pairings/approve', {
     method: 'POST', cookie, body: { code: pairingCode }
   });
   check('E2E-01a 网页会话批准配对码', approved.status === 200, `code=${pairingCode} status=${approved.status}`);
-  await popup.click('#poll-pairing');
+  await popup.evaluate(() => send({type:'poll_pairing_now'}));
+  await popup.evaluate(() => refresh());
   const paired = await waitFor(async () => ((await popupPaired(popup)) ? true : null), { label: 'popup 完成绑定' });
   const ownerHint = await popup.textContent('#owner-hint');
   check('E2E-01b popup 自动完成绑定', paired && String(ownerHint).includes('demo@tounar.local'), `owner=${ownerHint}`);

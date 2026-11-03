@@ -1,3 +1,4 @@
+import { createSiteAccessCard, promptPluginConnection } from './plugin-access.js';
 /* 提醒设置 + 数据与授权：全部敏感操作显式、可解释；外部条件失败如实展示，不伪装成功。 */
 
 import { api, ApiError, errorText } from '../api.js';
@@ -84,6 +85,7 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     reauthSent: false
   };
   let disposed = false;
+  let siteAccessCard = null;
 
   const tabRow = h('div', { class: 'tn-tabs', style: { marginBottom: '16px' } });
   const panelHost = h('div', {});
@@ -93,7 +95,7 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     title: '设置与授权',
     subtitle: '提醒设置 · 插件绑定 · QQ 邮箱 · 删除数据',
     body,
-    onClose: () => { disposed = true; for (const t of timers) clearTimeout(t); timers.clear(); },
+    onClose: () => { disposed = true; siteAccessCard?.dispose(); for (const t of timers) clearTimeout(t); timers.clear(); },
     testid: 'settings-modal'
   });
 
@@ -115,6 +117,8 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
 
   function renderPanel() {
     if (disposed) return;
+    siteAccessCard?.dispose();
+    siteAccessCard = null;
     clear(panelHost);
     if (state.loading) {
       panelHost.append(h('div', { class: 'tn-empty' }, h('p', { class: 'tn-muted', text: '加载中…' })));
@@ -293,7 +297,9 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
   /* ==================== 数据与授权 ==================== */
   function renderDataPanel() {
     const me = state.me;
+    siteAccessCard = createSiteAccessCard();
     panelHost.append(
+      siteAccessCard.element,
       renderPairingSection(me),
       renderDevicesSection(me),
       renderMailSection(me),
@@ -304,51 +310,10 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
 
   /* ---------- 配对 ---------- */
   function renderPairingSection(me) {
-    const section = h('div', { class: 'tn-pref-group', 'data-test': 'pairing-section' });
-    section.append(
-      h('h4', { text: '插件绑定' }),
-      h('p', { class: 'tn-small tn-muted', style: { marginTop: '0' } },
-        '在扩展弹窗点「配对」获得 8 位配对码，在下面输入并确认。绑定只授权事件采集，不读取账号密码；每台设备独立撤销。'),
-      h('div', { class: 'tn-row' },
-        h('input', {
-          class: 'tn-input', maxlength: '8', placeholder: '8 位配对码（A–Z / 2–9）',
-          style: { maxWidth: '240px', textTransform: 'uppercase' }, 'data-test': 'pair-code'
-        }),
-        h('button', {
-          class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'pair-approve', text: '确认绑定',
-          onclick: async (e) => {
-            const btn = e.currentTarget;
-            const input = btn.parentElement.querySelector('input');
-            const code = input.value.trim().toUpperCase();
-            clear(section.querySelector('.tn-pair-msg'));
-            const msgBox = section.querySelector('.tn-pair-msg');
-            if (!/^[A-Z2-9]{8}$/.test(code)) {
-              msgBox.append(h('div', { class: 'tn-inline-msg err', text: '配对码是 8 位，仅含 A–Z / 2–9（不含 0/1）。' }));
-              return;
-            }
-            btn.disabled = true;
-            btn.textContent = '绑定中…';
-            try {
-              const res = await api.post('/api/v1/plugin-pairings/approve', { code });
-              toast('插件已绑定', 'ok');
-              msgBox.append(h('div', { class: 'tn-inline-msg ok', text: `已绑定设备：${res.data?.device?.name || res.data?.device_name || '插件设备'}` }));
-              input.value = '';
-              await reloadMe();
-              if (onChanged) onChanged();
-            } catch (err) {
-              msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
-            } finally {
-              btn.disabled = false;
-              btn.textContent = '确认绑定';
-            }
-          }
-        })
-      ),
-      h('div', { class: 'tn-pair-msg' }),
-      h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' } },
-        '配对码由服务端生成、限时有效；其他人无法用你的旧配对码绑定设备。')
-    );
-    return section;
+    return h('div', {class:'tn-pref-group', 'data-test':'pairing-section'},
+      h('h4', {text:'插件绑定'}),
+      h('p', {class:'tn-small tn-muted', text:'打开网页后会自动提示连接。无需打开插件栏或输入配对码，也可以在这里重新检测。'}),
+      h('button', {class:'tn-btn tn-btn-primary', text:'检测并连接插件', onclick:() => {modal.close(); promptPluginConnection();}}));
   }
 
   /* ---------- 设备列表 ---------- */
