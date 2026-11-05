@@ -26,7 +26,31 @@
 
   const adapter = Adapters.resolveAdapter(location.hostname);
   let capturePaused = false;
-  chrome.storage?.local?.get('tounar.settings.v1').then(value => { capturePaused = !!value['tounar.settings.v1']?.capturePaused; }).catch(() => {});
+  let backendOrigin = null;
+  chrome.storage?.local?.get('tounar.settings.v1').then(value => {
+    const settings = value['tounar.settings.v1'] || {};
+    capturePaused = !!settings.capturePaused;
+    try { if (settings.serverUrl) backendOrigin = new URL(settings.serverUrl).origin; } catch { /* invalid server URL is handled by the popup */ }
+    if (isSelfPage()) resetJob();
+  }).catch(() => {});
+
+  // 本项目自身的页面永远不是招聘岗位。优先用后台 origin；标题/DOM/路径
+  // 作为兜底，确保插件指向另一个端口（如 4310/4311）时也不会误采。
+  function isSelfPage() {
+    try {
+      if (backendOrigin && location.origin === backendOrigin) return true;
+      if (/^\/api\//.test(location.pathname)) return true;
+      if (location.pathname === '/mail-selftest.html') return true;
+      if (['127.0.0.1','localhost','[::1]'].includes(location.hostname)
+        && (location.pathname === '/' || new URLSearchParams(location.search).has('panel'))) return true;
+      const appDocument = /Tounar|帮你理/i.test(document.title || '') && !!document.querySelector('#tn-root');
+      if (appDocument) return true;
+      if (/^\/assets\//.test(location.pathname) && /Tounar|帮你理/i.test(document.title || '')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
 
   // 已学习模板（异步加载；命中时作为快速路径）
   let learnedTemplate = null;
@@ -320,6 +344,7 @@
   }
 
   function blockedPage() {
+    if (isSelfPage()) return true;
     if (/\/(?:chat|im|message|login|signin|captcha)(?:[/?#]|$)/i.test(location.pathname + location.hash)) return true;
     const text = String(document.querySelector('main')?.innerText || document.body?.innerText || '').trim();
     return text.length < 4000 && /职位已过期|岗位已下线|职位不存在|岗位不存在|职位已关闭|职位已停止招聘|验证后继续访问|完成安全验证|安全验证|访问异常|job (?:is )?(?:expired|no longer available)/i.test(text);
@@ -495,6 +520,7 @@
   let lastListAttempt = 0;
   let listLookup = {key:null,items:[]};
   async function captureList(explicit = false) {
+    if (isSelfPage()) return [];
     if (capturePaused || listBusy || blockedPage() || (!explicit && document.visibilityState !== 'visible')) return [];
     if (!explicit && Date.now()-lastListAttempt < 1500) return [];
     lastListAttempt = Date.now();
@@ -547,6 +573,7 @@
   // ---------- sending ----------
 
   function sendEvent(event) {
+    if (isSelfPage()) return Promise.resolve({ ok: false, skipped: 'self_page' });
     if (['job_viewed','form_started','application_submitted'].includes(event.event_type)) {
       const current=detectJob();
       if ((current && (current.job_title !== event.payload.job_title || current.site_job_id !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url)) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
@@ -570,6 +597,7 @@
 
   function basePayload(job) {
     return {
+      page_url: location.href,
       company_name: job.company_name || undefined,
       job_title: job.job_title || undefined,
       site_job_id: job.site_job_id || undefined,
@@ -633,6 +661,7 @@
     if(job){try{pageState.submitSent=!!sessionStorage.getItem('tounar:submitted:'+job.job_url);}catch{}rememberLastJob(job);}
   }
   function detectAndTrackRoute() {
+    if (isSelfPage()) { if (pageState.job) resetJob(); return null; }
     if(location.href!==pageState.href){
       previousRouteContent=contentIdentity(pageState.job);
       loadTemplate();pageState.href=location.href;pageState.routeKey=routeKey();lastDomChange=Date.now();
@@ -695,6 +724,7 @@
   }
 
   function onUserInput(event) {
+    if (isSelfPage()) return;
     const el = event.target;
     if (!el || !['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return;
     if (el.type === 'password' || el.type === 'hidden') return;
@@ -741,6 +771,7 @@
   }
 
   function scanForSubmission() {
+    if (isSelfPage()) return;
     if (pageState.submitSent) return;
     if (Date.now() - lastDomChange < 800) return;
     if (!pageState.submitScanUntil || Date.now() > pageState.submitScanUntil) return;
@@ -779,6 +810,7 @@
   }
 
   function scanStatusHooks() {
+    if (isSelfPage()) return;
     for (const block of document.querySelectorAll('[data-tounar-status]')) {
       const statusText = block.getAttribute('data-tounar-status') || textOf(block);
       const mapped = Adapters.statusTextToCanonical(statusText) || block.getAttribute('data-tounar-status-canonical');
@@ -803,6 +835,7 @@
   }
 
   function scanAdapterStatusPage() {
+    if (isSelfPage()) return;
     const page = adapter.statusPage;
     if (!page) return;
     const urlMatches = (page.urlPatterns || []).some((p) => p.test(location.href));
@@ -981,6 +1014,7 @@
   }
 
   function showFeedback(feedback = {}) {
+    if (isSelfPage()) return;
     if (!feedbackEnabled) return;
     if (!feedbackStillBelongsToThisPage(feedback)) return;
     const text = feedbackText(feedback, feedback.kind);
@@ -989,11 +1023,16 @@
     const now = Date.now();
     if (key === toastState.lastKey && now - toastState.lastAt < 5000) return; // 去重，避免重复刷屏
     toastState.lastKey = key; toastState.lastAt = now;
-    const base = String(feedback.serverUrl || '').replace(/\/$/, '');
+    const base = String(feedback.serverUrl || '');
     let action = null;
-    if (feedback.status === 'review' && base) action = `${base}/?panel=reviews`;
-    else if (feedback.applicationId && base) action = `${base}/?app=${encodeURIComponent(feedback.applicationId)}`;
-    else if (feedback.status === 'failed') action = base || null;
+    if (base && (feedback.status === 'review' || feedback.applicationId)) {
+      try {
+        const target = new URL(base);
+        if (feedback.status === 'review') target.searchParams.set('panel', 'reviews');
+        else target.searchParams.set('app', feedback.applicationId);
+        action = target.toString();
+      } catch { action = null; }
+    } else if (feedback.status === 'failed') action = base || null;
     const ttl = (feedback.status === 'review' || feedback.status === 'queued' || feedback.status === 'failed') ? 8000 : 4000;
     showToast(text, { action, ttl });
   }
@@ -1019,6 +1058,7 @@
   // ---------- 显式采集（用户点「采集当前页」，不要求停留时长） ----------
 
   async function captureNow(reason = 'user') {
+    if (isSelfPage()) return { ok: false, detected: false, status: 'self_page', reason: 'self_page' };
     await loadTemplate();
     const job = detectJob();
     if (!job || !job.job_title) {
@@ -1096,8 +1136,10 @@
     if(area !== 'local') return;
     if(changes['tounar.learned.v1']) loadTemplate();
     if(changes['tounar.settings.v1']) {
-      capturePaused = !!changes['tounar.settings.v1'].newValue?.capturePaused;
-      if (capturePaused !== !!changes['tounar.settings.v1'].oldValue?.capturePaused) resetJob();
+      const next = changes['tounar.settings.v1'].newValue || {};
+      capturePaused = !!next.capturePaused;
+      try { backendOrigin = next.serverUrl ? new URL(next.serverUrl).origin : null; } catch { backendOrigin = null; }
+      if (capturePaused !== !!changes['tounar.settings.v1'].oldValue?.capturePaused || isSelfPage()) resetJob();
     }
   });
 
@@ -1123,6 +1165,7 @@
   window.addEventListener('hashchange', () => setTimeout(detectAndTrackRoute, 50));
 
   window.addEventListener('pagehide', () => {
+    if (isSelfPage()) return;
     if (pageState.job && !pageState.viewSent && pageState.visibleMs >= DWELL_MS) {
       pageState.viewSent = true;
       sendEvent(buildEvent(pageState.job, 'job_viewed', {
@@ -1134,7 +1177,7 @@
   });
 
   setInterval(() => {
-    if (capturePaused) return;
+    if (capturePaused || isSelfPage()) return;
     detectAndTrackRoute();
     tickDwell();
     if (!pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});

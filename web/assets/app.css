@@ -238,6 +238,23 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 
 /* ---------- 复核卡片 ---------- */
 .tn-review-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 14px 16px; margin-bottom: 12px; }
+.tn-review-source-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tn-source-pill { border-radius: 999px; padding: 1px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.tn-source-pill.source-plugin { background: #e8f1ed; color: #17594c; }
+.tn-source-pill.source-mail { background: #eef0fb; color: #39427a; }
+.tn-review-title { margin: 8px 0 2px; font-size: 16px; line-height: 1.45; }
+.tn-review-preview { margin: 8px 0 0; color: var(--ink); line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+.tn-review-full { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.tn-review-full-text { white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; line-height: 1.75; font-size: 13px; }
+.tn-review-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.tn-review-actions .tn-select { width: auto; min-width: 110px; }
+.tn-review-time, .tn-review-fix { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fbfcfa; }
+.tn-review-time label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.tn-review-time input { width: auto; }
+.tn-review-fix .tn-row { margin-top: 6px; }
+.tn-review-candidates { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tn-review-candidates .tn-btn { max-width: 100%; white-space: normal; text-align: left; }
+.tn-select-sm { padding: 5px 9px; font-size: 12px; }
 .tn-review-head { display: flex; gap: 10px; align-items: flex-start; }
 .tn-review-head .tn-review-title { font-weight: 600; }
 .tn-review-kind { background: var(--warn-soft); color: #8a5a12; border-radius: 999px; padding: 1px 9px; font-size: 11px; white-space: nowrap; margin-top: 2px; }
@@ -302,3 +319,94 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 /* 刚由邮件更新的记录；字段缺失仍显示待补充。 */
 .tn-row-updated { background: #e9f5e9; }
 .tn-review-failed { border-color: #b42318; }
+
+/* 邮件管理员入口沿用现有视觉样式；预览被隔离，变量不注入主页面。 */
+.mail-admin-heading { flex-wrap: wrap; margin-bottom: 20px; }
+.mail-admin-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; margin: 24px 0; align-items: start; }
+.mail-card { min-width: 0; padding: 24px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel); }
+.mail-card .tn-btn { min-height: 44px; margin: 6px 8px 6px 0; white-space: normal; }
+.mail-card textarea { width: 100%; min-height: 80px; font-family: ui-monospace, monospace; }
+.mail-card label { display: block; }
+.mail-rule-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .6fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #e0e6e2; }
+.mail-preview-frame { width: 100%; height: 420px; margin: 12px 0; border: 1px solid #ccd7d0; background: white; }
+.mail-pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #f4f7f5; color: #183c32; max-height: 420px; overflow: auto; }
+.mail-error { padding: 16px; margin: 16px 0; background: var(--danger-soft); color: #872f29; border: 1px solid var(--danger); }
+.mail-record { border-top: 1px solid #ccd7d0; padding: 16px 0; overflow-wrap: anywhere; }
+.mail-card summary { cursor: pointer; padding: 12px 0; }
+@media (max-width: 900px) { .mail-admin-grid { grid-template-columns: minmax(0, 1fr); } .mail-card { padding: 16px; } .mail-rule-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- 台账勾选对比 / 简历与 AI ---------- */
+.tn-compare-bar { border: 1px solid var(--brand); background: var(--brand-soft); border-radius: var(--radius); padding: 10px 12px; margin: 12px 0; }
+.tn-compare-inner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.tn-compare-chips { display: flex; gap: 6px; flex-wrap: wrap; max-width: 60%; }
+.tn-compare-chip { display: inline-flex; gap: 5px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font-size: 12px; }
+.tn-compare-x { all: unset; cursor: pointer; color: var(--muted); font-size: 14px; line-height: 1; padding: 0 1px; }
+.tn-compare-x:hover { color: var(--danger); }
+.tn-select-col { width: 34px; text-align: center; }
+.tn-career { max-width: 1120px; margin: 0 auto; padding: 8px 0 40px; }
+.tn-career-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; margin: 8px 0 18px; }
+.tn-career-head h1 { margin: 0 0 6px; font-size: 24px; }
+.tn-career-head p { margin: 0; max-width: 720px; }
+.tn-ai-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+.tn-ai-section-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 12px; }
+.tn-ai-section-head h2 { margin: 0; font-size: 18px; }
+.tn-ai-notice { margin-bottom: 12px; }
+.tn-ai-upload { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.tn-ai-paste { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 14px; }
+.tn-ai-paste textarea { flex: 1; min-width: 260px; }
+.tn-ai-resume-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; padding: 10px 0 4px; border-top: 1px dashed var(--line); }
+.tn-ai-edit { margin: 10px 0; }
+.tn-ai-edit textarea { width: 100%; margin-bottom: 8px; }
+.tn-ai-profile { margin-top: 14px; }
+.tn-ai-summary { font-size: 14px; line-height: 1.8; margin: 6px 0 12px; }
+.tn-ai-block { margin-top: 14px; }
+.tn-ai-block h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+.tn-ai-block ul { margin: 0; padding-left: 20px; line-height: 1.8; }
+.tn-ai-item { border-left: 2px solid var(--line); padding: 4px 0 4px 10px; margin: 6px 0; }
+.tn-ai-item p { margin: 0 0 3px; }
+.tn-ai-evidence { margin: 4px 0 0; padding: 4px 8px; border-left: 2px solid var(--brand); color: var(--muted); font-size: 12px; line-height: 1.6; }
+.tn-ai-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.tn-ai-chip { border: 1px solid var(--line); background: var(--brand-soft); border-radius: 999px; padding: 3px 9px; font-size: 12px; }
+.tn-ai-report { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.tn-ai-job { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 14px; margin: 10px 0; }
+.tn-ai-job-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.tn-ai-level { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 11px; border: 1px solid var(--line); }
+.tn-ai-level.ok { background: #e8f1ed; color: #17594c; border-color: #cfe2da; }
+.tn-ai-level.warn { background: #fff6e6; color: #8a5a12; border-color: #f1dfbc; }
+.tn-ai-level.muted { background: #f3f4f1; color: var(--muted); }
+.tn-ai-history { margin-top: 14px; font-size: 12px; }
+.tn-ai-history summary { cursor: pointer; color: var(--muted); }
+@media (max-width: 760px) {
+  .tn-compare-chips { max-width: 100%; }
+  .tn-career { padding-left: 10px; padding-right: 10px; }
+  .tn-ai-card { padding: 14px; }
+}
+
+/* 待确认标题链接 + 台账状态直改 */
+.tn-review-title a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+.tn-review-title a:hover { border-bottom-color: var(--brand); color: var(--brand-ink); }
+.tn-status-editor { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.tn-status-edit { min-width: 104px; max-width: 130px; }
+.tn-status-date-wrap { display: flex; gap: 4px; align-items: center; }
+.tn-status-date { width: 128px; padding: 3px 6px; font-size: 12px; }
+.tn-status-date-wrap .tn-btn { padding: 2px 7px; }
+
+/* 确认入账：识别中/补录弹窗 */
+.tn-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.tn-form-grid > label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.tn-form-grid > label .tn-input, .tn-form-grid > label .tn-select { width: 100%; }
+.tn-form-grid > label[hidden] { display: none; }
+.tn-modal-source { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.tn-modal-source summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.tn-modal-source .tn-review-preview { margin: 8px 0; max-height: 180px; overflow: auto; white-space: pre-wrap; }
+@media (max-width: 640px) { .tn-form-grid { grid-template-columns: 1fr; } }
+
+/* 确认入账：字段级错误和识别轨迹 */
+.tn-field-error { min-height: 14px; color: var(--danger); font-size: 12px; line-height: 1.35; }
+.tn-trace { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.tn-trace summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.tn-trace-pre { margin: 8px 0 0; padding: 10px; background: var(--bg); border-radius: 8px; font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; color: var(--text); max-height: 260px; overflow: auto; }
+
+/* 插件下载与安装指引（不重做 UI，只复用现有弹窗/按钮） */
+.tn-plugin-steps { margin: 14px 0 12px 20px; padding: 0; color: var(--text); font-size: 13px; line-height: 1.8; }
+.tn-plugin-steps li { margin: 2px 0; }

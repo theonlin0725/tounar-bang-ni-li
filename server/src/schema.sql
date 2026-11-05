@@ -18,6 +18,25 @@ CREATE TABLE IF NOT EXISTS users (
   deletion_generation INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS beta_invites (
+  id TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL UNIQUE,
+  max_uses INTEGER NOT NULL DEFAULT 10,
+  used_count INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  rotated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_beta_invites_active ON beta_invites(active, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS beta_invite_redemptions (
+  email_normalized TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invite_id TEXT NOT NULL REFERENCES beta_invites(id),
+  redeemed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_beta_redemptions_invite ON beta_invite_redemptions(invite_id);
+
 CREATE TABLE IF NOT EXISTS otp_challenges (
   id TEXT PRIMARY KEY,
   email_normalized TEXT NOT NULL,
@@ -76,6 +95,7 @@ CREATE TABLE IF NOT EXISTS applications (
   last_viewed_at TEXT,
   form_started_at TEXT,
   last_status_changed_at TEXT,
+  manual_status_at TEXT,
   last_progress_at TEXT,
   stage_received_at TEXT,
   stage_anchor_at TEXT,
@@ -422,3 +442,90 @@ CREATE INDEX IF NOT EXISTS idx_audit_owner ON audit_log(owner_id, created_at DES
 
 INSERT OR IGNORE INTO meta (key, value) VALUES ('data_revision', '1');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1');
+
+-- 管理员模板版本和邮件审计；不保存真实验证码正文或 SMTP 凭据。
+CREATE TABLE IF NOT EXISTS mail_template_versions (
+  template_id TEXT NOT NULL, version INTEGER NOT NULL, definition_json TEXT NOT NULL,
+  actor TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(template_id, version)
+);
+CREATE TABLE IF NOT EXISTS mail_deliveries (
+  id TEXT PRIMARY KEY, owner_id TEXT, recipient TEXT NOT NULL, kind TEXT NOT NULL,
+  subject TEXT NOT NULL, versions_json TEXT NOT NULL DEFAULT '{}', context_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL, transport TEXT NOT NULL, provider_message_id TEXT,
+  error_code TEXT, error_message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mail_test_runs (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, request_key TEXT NOT NULL, request_hash TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL, recipient TEXT NOT NULL, application_id TEXT, template_id TEXT,
+  status TEXT NOT NULL, result_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(owner_id, request_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_deliveries_owner ON mail_deliveries(owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mail_test_owner ON mail_test_runs(owner_id, created_at DESC);
+-- 简历版本与 AI 报告（文本/画像属于用户个人数据；不保存原始文件二进制）
+CREATE TABLE IF NOT EXISTS resumes (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime TEXT,
+  size INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  text_chars INTEGER NOT NULL,
+  profile_json TEXT,
+  status TEXT NOT NULL DEFAULT 'parsed',
+  error_code TEXT,
+  error_message TEXT,
+  is_current INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('parsed','analyzing','ready','failed'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_resume_current ON resumes(owner_id) WHERE is_current = 1;
+CREATE INDEX IF NOT EXISTS idx_resumes_owner ON resumes(owner_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_reports (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
+  application_ids_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'running',
+  result_json TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  CHECK (kind IN ('resume','compare','recommend')),
+  CHECK (status IN ('running','ready','failed'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_reports_owner ON ai_reports(owner_id, kind, created_at DESC);
+
+-- 招聘进展自动工作流的审计/重试记录；原始邮件正文不在此重复存储。
+CREATE TABLE IF NOT EXISTS ai_ingest_runs (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  source_method TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  llm_model TEXT,
+  jev_model TEXT,
+  rule_version TEXT NOT NULL DEFAULT 'auto-intake-v1',
+  extraction_json TEXT,
+  jev_json TEXT,
+  decision TEXT,
+  reason_code TEXT,
+  application_id TEXT REFERENCES applications(id) ON DELETE SET NULL,
+  before_status TEXT,
+  after_status TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  next_retry_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('running','completed','review','ignored','retry','failed')),
+  UNIQUE(event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_ingest_retry ON ai_ingest_runs(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_ai_ingest_owner ON ai_ingest_runs(owner_id, created_at DESC);

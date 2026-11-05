@@ -3,21 +3,30 @@
    所有天数按后台 Asia/Shanghai 口径；请求乱序用 reqSeq 丢弃旧响应。 */
 
 import { api, errorText } from '../api.js';
-import { App, isStale } from '../app.js';
+import { App, isStale } from '../app.js?v=20261102-1';
 import {
-  h, clear, statusChip, fmtDateTime, daysText, debounce, extLink,
+  h, clear, fmtDateTime, daysText, debounce, extLink, idemKey,
   STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
-import { openDetail } from './detail.js';
-import { renderReviews } from './reviews.js';
+import { openDetail } from './detail.js?v=20261102-1';
+import { renderReviews } from './reviews.js?v=20261102-1';
 import { openManual } from './manual.js';
 import { openSettings } from './settings.js';
 
 export { openSettings };
 
 const PAGE_SIZE = 20;
+const compareState = { owner: null, ids: new Set(), meta: new Map() };
+function ensureCompareOwner() {
+  const owner = App.user?.email || '';
+  if (compareState.owner === owner) return;
+  compareState.owner = owner;
+  compareState.ids.clear();
+  compareState.meta.clear();
+}
 
 export async function renderLedger(main, { gen, panel = null, applicationId = null } = {}) {
+  ensureCompareOwner();
   const state = {
     view: 'applied',
     q: '', status: '', source: '', due: false,
@@ -38,6 +47,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     h('div', { id: 'tn-banner' }),
     h('div', { class: 'tn-toolbar', id: 'tn-toolbar' }),
     h('div', { class: 'tn-tabs', id: 'tn-tabs' }),
+    h('div', { class: 'tn-compare-bar', id: 'tn-compare-bar', 'data-test': 'compare-bar', hidden: true }),
     h('div', { id: 'tn-content' }),
     h('div', { class: 'tn-freshness', id: 'tn-freshness' })
   );
@@ -45,6 +55,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   const bannerEl = main.querySelector('#tn-banner');
   const toolbarEl = main.querySelector('#tn-toolbar');
   const tabsEl = main.querySelector('#tn-tabs');
+  const compareBarEl = main.querySelector('#tn-compare-bar');
   const contentEl = main.querySelector('#tn-content');
   const freshnessEl = main.querySelector('#tn-freshness');
 
@@ -142,6 +153,44 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     }
   }
 
+  /* ---------- 跨板块岗位勾选与 AI 对比入口 ---------- */
+  const isSelectableView = () => state.view === 'applied' || state.view === 'viewed';
+  function rememberSelection(item) {
+    compareState.meta.set(item.id, {
+      company_name: item.company_name || '',
+      job_title: item.job_title || '',
+      status: item.status,
+      has_applied: !!item.has_applied
+    });
+  }
+  function updateCompareBar() {
+    clear(compareBarEl);
+    const ids = [...compareState.ids];
+    if (!ids.length) { compareBarEl.hidden = true; return; }
+    compareBarEl.hidden = false;
+    const chips = h('div', { class: 'tn-compare-chips' });
+    for (const id of ids) {
+      const meta = compareState.meta.get(id) || {};
+      const label = [meta.company_name, meta.job_title].filter(Boolean).join(' · ') || id;
+      const remove = h('button', { class: 'tn-compare-x', type: 'button', title: '移出对比', 'aria-label': '移出对比', text: '×', onclick: () => {
+        compareState.ids.delete(id); compareState.meta.delete(id); updateCompareBar();
+        if (isSelectableView()) renderTable();
+      } });
+      chips.append(h('span', { class: 'tn-compare-chip', title: label }, h('span', { text: label }), remove));
+    }
+    const open = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'compare-open', text: `对比选中（${ids.length}）`, disabled: ids.length < 2, onclick: () => {
+      if (compareState.ids.size < 2) return;
+      location.href = '/?panel=career&apps=' + encodeURIComponent([...compareState.ids].slice(0, 6).join(','));
+    } });
+    compareBarEl.append(h('div', { class: 'tn-compare-inner' },
+      h('strong', { text: 'AI 岗位对比' }),
+      chips,
+      h('span', { class: 'tn-grow' }),
+      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '清空', 'data-test': 'compare-clear', onclick: () => { compareState.ids.clear(); compareState.meta.clear(); updateCompareBar(); if (isSelectableView()) renderTable(); } }),
+      open
+    ));
+  }
+
   /* ---------- 表格 ---------- */
   function renderTable() {
     clear(contentEl);
@@ -164,10 +213,23 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     const card = h('div', { class: 'tn-table-card' });
     const scroll = h('div', { class: 'tn-table-scroll' });
     const table = h('table', { class: 'tn-table', 'data-test': 'ledger-table' });
+    const selectable = isSelectableView();
+    const selectAll = h('input', { type: 'checkbox', 'data-test': 'select-all', 'aria-label': '选择本页岗位' });
+    const someSelected = state.items.some((item) => compareState.ids.has(item.id));
+    selectAll.checked = state.items.length > 0 && state.items.every((item) => compareState.ids.has(item.id));
+    selectAll.indeterminate = someSelected && !selectAll.checked;
+    selectAll.addEventListener('change', () => {
+      for (const item of state.items) {
+        if (selectAll.checked) { compareState.ids.add(item.id); rememberSelection(item); }
+        else { compareState.ids.delete(item.id); compareState.meta.delete(item.id); }
+      }
+      renderTable();
+    });
     table.append(h('thead', {}, h('tr', {},
+      selectable ? h('th', { class: 'tn-select-col' }, selectAll) : null,
       h('th', { text: '公司' }), h('th', { text: '岗位' }), h('th', { text: 'JD 摘要' }),
       h('th', { text: '投递渠道' }), h('th', { text: '状态' }), h('th', { text: '已投天数' }),
-      h('th', { text: '投递链接' }), h('th', { text: '查看状态' }), h('th', { text: '更新时间' })
+      h('th', { text: '查看岗位' }), h('th', { text: '更新时间' })
     )));
     const tbody = h('tbody', {});
     for (const item of state.items) tbody.append(renderRow(item));
@@ -175,11 +237,25 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     scroll.append(table);
     card.append(scroll, renderFooter());
     contentEl.append(card);
+    updateCompareBar();
   }
 
   function renderRow(item) {
     const tr = h('tr', { class: `tn-row-click${highlighted.has(item.id) ? ' tn-row-updated' : ''}`, 'data-test': 'ledger-row', 'data-app-id': item.id });
     tr.addEventListener('click', () => openDetailFor(item.id));
+    if (isSelectableView()) {
+      const cb = h('input', { type: 'checkbox', 'data-test': 'select-app', 'data-select-app-id': item.id, 'aria-label': `选择 ${item.company_name || ''} ${item.job_title || ''}` });
+      cb.checked = compareState.ids.has(item.id);
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', () => {
+        if (cb.checked) { compareState.ids.add(item.id); rememberSelection(item); }
+        else { compareState.ids.delete(item.id); compareState.meta.delete(item.id); }
+        updateCompareBar();
+      });
+      const cell = h('td', { class: 'tn-select-col' }, cb);
+      cell.addEventListener('click', (e) => e.stopPropagation());
+      tr.append(cell);
+    }
     const subParts = [['recruitment_batch','批次'],['location','城市']].map(([field,label]) => item[field] && item.field_confidence?.[field] !== 'low' ? item[field] : `${label}待补充`);
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
     const fieldNode = (field, className = '') => {
@@ -187,12 +263,15 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
       return h('div', { class: className + (missing ? ' tn-muted' : ''), text: missing ? '待补充' : item[field], title: missing ? '插件没把握，点开可补' : item[field] });
     };
     tr.append(
-      h('td', {}, fieldNode('company_name', 'tn-company')),
+      h('td', {}, fieldNode('company_name', 'tn-company'),
+        needsSupplement(item) ? h('button', {
+          class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'supplement-app', 'data-supplement-app-id': item.id,
+          text: '补充信息', onclick: (e) => { e.stopPropagation(); openDetailFor(item.id, true); }
+        }) : null),
       h('td', {}, fieldNode('job_title'), subParts.length ? h('div', { class: 'tn-job-sub', text: subParts.join(' · ') }) : null),
       h('td', {}, fieldNode('jd_summary', 'tn-jd clip')),
       h('td', { text: item.channel || '未知' }),
-      h('td', {},
-        statusChip(item.status),
+      h('td', {}, statusEditor(item),
         roundText ? h('span', { class: 'tn-round', text: `· ${roundText}` }) : null,
         item.due_for_review && state.view === 'applied' ? h('span', { class: 'tn-flag tn-flag-due', text: '待回看' }) : null
       ),
@@ -200,12 +279,18 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
         class: `tn-days${item.due_for_review ? ' tn-days-late' : ''}`,
         text: item.applied_at_precision === 'inferred_before' ? `≤ ${fmtDate(item.applied_at)}（据邮件推断）` : daysText(item.days_since_applied)
       })),
-      h('td', {}, linkCell(item.job_url, '查看岗位', '链接缺失')),
-      h('td', {}, statusLinkCell(item)),
+      h('td', {}, linkCell(item.job_url, '查看岗位', '—')),
       h('td', {}, h('div', { text: fmtDateTime(item.updated_at) }),
         h('div', { class: 'tn-scope-note', text: '台账更新时间' }))
     );
     return tr;
+  }
+
+  function needsSupplement(item) {
+    const text = `${item.company_name || ''} ${item.job_title || ''}`;
+    return !item.company_name || !item.job_title
+      || /待补充|未知|系统判断|^面试$|^通知$|^提醒$|加分项或注意事项|批次待补充|城市待补充/i.test(text)
+      || item.company_name === '面试' || item.job_title === '面试';
   }
 
   function linkCell(url, label, missing) {
@@ -215,15 +300,74 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     return a;
   }
 
-  function statusLinkCell(item) {
-    const url = item.primary_status_url;
-    if (!url) return h('span', { class: 'tn-link-disabled', text: '无可用链接' });
-    const label = item.primary_status_url_scope === 'application' ? '申请状态页'
-      : item.primary_status_url_scope === 'job' ? '岗位页（回退）' : '查看';
-    const note = item.primary_status_url_scope === 'application' ? '需登录官网查看' : '回退到岗位页';
-    const a = extLink(url, label);
-    a.addEventListener('click', (e) => e.stopPropagation());
-    return h('div', {}, a, h('div', { class: 'tn-scope-note', text: note }));
+  function statusEditor(item) {
+    const dateRequired = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected']);
+    const select = h('select', { class: 'tn-select tn-select-sm tn-status-edit', 'data-test': 'ledger-status-edit', 'data-status-app-id': item.id });
+    const options = state.view === 'viewed'
+      ? ['pending', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'closed']
+      : ['applied', 'assessment', 'interview', 'offer', 'rejected', 'closed'];
+    for (const value of options) select.append(h('option', { value, text: STATUS_LABELS[value] || value }));
+    select.value = item.status;
+    const dateInput = h('input', { class: 'tn-input tn-status-date', type: 'date', 'data-test': 'ledger-status-date' });
+    const save = h('button', { class: 'tn-btn tn-btn-sm tn-btn-primary', type: 'button', text: '保存', 'data-test': 'ledger-status-save', hidden: true });
+    const dateWrap = h('div', { class: 'tn-status-date-wrap', hidden: true }, dateInput, save);
+    const wrap = h('div', { class: 'tn-status-editor' }, select, dateWrap);
+    let saving = false;
+
+    function reset() {
+      select.value = item.status;
+      dateWrap.hidden = true;
+      save.hidden = true;
+      dateInput.value = '';
+    }
+    async function persist(target, appliedAt) {
+      if (saving || target === item.status) { reset(); return; }
+      if (dateRequired.has(target) && !item.applied_at && !appliedAt) {
+        dateWrap.hidden = false; save.hidden = false; dateInput.focus();
+        return;
+      }
+      saving = true; select.disabled = true; save.disabled = true;
+      try {
+        await api.post(`/api/v1/applications/${encodeURIComponent(item.id)}/status`, {
+          status: target,
+          expected_version: item.version,
+          ...(appliedAt ? { applied_at: appliedAt, applied_at_precision: 'date' } : {})
+        }, { idempotencyKey: idemKey('app-status-' + item.id) });
+        toast('状态已更新', 'ok');
+        if (state.view === 'viewed' && target !== 'pending' && target !== 'closed') {
+          state.view = 'applied'; state.cursor = null; state.cursorStack = []; state.items = [];
+          buildTabs();
+        }
+        await doLoad();
+      } catch (err) {
+        reset();
+        if (err?.code === 'D12_NOT_FROZEN' || err?.code === 'APPLIED_AT_REQUIRED') {
+          dateWrap.hidden = false; save.hidden = false; dateInput.focus();
+          toast('请填写实际投递日期', 'err');
+        } else {
+          toast(err?.message || '状态保存失败，原状态已保留', 'err');
+        }
+        if (err?.status === 409) await doLoad({ silent: true });
+      } finally {
+        saving = false; select.disabled = false; save.disabled = false;
+      }
+    }
+    select.addEventListener('click', (e) => e.stopPropagation());
+    select.addEventListener('change', () => {
+      const target = select.value;
+      if (dateRequired.has(target) && !item.applied_at) {
+        dateWrap.hidden = false; save.hidden = false; dateInput.focus();
+      } else {
+        persist(target, null);
+      }
+    });
+    dateWrap.addEventListener('click', (e) => e.stopPropagation());
+    save.addEventListener('click', () => {
+      const iso = dateInput.value ? new Date(dateInput.value + 'T12:00:00+08:00').toISOString() : null;
+      if (!iso) { toast('请选择实际投递日期', 'err'); return; }
+      persist(select.value, iso);
+    });
+    return wrap;
   }
 
   function renderFooter() {
@@ -320,10 +464,11 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     if (state.source) params.set('source', state.source);
     if (state.due) params.set('due_for_review', 'true');
     try {
-      const res = await api.get(`/api/v1/ledger?${params.toString()}`);
+      const res = await api.get(`/api/v1/ledger?${params.toString()}`, { timeoutMs: 15000 });
       if (seq !== reqSeq || isStale(myGen) || !mounted) return;
       const data = res.data;
       state.items = data.items;
+      for (const item of state.items) if (compareState.ids.has(item.id)) rememberSelection(item);
       state.stats = data.stats;
       state.counts = data.counts;
       state.filtered_total = data.filtered_total;
@@ -397,6 +542,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     state.items = [];
     state.error = null;
     buildTabs();
+    updateCompareBar();
     if (id === 'reviews') {
       renderBanner();
       clear(contentEl);
@@ -425,8 +571,8 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     clearBtn.hidden = !any;
   }
 
-  function openDetailFor(id) {
-    openDetail(id, { gen, onChanged: () => doLoad({ silent: true }) });
+  function openDetailFor(id, autoCorrect = false) {
+    openDetail(id, { gen, onChanged: () => doLoad({ silent: true }), autoCorrect });
   }
 
   function openSettingsTab(tab) {

@@ -3,7 +3,7 @@ import { config, featureFlags } from '../config.js';
 import { all, dataRevision, one, run } from '../db.js';
 import { route, jsonStatus, stripInternal } from '../http.js';
 import {
-  AppError, assert, newId, nowIso, safeEqualHex, sha256, STATUS_LABELS
+  AppError, assert, newId, nowIso, safeEqualHex, safeJsonParse, sha256, STATUS_LABELS
 } from '../util.js';
 import {
   authMe, clearSessionCookie, reauthenticate, requestOtp, requireAuth, requireRecentAuth, revokeSession,
@@ -14,22 +14,29 @@ import {
   applicationDetail, ledgerResponse, reviewDetail, reviewList
 } from '../domain/ledger.js';
 import {
-  archiveApplication, correctApplication, markApplicationReviewed, resolveReview, undoReview, undoAutomaticMail
+  archiveApplication, assignReview, correctApplication, markApplicationReviewed, resolveReview, setApplicationStatusManually, undoReview, undoAutomaticMail
 } from '../domain/reviews.js';
 import { manualCreate, getPreferences } from '../domain/applications.js';
 import {
   authenticateDevice, cleanupAck, createPairing, approvePairing, deviceSelf, exchangePairing, heartbeat,
   ingestBatch, revokeDevice
-} from '../plugin.js';
+} from '../modules/data-capture/plugin.js';
 import {
   createMailConnection, disconnectMailConnection, getMailConnection, listMailConnections,
   reauthorizeMailConnection, triggerMailSync
-} from '../domain/mail.js';
-import { batchPreview, prepareReminderConfirmation, reminderLinkRead, runReminders } from '../domain/reminders.js';
+} from '../modules/data-capture/mail/connections.js';
+import { batchPreview, prepareReminderConfirmation, reminderLinkRead, runReminders } from '../modules/mail-push/reminders.js';
+import { confirmReviewIntake } from '../modules/recruitment-intake/confirm.js';
 import {
   getDeletionJob, latestDeletionJob, requestDeletion
 } from '../domain/deletion.js';
 import { runTick, schedulerStatus } from '../jobs/scheduler.js';
+import {
+  aiStatus, analyzeResume, compareApplications, correctResumeText, createResumeFromBuffer, createResumeFromText,
+  currentResume, getReport, getResume, listResumes, recommendForOwner
+} from '../modules/career-ai/service.js';
+
+import { registerMailAdminRoutes } from '../modules/mail-push/admin.js';
 
 function optionalAuth(req) {
   try {
@@ -69,10 +76,11 @@ function issueSessionResponse(result) {
 }
 
 export function registerRoutes() {
+  registerMailAdminRoutes();
   // ---------- auth ----------
   route('POST', '/api/v1/auth/request-otp', async (req) => requestOtp(req.body.email, req), { public: true, csrf: false });
   route('POST', '/api/v1/auth/verify-otp', async (req) => {
-    const result = await verifyOtp(req.body.email, req.body.code, req);
+    const result = await verifyOtp(req.body.email, req.body.code, req, req.body.invite_code || '');
     return issueSessionResponse(result);
   }, { public: true, csrf: false });
   route('POST', '/api/v1/auth/logout', (req) => {
@@ -132,7 +140,7 @@ export function registerRoutes() {
   // ---------- device API ----------
   route('POST', '/api/v1/events/batch', (req) => {
     const device = authenticateDevice(req);
-    const result = ingestBatch(device, req.body || {});
+    const result = ingestBatch(device, req.body || {}, req);
     return { ...result, request_id: req.requestId };
   }, { public: true, csrf: false });
   route('GET', '/api/v1/plugin-devices/self', (req) => {
@@ -182,6 +190,25 @@ export function registerRoutes() {
       handler: () => {
         const app = manualCreate({ ownerId: auth.ownerId, body: req.body || {}, idempotencyKey: req.headers['idempotency-key'] });
         return jsonStatus(201, { data: applicationDetail(auth.ownerId, app.id).data });
+      }
+    });
+  });
+  route('POST', '/api/v1/applications/:id/status', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId, scope: `application.status:${req.params.id}`, req,
+      handler: () => {
+        const result = setApplicationStatusManually({
+          ownerId: auth.ownerId,
+          applicationId: req.params.id,
+          expectedVersion: req.body.expected_version,
+          status: req.body.status,
+          appliedAt: req.body.applied_at,
+          appliedAtPrecision: req.body.applied_at_precision,
+          reason: req.body.reason || '用户手动修改状态',
+          actor: 'user'
+        });
+        return { data: { ...applicationDetail(auth.ownerId, req.params.id).data, changed: result.changed } };
       }
     });
   });
@@ -261,6 +288,58 @@ export function registerRoutes() {
     const auth = requireAuth(req);
     return reviewDetail(auth.ownerId, req.params.id);
   });
+  route('POST', '/api/v1/review-items/:id/intake', async (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId, scope: `review.intake:${req.params.id}`, req,
+      handler: async () => {
+        const result = await confirmReviewIntake({
+          ownerId: auth.ownerId, reviewId: req.params.id,
+          expectedVersion: req.body.expected_version,
+          idempotencyKey: req.headers['idempotency-key']
+        });
+        return {
+          data: {
+            ...result,
+            trace: result.trace ? { ...result.trace, request_id: req.requestId } : result.trace,
+            application: result.application?.id
+              ? applicationDetail(auth.ownerId, result.application.id).data
+              : null
+          }
+        };
+      }
+    });
+  });
+  route('POST', '/api/v1/review-items/:id/assign', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId, scope: `review.assign:${req.params.id}`, req,
+      handler: () => {
+        const result = assignReview({
+          ownerId: auth.ownerId,
+          reviewId: req.params.id,
+          expectedVersion: req.body.expected_version,
+          status: req.body.status,
+          appliedAt: req.body.applied_at,
+          appliedAtPrecision: req.body.applied_at_precision,
+          applicationId: req.body.application_id || null,
+          expectedApplicationVersion: req.body.expected_application_version,
+          changes: req.body.changes || {},
+          reason: req.body.reason,
+          actor: 'user',
+          idempotencyKey: req.headers['idempotency-key']
+        });
+        return {
+          data: {
+            review: { ...result.review, resolution: safeJsonParse(result.review.resolution_json, null) },
+            created: !!result.created,
+            already_resolved: !!result.already_resolved,
+            application: result.application ? applicationDetail(auth.ownerId, result.application.id).data : null
+          }
+        };
+      }
+    });
+  });
   route('POST', '/api/v1/review-items/:id/resolve', (req) => {
     const auth = requireAuth(req);
     return withIdempotency({
@@ -286,6 +365,60 @@ export function registerRoutes() {
         };
       }
     });
+  });
+
+  // ---------- resume / AI career analysis ----------
+  route('GET', '/api/v1/ai/status', (req) => {
+    const auth = requireAuth(req);
+    return { data: aiStatus(auth.ownerId) };
+  });
+  route('GET', '/api/v1/resumes', (req) => {
+    const auth = requireAuth(req);
+    return { data: listResumes(auth.ownerId) };
+  });
+  route('GET', '/api/v1/resumes/current', (req) => {
+    const auth = requireAuth(req);
+    return { data: currentResume(auth.ownerId) };
+  });
+  route('GET', '/api/v1/resumes/:id', (req) => {
+    const auth = requireAuth(req);
+    return { data: getResume(auth.ownerId, req.params.id, { includeText: true }) };
+  });
+  route('POST', '/api/v1/resumes', async (req) => {
+    const auth = requireAuth(req);
+    const raw = String(req.body.data_base64 || '');
+    if (!raw) throw new AppError(400, 'VALIDATION_ERROR', '缺少简历文件数据');
+    if (raw.length > 7_200_000) throw new AppError(413, 'RESUME_TOO_LARGE', '简历文件不能超过 5 MB');
+    const buffer = Buffer.from(raw, 'base64');
+    if (!buffer.length) throw new AppError(400, 'VALIDATION_ERROR', '简历文件为空或 base64 无效');
+    return jsonStatus(201, { data: await createResumeFromBuffer({
+      ownerId: auth.ownerId, filename: req.body.filename, mime: req.body.mime, buffer
+    }) });
+  });
+  route('POST', '/api/v1/resumes/text', async (req) => {
+    const auth = requireAuth(req);
+    return jsonStatus(201, { data: await createResumeFromText({ ownerId: auth.ownerId, text: req.body.text, filename: req.body.filename }) });
+  });
+  route('POST', '/api/v1/resumes/:id/analyze', async (req) => {
+    const auth = requireAuth(req);
+    return { data: await analyzeResume(auth.ownerId, req.params.id) };
+  });
+  route('PUT', '/api/v1/resumes/:id/text', (req) => {
+    const auth = requireAuth(req);
+    return { data: correctResumeText(auth.ownerId, req.params.id, req.body.text) };
+  });
+  route('POST', '/api/v1/ai/compare', async (req) => {
+    const auth = requireAuth(req);
+    return { data: await compareApplications({ ownerId: auth.ownerId, applicationIds: req.body.application_ids }) };
+  });
+  route('POST', '/api/v1/ai/recommend', async (req) => {
+    const auth = requireAuth(req);
+    const { report, result } = await recommendForOwner(auth.ownerId);
+    return { data: { report, result } };
+  });
+  route('GET', '/api/v1/ai/reports/:id', (req) => {
+    const auth = requireAuth(req);
+    return { data: getReport(auth.ownerId, req.params.id) };
   });
 
   // ---------- mail ----------

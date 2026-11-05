@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 域名 | `https://bangnili.app.workbuddy.host` |
-| 分享链接 | `https://bangnili.app.workbuddy.host/?sharecode=SMDT7CDZYS` |
+| 分享链接 | `https://bangnili.app.workbuddy.host/?sharecode=YOUR_SHARE_CODE_CONFIG_VALUE` |
 | 沙箱 | `e51f4e64fb634d1a85a63d0846af11a8`，http-service，verified |
 | 部署目录 | 主工作区 `/Users/mingenlin/Desktop/opencode project/帮你理`（`main`） |
 
@@ -34,7 +34,7 @@
 - 代码侧已支持（本分支）：设置 `SHARE_CODE` 环境变量后，
   - 提醒邮件里的所有链接自动附加 `sharecode`（`util.appendShareCode`）；
   - 插件后台地址可以写成 `https://域名/?sharecode=XXX`，`api.js` 会拆出来并对每个请求自动带上。
-- 主工作区 `.env` 已加入 `SHARE_CODE=SMDT7CDZYS`（该文件被 gitignore，不会进仓库）。
+- 主工作区 `.env` 已加入 `SHARE_CODE=REDACTED_CONFIG_VALUE`（该文件被 gitignore，不会进仓库）。
   **要下次重新发布才生效。**
 - 代价：分享码会随邮件链接扩散。目前白名单只有你一个邮箱、提醒只发给你自己，风险可控；
   如果平台以后支持「公开访问」，应优先改成公开并去掉 sharecode。
@@ -71,3 +71,10 @@ curl -sS "$B/api/v1/health?sharecode=$C"                                        
 本次发布的是**主工作区旧代码**（phase1），phase3 的修复不在里面。之后已把
 `phase3-local-fix-20261023` fast-forward 合并进 `main` 并推送（`f250e5c`），
 所以**下一次重新发布**会带上：阶段规则、轮次规则、人工修改、拒信分类、分享码支持等。
+
+## 5. 2026-11-02 beta3 实测纠正与 beta4 候选
+
+- beta3 重发布后，原线上管理员会话失效；重新登录后只读 API 确认邮箱连接、插件设备、隔离测试台账和待确认均为空。这再次证明：**运行期 SQLite 新写入不会因同版本重发布而保留**。
+- 本机项目和真实数据库未被修改；已丢失的线上运行期数据无法凭空恢复。
+- beta4 候选改为“本地 SQLite 事务存储 + 云端 AES-256-GCM 一致性快照”，使用受保护 RPC、revision 冲突防护、启动校验恢复和关闭刷盘。
+- 候选已完成真实云跨进程恢复与 SIGTERM 刷盘验收，但**尚未部署**；正式 stream 的线上重发布持久化仍必须按 `docs/BETA-RELEASE-HANDOFF.md` 第 6 节重新验收，不能提前标记完成。

@@ -1,5 +1,5 @@
 import { getDb, closeDb } from '../src/db.js';
-import { runReminders } from '../src/domain/reminders.js';
+import { runReminders } from '../src/modules/mail-push/reminders.js';
 
 getDb();
 const ownerId = process.argv.find((a) => a.startsWith('--owner='))?.split('=')[1] || null;

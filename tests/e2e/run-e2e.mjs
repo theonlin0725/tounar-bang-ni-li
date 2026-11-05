@@ -21,7 +21,9 @@ import { resolveChromiumExecutable } from './browser.mjs';
 import { captureRegression } from './capture-regression.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
-const PROFILE_DIR = path.join(ROOT, '.tmp', 'e2e-profile');
+const PROFILE_DIR = process.env.E2E_PROFILE_DIR
+  ? path.resolve(process.env.E2E_PROFILE_DIR)
+  : path.join(ROOT, '.tmp', 'e2e-profile');
 const REPORT_PATH = path.join(ROOT, '.tmp', 'e2e-report.json');
 const SERVER_NAME = 'extension-e2e';
 
@@ -113,7 +115,7 @@ try {
   fixture = await startFixtureServer({ port: fixturePort });
   const { cookie } = await server.login('demo@tounar.local');
   const extDir = buildTestExtension();
-  fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
+  if (!process.env.E2E_PROFILE_DIR) fs.rmSync(PROFILE_DIR, { recursive: true, force: true });
 
   // ---------- 2. 启动浏览器（带测试版扩展） ----------
   const resolved = await resolveChromiumExecutable();
@@ -321,7 +323,8 @@ try {
   );
 
   check('E2E-12 撤销后 popup 不再显示绑定信息', deviceAfter.server_revoked_at != null && !(await popupPaired(popup)));
-  await captureRegression(check);
+  if (process.env.E2E_SKIP_CAPTURE === '1') console.log('· 已跳过 P4 截图/DOM 回归（E2E_SKIP_CAPTURE=1；本轮单独运行 P4）');
+  else await captureRegression(check);
 } catch (err) {
   check('E2E 运行异常', false, String(err?.stack || err).slice(0, 1200));
 } finally {

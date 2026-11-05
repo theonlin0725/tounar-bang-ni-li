@@ -181,7 +181,7 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.equal(review.json.data.reason_code, 'D12_MISSING_FIELDS');
   });
 
-  it('状态页观察：状态跃迁写入 history；同状态重复不移动 last_status_changed_at；回退进复核', async () => {
+  it('状态页观察：状态跃迁写入 history；同状态重复不移动 last_status_changed_at；不按固定阶段阶梯拦截', async () => {
     const job = { company_name: '浏览公司', job_title: '前端实习生', site_job_id: 'view-001', site_application_id: 'apply-001', job_url: 'https://jobs.example.com/job/view-001', status_url: 'https://jobs.example.com/my/apply' };
     const interview = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_001', { ...job, status_text: '面试中', mapped_status: 'interview' }, { occurred_at: '2026-10-22T01:00:00.000Z', observed_at: '2026-10-22T01:00:05.000Z' })]);
     assert.equal(interview.json.results[0].processing_state, 'applied');
@@ -196,10 +196,10 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.ok(Date.parse(afterRepeat.json.data.last_site_observed_at) >= Date.parse(changedAt));
 
     const regression = await server.eventBatch(token, [evt('site_status_observed', 'evt_status_003', { ...job, status_text: '已投递', mapped_status: 'applied' }, { occurred_at: '2026-10-24T01:00:00.000Z', observed_at: '2026-10-24T01:00:05.000Z' })]);
-    assert.equal(regression.json.results[0].processing_state, 'pending');
-    assert.ok(regression.json.results[0].review_item_id);
+    assert.equal(regression.json.results[0].processing_state, 'applied');
+    assert.equal(regression.json.results[0].review_item_id, null);
     const finalState = await server.request(`/api/v1/applications/${interview.json.results[0].application_id}`, { cookie });
-    assert.equal(finalState.json.data.status, 'interview');
+    assert.equal(finalState.json.data.status, 'applied');
   });
 
   it('终态候选进复核（D08）；未映射状态保留原文进复核', async () => {

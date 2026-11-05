@@ -1,9 +1,10 @@
 import { config } from '../config.js';
 import { all, bumpRevision, one, run, transaction } from '../db.js';
 import { newId, nowIso, shanghaiClock } from '../util.js';
-import { runReminders } from '../domain/reminders.js';
-import { syncAllConnections } from '../domain/mailSync.js';
+import { runReminders } from '../modules/mail-push/reminders.js';
+import { syncAllConnections } from '../modules/data-capture/mail/sync.js';
 import { processDeletionJob } from '../domain/deletion.js';
+import { retryPendingIntakes } from '../modules/recruitment-intake/workflow.js';
 
 let timer = null;
 let running = false;
@@ -65,10 +66,11 @@ export async function runTick({ force = false, mail = false, reminders = false, 
   if (running) return { skipped: 'tick_in_progress' };
   running = true;
   const started = Date.now();
-  const summary = { started_at: nowIso(), mail: null, reminders: null, browse_archive: null, deletions: null };
+  const summary = { started_at: nowIso(), mail: null, reminders: null, browse_archive: null, deletions: null, auto_intake_retry: null };
   try {
     summary.browse_archive = archiveStaleBrowsed(now);
     summary.deletions = await recoverDeletionJobs();
+    try { summary.auto_intake_retry = await retryPendingIntakes(5); } catch (err) { summary.auto_intake_retry = { error: err.message }; }
 
     const lastMail = meta('last_mail_sync_at');
     const connections = one("SELECT COUNT(*) AS n FROM mail_connections WHERE status <> 'disconnected'");
@@ -90,14 +92,21 @@ export async function runTick({ force = false, mail = false, reminders = false, 
 }
 
 export function startScheduler() {
-  if (!config.enableScheduler || timer) return { started: false };
+  if ((!config.enableScheduler && !config.autoIntakeEnabled) || timer) return { started: false };
   setTimeout(() => {
     recoverDeletionJobs().catch((err) => console.error(JSON.stringify({ level: 'error', event: 'deletion_recovery_failed', message: err.message })));
   }, 1000);
   timer = setInterval(() => {
-    runTick().catch((err) => {
-      console.error(JSON.stringify({ level: 'error', event: 'scheduler_tick_failed', message: err.message }));
-    });
+    if (config.enableScheduler) {
+      runTick().catch((err) => {
+        console.error(JSON.stringify({ level: 'error', event: 'scheduler_tick_failed', message: err.message }));
+      });
+    } else {
+      // 自测/本地环境可能关闭完整调度器（避免自动发提醒），但自动入账的技术重试仍应运行。
+      retryPendingIntakes(5).catch((err) => {
+        console.error(JSON.stringify({ level: 'error', event: 'intake_retry_failed', message: err.message }));
+      });
+    }
   }, Math.max(15, config.reminderTickSeconds) * 1000);
   timer.unref?.();
   return { started: true, interval_seconds: config.reminderTickSeconds };
@@ -111,6 +120,7 @@ export function stopScheduler() {
 export function schedulerStatus() {
   return {
     enabled: config.enableScheduler,
+    intake_retry_only: !config.enableScheduler && config.autoIntakeEnabled,
     running,
     last_tick: lastTick,
     last_mail_sync_at: meta('last_mail_sync_at'),

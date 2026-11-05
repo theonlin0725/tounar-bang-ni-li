@@ -330,60 +330,88 @@ try {
   }
   check('W-13 待确认队列出现两条弱提交复核（云杉数据 / 青禾网络）',
     !!review1Id && !!review2Id, `review1=${review1Id} review2=${review2Id}`);
+  const review2Card = page.locator(`[data-test=review-card][data-review-id="${review2Id}"]`);
+  check('W-13a 待确认标题即原网页链接，无独立“打开原网页”按钮',
+    (await review2Card.locator('[data-test=review-title-link]').getAttribute('href')) === 'https://jobs.example.com/qinghe/ops-intern'
+    && (await review2Card.getByText('打开原网页', { exact: true }).count()) === 0,
+    'title-link');
+  check('W-13b 卡片只保留确认/忽略，无状态快捷按钮或内联补字段',
+    (await review2Card.locator('[data-test=review-confirm]').count()) === 1
+    && (await review2Card.locator('[data-test=review-dismiss]').count()) === 1
+    && (await review2Card.locator('[data-test=review-status-select], [data-test=review-apply], [data-test=review-viewed], [data-test=review-fix]').count()) === 0,
+    'simple-actions');
   await shot(page, '05-reviews');
 
-  /* 真实 409：拦截 UI 的 resolve POST，先用真实 API 修正候选记录（版本 +1），再放行原请求 */
-  const resolvePattern = `**/api/v1/review-items/${review1Id}/resolve`;
-  let raced = false;
-  const raceHandler = async (route) => {
-    if (!raced) {
-      raced = true;
-      const freshApp = await server.request(`/api/v1/applications/${appB.id}`, { cookie: apiCookie });
-      const version = freshApp.json?.data?.version;
-      const corrected = await server.request(`/api/v1/applications/${appB.id}/corrections`, {
-        method: 'POST', cookie: apiCookie,
-        headers: { 'Idempotency-Key': `e2e-race-corr-${Date.now()}` },
-        body: { expected_version: version, changes: { location: '上海·徐汇' }, reason: 'E2E 并发竞态：另一标签页修正' }
-      });
-      check('W-14a 竞态准备：另一会话真实修正候选记录（版本推进）', corrected.status === 200,
-        `correct_status=${corrected.status} version=${version}`);
-    }
-    await route.continue();
-  };
-  await page.route(resolvePattern, raceHandler);
-  const [raceResponse] = await Promise.all([
-    page.waitForResponse((resp) => resp.url().includes(`/api/v1/review-items/${review1Id}/resolve`)
-      && resp.request().method() === 'POST'),
-    page.locator(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-confirm]`).click()
-  ]);
-  const raceStatus = raceResponse.status();
-  await waitToast(page, '这条刚被更新过，已刷新，请再确认一次');
-  await page.unroute(resolvePattern, raceHandler);
-  const review1After = await server.request(`/api/v1/review-items/${review1Id}`, { cookie: apiCookie });
-  check('W-14 复核 409 竞态：服务端真实 VERSION_CONFLICT，UI 明确提示且不覆盖',
-    raceStatus === 409 && review1After.json?.data?.status === 'open',
-    `http=${raceStatus} review_status=${review1After.json?.data?.status}`);
-  await shot(page, '06-review-conflict');
-
-  /* 该复核项未被覆盖：用「忽略」二次确认清理（也验证 dismiss 路径） */
-  await page.locator(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-dismiss]`).click();
-  await page.waitForSelector('[data-test=confirm-ok]');
-  await page.click('[data-test=confirm-ok]');
-  await waitToast(page, '已忽略该线索');
+  /* 未配置模型时：确认不得静默创建；显示失败/重试/手动，并可取消保持待确认 */
+  const review1Card = page.locator(`[data-test=review-card][data-review-id="${review1Id}"]`);
+  await review1Card.locator('[data-test=review-confirm]').click();
+  await page.waitForSelector(`[data-test=review-card][data-review-id="${review1Id}"] [data-test=review-manual]`, { timeout: 20000 });
+  const r1AfterFail = await server.request(`/api/v1/review-items/${review1Id}`, { cookie: apiCookie });
+  check('W-14 识别失败不空白入账，显示重试/手动，待确认保持 open',
+    r1AfterFail.json?.data?.status === 'open', `review_status=${r1AfterFail.json?.data?.status}`);
+  await review1Card.locator('[data-test=review-manual]').click();
+  await page.waitForSelector('[data-test=intake-modal]');
+  const companyVal = await page.inputValue('[data-test=intake-company]');
+  const titleVal = await page.inputValue('[data-test=intake-title]');
+  check('W-14a 手动补录预填已识别字段，不强制用户重复输入', companyVal.includes('云杉数据') && titleVal.includes('数据产品'), `company=${companyVal} title=${titleVal}`);
+  await page.click('[data-test=intake-cancel]');
+  await page.waitForSelector('[data-test=intake-modal]', { state: 'detached' });
+  const r1Cancel = await server.request(`/api/v1/review-items/${review1Id}`, { cookie: apiCookie });
+  check('W-14b 取消补录后待确认仍在，未创建/修改台账', r1Cancel.json?.data?.status === 'open', `review_status=${r1Cancel.json?.data?.status}`);
+  await review1Card.locator('[data-test=review-dismiss]').click();
+  await waitToast(page, '已忽略');
   await page.waitForSelector(`[data-test=review-card][data-review-id="${review1Id}"]`, { state: 'detached' });
-  check('W-14b 复核「忽略」二次确认后落库（无并发覆盖）', true, 'dismissed');
+  check('W-14c 复核「忽略」立即落库，不弹二次确认', true, 'dismissed');
 
-  /* 正常确认第二条（青禾网络：pending → applied） */
-  await page.locator(`[data-test=review-card][data-review-id="${review2Id}"] [data-test=review-confirm]`).click();
-  await waitToast(page, '已确认并应用建议');
+  /* 正常补录第二条：显式选择状态、公司和岗位可编辑后保存 */
+  const card2 = page.locator(`[data-test=review-card][data-review-id="${review2Id}"]`);
+  await card2.locator('[data-test=review-confirm]').click();
+  await page.waitForSelector(`[data-test=review-card][data-review-id="${review2Id}"] [data-test=review-manual]`, { timeout: 20000 });
+  await card2.locator('[data-test=review-manual]').click();
+  await page.waitForSelector('[data-test=intake-modal]');
+  await page.fill('[data-test=intake-company]', '青禾网络');
+  await page.fill('[data-test=intake-title]', '运营实习生');
+  await page.selectOption('[data-test=intake-status]', 'applied');
+  if (!(await page.inputValue('[data-test=intake-applied-at]'))) await page.fill('[data-test=intake-applied-at]', '2026-10-20');
+  await page.click('[data-test=intake-save]');
+  await waitToast(page, '已入账');
   await page.waitForSelector(`[data-test=review-card][data-review-id="${review2Id}"]`, { state: 'detached' });
   const appCList = await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie });
   const appC = (appCList.json?.data?.items || []).find((x) => x.company_name === '青禾网络');
-  check('W-15 复核正常确认：建议应用、状态变已投、列表清空',
-    !!appC && appC.status === 'applied', `app=${appC?.id || 'missing'} status=${appC?.status || 'missing'}`);
+  check('W-15 补录后创建/更新为已投，列表清空', !!appC && appC.status === 'applied', `app=${appC?.id || 'missing'} status=${appC?.status || 'missing'}`);
 
   await page.click('[data-test=tab-applied]');
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
+  const statusList = (await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie })).json?.data?.items || [];
+  const statusApp = statusList.find((x) => x.company_name === '云杉数据');
+  if (statusApp) {
+    const statusRow = page.locator(`[data-test=ledger-row][data-app-id="${statusApp.id}"]`);
+    await statusRow.waitFor();
+    await page.waitForSelector('[data-test=ledger-table]');
+    const headers = await page.locator('[data-test=ledger-table] th').allTextContents();
+    const jobHref = await statusRow.locator('a', { hasText: '查看岗位' }).getAttribute('href');
+    check('W-16a 台账只保留一个“查看岗位”入口，且指向岗位详情',
+      !headers.includes('投递链接') && headers.includes('查看岗位') && jobHref === 'https://jobs.example.com/yunshan/dp-intern',
+      `headers=${headers.join('|')} href=${jobHref}`);
+    await statusRow.locator('[data-test=ledger-status-edit]').selectOption('interview');
+    const dateInput = statusRow.locator('[data-test=ledger-status-date]');
+    if (await dateInput.isVisible().catch(() => false)) {
+      if (!(await dateInput.inputValue())) await dateInput.fill('2026-10-21');
+      await statusRow.locator('[data-test=ledger-status-save]').click();
+    }
+    await waitToast(page, '状态已更新');
+    await page.waitForFunction(({ id }) => document.querySelector(`[data-test=ledger-status-edit][data-status-app-id="${id}"]`)?.value === 'interview', { id: statusApp.id });
+    const edited = await server.request(`/api/v1/applications/${statusApp.id}`, { cookie: apiCookie });
+    check('W-16b 台账状态直接编辑并保留人工修改历史',
+      edited.json?.data?.status === 'interview' && edited.json?.data?.manual_status_at
+      && (edited.json?.data?.history || []).some((h) => h.source_method === 'manual' && h.to_status === 'interview'),
+      `status=${edited.json?.data?.status}`);
+    await shot(page, '06a-ledger-status');
+    const statusRow2 = page.locator(`[data-test=ledger-row][data-app-id="${statusApp.id}"]`);
+    await statusRow2.locator('[data-test=ledger-status-edit]').selectOption('applied');
+    await waitToast(page, '状态已更新');
+    await page.waitForFunction(({ id }) => document.querySelector(`[data-test=ledger-status-edit][data-status-app-id="${id}"]`)?.value === 'applied', { id: statusApp.id });
+  }
   const qingheRow = page.locator('[data-test=ledger-row]', { hasText: '青禾网络' });
   await qingheRow.waitFor({ state: 'visible' });
   check('W-16 复核确认后台账刷新（累计投递=3，无重复记录）',

@@ -6,6 +6,15 @@ import { newId, nowIso } from './util.js';
 
 let db = null;
 let txDepth = 0;
+let persistenceHook = null;
+
+export function setPersistenceHook(hook) {
+  persistenceHook = hook || null;
+}
+
+function notifyCommittedWrite() {
+  if (txDepth === 0 && persistenceHook) persistenceHook();
+}
 
 export function getDb() {
   if (!db) db = openDatabase(config.dbPath);
@@ -36,6 +45,8 @@ function migrate(instance) {
   addColumn('applications', 'stage_received_at', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
+  addColumn('applications', 'manual_status_at', 'TEXT');
+  addColumn('ai_ingest_runs', 'rule_version', "TEXT NOT NULL DEFAULT 'auto-intake-v1'");
   addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");
   addColumn('application_field_sources', 'source_detail', 'TEXT');
   if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_confidence'").get()) {
@@ -62,6 +73,7 @@ function migrate(instance) {
     instance.prepare("INSERT INTO meta (key, value) VALUES ('migration_phase2_mail_link', '1')").run();
   }
   addColumn('notification_preferences', 'last_review_digest_at', 'TEXT');
+  addColumn('mail_test_runs', 'request_hash', "TEXT NOT NULL DEFAULT ''");
   const done = instance.prepare("SELECT value FROM meta WHERE key = 'migration_d06_daily'").get();
   if (!done) {
     instance.exec("UPDATE notification_preferences SET review_frequency = 'daily' WHERE review_frequency = 'weekly_monday'");
@@ -81,15 +93,18 @@ export function transaction(fn) {
   if (txDepth > 0) return fn(database);
   database.exec('BEGIN IMMEDIATE');
   txDepth++;
+  let committed = false;
   try {
     const result = fn(database);
     database.exec('COMMIT');
+    committed = true;
     return result;
   } catch (err) {
     try { database.exec('ROLLBACK'); } catch { /* ignore */ }
     throw err;
   } finally {
     txDepth--;
+    if (committed) notifyCommittedWrite();
   }
 }
 
@@ -102,11 +117,14 @@ export function all(sql, params = []) {
 }
 
 export function run(sql, params = []) {
-  return getDb().prepare(sql).run(...params);
+  const result = getDb().prepare(sql).run(...params);
+  notifyCommittedWrite();
+  return result;
 }
 
 export function bumpRevision() {
   getDb().prepare("UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'data_revision'").run();
+  notifyCommittedWrite();
 }
 
 export function dataRevision() {
@@ -117,6 +135,7 @@ export function ensurePreferences(ownerId) {
   getDb().prepare(`INSERT OR IGNORE INTO notification_preferences
     (owner_id, mode, review_frequency, review_threshold_days, version, updated_at)
     VALUES (?, 'all', 'daily', 14, 1, ?)`).run(ownerId, nowIso());
+  notifyCommittedWrite();
 }
 
 export function getUserByEmail(email) {
@@ -148,6 +167,7 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
   const values = changed.map((f) => fields[f]);
   getDb().prepare(`UPDATE applications SET ${sets}, updated_at = ?, version = version + 1 WHERE id = ? AND owner_id = ?`)
     .run(...values, nowIso(), applicationId, ownerId);
+  notifyCommittedWrite();
   getDb().prepare(`INSERT INTO application_history
     (id, owner_id, application_id, event_id, from_status, to_status, changed_fields_json, changed_at, source_method, reason)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -163,6 +183,7 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
       sourceMethod,
       options.reason || null
     );
+  notifyCommittedWrite();
   for (const field of changed) {
     const sourceEvent = eventId ? one('SELECT payload_json FROM events WHERE id = ? AND owner_id = ?', [eventId, ownerId]) : null;
     const payload = sourceEvent ? JSON.parse(sourceEvent.payload_json || '{}') : {};
@@ -173,7 +194,9 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
       ON CONFLICT(application_id, field) DO UPDATE SET source_method=excluded.source_method,
         event_id=excluded.event_id, updated_at=excluded.updated_at, confidence=excluded.confidence, source_detail=excluded.source_detail`)
       .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso(), confidence, payload.field_sources?.[field] || null);
+    notifyCommittedWrite();
   }
   bumpRevision();
+  notifyCommittedWrite();
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [applicationId, ownerId]);
 }

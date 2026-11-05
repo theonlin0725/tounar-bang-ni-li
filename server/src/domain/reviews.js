@@ -64,6 +64,11 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
   if (!changes || typeof changes !== 'object' || !Object.keys(changes).length) {
     throw new AppError(400, 'VALIDATION_ERROR', '没有要修改的字段');
   }
+  for (const field of ['company_name', 'job_title']) {
+    if (field in changes && !requiredField(changes[field])) {
+      throw new AppError(422, 'REVIEW_FIELDS_REQUIRED', '公司和岗位都是必填项，不能使用空值或占位文字', { details: { missing: [field] } });
+    }
+  }
   return transaction(() => {
     const app = getApplication(ownerId, applicationId);
     if (!app) throw new AppError(404, 'NOT_FOUND', '记录不存在');
@@ -93,6 +98,7 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
       updates.last_status_changed_at = nowIso();
       updates.last_progress_at = nowIso();
     }
+    if (updates.status && updates.status !== app.status) updates.manual_status_at = nowIso();
     if (updates.last_interview_completed_at && updates.last_interview_completed_at !== app.last_interview_completed_at) {
       updates.last_progress_at = nowIso();
     }
@@ -113,6 +119,25 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
     const updated = markApplicationChanged(ownerId, applicationId, correctionEventId, 'manual', updates, { reason });
     audit(ownerId, actor, 'application.correction', 'application', applicationId, { fields: Object.keys(updates), reason });
     return { application: updated, changed: true, event_id: correctionEventId };
+  });
+}
+
+export function setApplicationStatusManually({ ownerId, applicationId, expectedVersion, status: rawStatus,
+  appliedAt = null, appliedAtPrecision = null, reason = '用户手动修改状态', actor = 'user' }) {
+  const status = normalizeStatus(rawStatus);
+  if (!status) throw new AppError(400, 'VALIDATION_ERROR', '未知状态');
+  if (status === 'pending') {
+    const app = getApplication(ownerId, applicationId);
+    if (!app) throw new AppError(404, 'NOT_FOUND', '记录不存在');
+  }
+  const changes = { status };
+  if (appliedAt) {
+    changes.applied_at = appliedAt;
+    changes.applied_at_precision = appliedAtPrecision || 'date';
+  }
+  return correctApplication({
+    ownerId, applicationId, expectedVersion, changes,
+    reason, actor
   });
 }
 
@@ -254,7 +279,7 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
     }
     if (action === 'create') {
       const fields = { ...suggested, ...(changes || {}) };
-      if (!fields.company_name || !fields.job_title) throw new AppError(400, 'VALIDATION_ERROR', '创建记录需要公司和岗位');
+      // 允许公司和岗位为空：线索本身（事件/邮件/标题/正文）仍是可追溯的台账记录。
       const candidates = findCandidates(ownerId, { ...fields, canonical_job_url: canonicalJobUrl(fields.job_url) });
       const distinctJobOnSharedPage = review.reason_code === 'PAGE_CONTENT_IDENTITY_UNCERTAIN'
         && candidates.every(c => c.application.job_title !== fields.job_title);
@@ -271,6 +296,7 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
       if (targetStatus !== 'pending' && !fields.applied_at && !config.d12AllowMissingAppliedAt) {
         throw new AppError(422, 'D12_NOT_FROZEN', '缺少可信投递时间，D12 未冻结');
       }
+      fields.manual_status_at = nowIso();
       const app = createApplication({
         ownerId, fields, eventId: review.source_event_id, sourceMethod: 'manual', status: targetStatus,
         at: fields.applied_at || nowIso()
@@ -327,6 +353,216 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
     };
   });
 }
+
+export function reviewSourceFields(review, event) {
+  const payload = event?.payload || {};
+  const evidence = safeJsonParse(review.evidence_json, {}) || {};
+  const page = evidence.page || {};
+  const pick = (key) => payload[key] != null && payload[key] !== ''
+    ? payload[key]
+    : (page[key] != null && page[key] !== '' ? page[key] : null);
+  const fields = {
+    company_name: pick('company_name'),
+    job_title: pick('job_title'),
+    site_key: event?.site_key || page.site_key || null,
+    site_job_id: pick('site_job_id'),
+    site_application_id: pick('site_application_id'),
+    job_url: pick('job_url'),
+    jd_summary: pick('jd_summary'),
+    jd_text: payload.jd_text || null,
+    location: pick('location'),
+    recruitment_batch: pick('recruitment_batch'),
+    channel: pick('channel'),
+    status_url: pick('status_url'),
+    status_url_scope: pick('status_url_scope'),
+    applied_at: payload.applied_at || null,
+    applied_at_precision: payload.applied_at_precision || null
+  };
+  if (fields.job_url && !isSafeHttpUrl(fields.job_url)) fields.job_url = null;
+  if (fields.status_url && !isSafeHttpUrl(fields.status_url)) fields.status_url = null;
+  return fields;
+}
+
+/* 按“用户选择的状态”直接把待确认项落到台账。
+ * 强身份（site_application_id / site_job_id / canonical_job_url）唯一时才更新已有记录；
+ * 仅公司+岗位相同不合并；没有强身份则用当前线索新建。 */
+const INVALID_REQUIRED_FIELD = /^(?:待补充|未知|不详|未填写|未识别|系统判断|面试|通知|提醒|无|—|-)?$/i;
+function requiredField(value) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length >= 2 && !INVALID_REQUIRED_FIELD.test(text)
+    && !/系统判断|批次待补充|城市待补充|还没有投递记录|招聘邮件更新候选|加分项或注意事项|基本信息/i.test(text);
+}
+
+export function assignReview({ ownerId, reviewId, expectedVersion, status: rawStatus, appliedAt: rawAppliedAt,
+  appliedAtPrecision: rawPrecision, applicationId = null, expectedApplicationVersion = null,
+  changes = {}, reason = null, actor = 'user', idempotencyKey = null }) {
+  return transaction(() => {
+    const review = one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]);
+    if (!review) throw new AppError(404, 'NOT_FOUND', '待确认项不存在');
+    if (review.status !== 'open') {
+      return {
+        review: { ...review, resolution: safeJsonParse(review.resolution_json, null) },
+        application: review.resolution_json ? safeJsonParse(review.resolution_json, {})?.application_id
+          ? getApplication(ownerId, safeJsonParse(review.resolution_json, {}).application_id) : null : null,
+        already_resolved: true
+      };
+    }
+    if (Number(expectedVersion) !== review.version) {
+      throw new AppError(409, 'VERSION_CONFLICT', '待确认项已更新，请刷新后重试', { details: { current_version: review.version } });
+    }
+    const status = normalizeStatus(rawStatus);
+    if (status !== 'pending' && !APPLIED_STATUSES.has(status)) {
+      throw new AppError(400, 'VALIDATION_ERROR', '状态只能是看过没投、已投递、笔试、面试、录用或拒绝');
+    }
+    const event = review.source_event_id
+      ? one('SELECT * FROM events WHERE id = ? AND owner_id = ?', [review.source_event_id, ownerId])
+      : null;
+    const sourceIsMail = Boolean(review.source_mail_id) || event?.source_method === 'mail'
+      || String(event?.event_type || '').startsWith('mail_');
+    const suggested = safeJsonParse(review.suggested_changes_json, {}) || {};
+    const fields = reviewSourceFields(review, event);
+    for (const [key, value] of Object.entries(changes || {})) {
+      if (['company_name', 'job_title', 'jd_summary', 'jd_text', 'job_url', 'location', 'recruitment_batch'].includes(key) && value != null) {
+        fields[key] = value;
+      }
+    }
+    const appliedLike = APPLIED_STATUSES.has(status);
+    let appliedAt = parseIso(rawAppliedAt) || parseIso(suggested.applied_at) || parseIso(fields.applied_at) || null;
+    let appliedPrecision = rawPrecision || suggested.applied_at_precision || fields.applied_at_precision || null;
+    if (!appliedAt && appliedLike && event?.event_type === 'application_submitted') {
+      appliedAt = parseIso(event.occurred_at) || null;
+      appliedPrecision = 'exact';
+    }
+    const mail = review.source_mail_id
+      ? one('SELECT received_at FROM mail_messages WHERE id = ? AND owner_id = ?', [review.source_mail_id, ownerId])
+      : null;
+    if (!appliedAt && appliedLike && sourceIsMail && config.d12AllowMailInferredAppliedAt) {
+      appliedAt = parseIso(mail?.received_at) || null;
+      if (appliedAt) appliedPrecision = 'inferred_before';
+    }
+    if (appliedLike && !appliedAt && !config.d12AllowMissingAppliedAt) {
+      throw new AppError(422, 'APPLIED_AT_REQUIRED', '请填写实际投递时间后再确认；不会用确认入账的时间代替', {
+        details: { requires_applied_at: true }
+      });
+    }
+    if (appliedLike && !appliedPrecision) appliedPrecision = event?.event_type === 'application_submitted' ? 'exact'
+      : (rawAppliedAt ? 'exact' : (sourceIsMail ? 'inferred_before' : 'exact'));
+
+    let target = null;
+    let ambiguous = null;
+    if (applicationId) {
+      target = getApplication(ownerId, applicationId);
+      if (!target) throw new AppError(404, 'NOT_FOUND', '要更新的岗位记录不存在');
+      if (target.archived_at) throw new AppError(409, 'APPLICATION_ARCHIVED', '该岗位已归档，请先恢复或选择其他记录');
+      if (expectedApplicationVersion == null) throw new AppError(400, 'VALIDATION_ERROR', '缺少目标记录版本');
+      validateApplicationVersion(target, expectedApplicationVersion);
+    } else {
+      const candidates = findCandidates(ownerId, {
+        ...fields, canonical_job_url: canonicalJobUrl(fields.job_url)
+      }).filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason)
+        && !c.application.archived_at);
+      if (candidates.length > 1) ambiguous = candidates;
+      else if (candidates.length === 1) target = candidates[0].application;
+    }
+    if (ambiguous) {
+      throw new AppError(409, 'REVIEW_ASSIGN_AMBIGUOUS', '多个已有岗位都匹配这条线索，请选择要更新的记录', {
+        details: {
+          candidates: ambiguous.map((c) => ({
+            application_id: c.application.id,
+            application_version: c.application.version,
+            company_name: c.application.company_name,
+            job_title: c.application.job_title,
+            status: c.application.status,
+            has_applied: !!c.application.has_applied,
+            match_reason: c.reason
+          }))
+        }
+      });
+    }
+    // 公司、岗位是入账必填项；占位文字/阶段词不能作为名称。
+    const effectiveCompany = changes.company_name !== undefined ? changes.company_name
+      : (fields.company_name || target?.company_name || '');
+    const effectiveTitle = changes.job_title !== undefined ? changes.job_title
+      : (fields.job_title || target?.job_title || '');
+    if (!requiredField(effectiveCompany) || !requiredField(effectiveTitle)) {
+      throw new AppError(422, 'REVIEW_FIELDS_REQUIRED', '公司和岗位都是必填项，请根据原始线索补充或纠正后再入账', {
+        details: { missing: [!requiredField(effectiveCompany) ? 'company_name' : null, !requiredField(effectiveTitle) ? 'job_title' : null].filter(Boolean) }
+      });
+    }
+    if (changes.company_name !== undefined) fields.company_name = effectiveCompany;
+    if (changes.job_title !== undefined) fields.job_title = effectiveTitle;
+    if (status === 'pending' && target?.has_applied) {
+      throw new AppError(403, 'APPLIED_FACT_REMOVAL', '这条岗位已经投递，不能改成看过没投');
+    }
+    const before = target ? { ...target } : null;
+    let application = target;
+    let created = false;
+    if (target) {
+      const merged = { status };
+      for (const key of ['company_name', 'job_title', 'jd_summary', 'jd_text', 'job_url', 'location', 'recruitment_batch']) {
+        if (changes[key] !== undefined) merged[key] = changes[key] === '' ? null : changes[key];
+      }
+      if (appliedLike) {
+        merged.has_applied = true;
+        if (appliedAt && !target.applied_at) {
+          merged.applied_at = appliedAt;
+          merged.applied_at_precision = appliedPrecision;
+        }
+      }
+      const result = applyReviewChangesToApplication({
+        app: target, review, event, mergedChanges: merged,
+        reason: reason || (status === 'pending' ? '按状态确认：看过没投' : `按状态确认：${status}`),
+        ownerId, actor
+      });
+      application = result.application;
+    } else {
+      // 空白公司和岗位允许入账；不要用占位公司/岗位伪造身份，也不参与候选合并。
+      const createFields = { ...fields, company_name: effectiveCompany, job_title: effectiveTitle };
+      createFields.manual_status_at = nowIso();
+      if (appliedLike) {
+        createFields.applied_at = appliedAt;
+        createFields.applied_at_precision = appliedPrecision;
+      }
+      if (status === 'pending' && event?.event_type === 'job_viewed') {
+        createFields.first_viewed_at = event.occurred_at;
+        createFields.last_viewed_at = event.observed_at;
+      }
+      application = createApplication({
+        ownerId, fields: createFields, eventId: review.source_event_id || null, sourceMethod: 'manual',
+        status, at: appliedAt || event?.occurred_at || nowIso()
+      });
+      created = true;
+      if (review.source_event_id) setEventEventApplication(ownerId, review.source_event_id, application.id);
+    }
+    const undoUntil = new Date(Date.now() + 10000).toISOString();
+    const resolution = JSON.stringify({
+      resolution: created ? 'assigned_created' : 'assigned_updated',
+      assignment_status: status,
+      application_id: application.id,
+      idempotency_key: idempotencyKey,
+      undo_until: undoUntil,
+      before,
+      after_version: application.version || null
+    });
+    run(`UPDATE review_items SET status = 'resolved', resolution_json = ?, resolved_at = ?, version = version + 1
+         WHERE id = ? AND owner_id = ?`, [resolution, nowIso(), reviewId, ownerId]);
+    if (!created && review.source_event_id) {
+      run(`UPDATE events SET application_id = ?, processing_state = 'applied', review_reason = NULL, processed_at = ?
+           WHERE id = ? AND owner_id = ?`, [application.id, nowIso(), review.source_event_id, ownerId]);
+    }
+    bumpRevision();
+    audit(ownerId, actor, 'review.assign', 'review', reviewId, {
+      application_id: application.id, status, created, idempotency_key: idempotencyKey
+    });
+    return {
+      review: one('SELECT * FROM review_items WHERE id = ? AND owner_id = ?', [reviewId, ownerId]),
+      application: getApplication(ownerId, application.id),
+      created,
+      already_resolved: false
+    };
+  });
+}
+
 
 function setEventEventApplication(ownerId, eventId, applicationId) {
   if (!eventId) return;
@@ -400,6 +636,7 @@ function applyReviewChangesToApplication({ app, review, event, mergedChanges, re
     if (targetStatus !== app.status) {
       updates.last_status_changed_at = nowIso();
       updates.last_progress_at = nowIso();
+      updates.manual_status_at = nowIso();
     }
   }
   if (!Object.keys(updates).length) {

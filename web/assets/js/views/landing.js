@@ -3,7 +3,7 @@
    confirmation_token 仅保存在内存变量；刷新页面只会重新 GET，不会重复确认。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { App } from '../app.js';
+import { App } from '../app.js?v=20261102-1';
 import {
   h, clear, statusChip, fmtDateTime, daysText, idemKey, extLink
 } from '../util.js';
@@ -107,7 +107,7 @@ export async function renderLanding(root, token) {
         h('div', { class: 'tn-landing-meta' },
           `最近有效进展：${fmtDateTime(app.last_progress_at)} · 官网最近采集：${app.last_site_observed_at ? fmtDateTime(app.last_site_observed_at) : '尚无'}`),
         h('div', { class: 'tn-landing-actions' },
-          app.primary_status_url ? extLink(app.primary_status_url, app.primary_status_url_scope === 'application' ? '再次打开申请状态页' : '打开岗位页') : null,
+          app.status_url ? extLink(app.status_url, '再次打开申请状态页') : (app.job_url ? extLink(app.job_url, '查看岗位') : null),
           h('button', { class: 'tn-btn tn-btn-primary', type: 'button', text: '打开我的台账', onclick: goLedger })
         )
       );
@@ -134,10 +134,8 @@ export async function renderLanding(root, token) {
     );
 
     const actions = h('div', { class: 'tn-landing-actions' });
-    if (app.primary_status_url) {
-      actions.append(extLink(app.primary_status_url,
-        app.primary_status_url_scope === 'application' ? '打开申请状态页' : '打开岗位页（回退）'));
-    }
+    if (app.status_url) actions.append(extLink(app.status_url, '打开申请状态页'));
+    else if (app.job_url) actions.append(extLink(app.job_url, '查看岗位'));
     const confirmBtn = h('button', {
       class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'landing-confirm', text: '已确认，状态无变化'
     });

@@ -18,7 +18,7 @@ export const PUBLIC_APPLICATION_FIELDS = [
   'id', 'company_name', 'job_title', 'recruitment_batch', 'location', 'jd_summary', 'channel',
   'job_url', 'canonical_job_url', 'status_url', 'status_url_scope', 'status', 'has_applied',
   'applied_at', 'applied_at_precision', 'first_viewed_at', 'last_viewed_at', 'form_started_at',
-  'last_status_changed_at', 'last_progress_at', 'last_site_observed_at', 'last_reviewed_at',
+  'last_status_changed_at', 'last_progress_at', 'last_site_observed_at', 'last_reviewed_at', 'manual_status_at',
   'deadline_at', 'deadline_precision', 'interview_round', 'round_label', 'interview_scheduled_at',
   'last_interview_completed_at', 'source_methods', 'latest_event_id', 'version', 'created_at',
   'updated_at', 'archived_at', 'archive_reason', 'stage_received_at', 'stage_anchor_at', 'capture_source', 'jd_status'
@@ -96,6 +96,12 @@ function eventAppliedAt(event) {
   return parseIso(payload.applied_at) || parseIso(payload.applied_date) || parseIso(event.occurred_at);
 }
 
+function eventEvidenceAt(event) {
+  const payload = event?.payload || {};
+  return parseIso(payload.event_time) || parseIso(payload.source_received_at)
+    || parseIso(event?.occurred_at) || parseIso(event?.observed_at) || null;
+}
+
 function isFormalComplete(fields) {
   const missing = [];
   if (!fields.company_name) missing.push('company_name');
@@ -148,7 +154,10 @@ export function createReviewForEvent(event, { kind, reasonCode, summary, suggest
   const existing = one(`SELECT * FROM review_items WHERE owner_id = ? AND source_event_id = ? AND status = 'open'`,
     [event.owner_id, event.id]);
   if (existing) return existing;
-  const candidates = (progressCandidates || findCandidates(event.owner_id, fields)).map(({ application, reason, confidence }) => ({
+  const candidates = (progressCandidates || findCandidates(event.owner_id, {
+    ...fields,
+    canonical_job_url: fields.canonical_job_url || canonicalJobUrl(fields.job_url)
+  })).map(({ application, reason, confidence }) => ({
     application_id: application.id,
     application_version: application.version,
     company_name: application.company_name,
@@ -228,6 +237,7 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
     form_started_at: fields.form_started_at || null,
     last_status_changed_at: now,
     last_progress_at: now,
+    manual_status_at: fields.manual_status_at || null,
     stage_received_at: ['assessment','interview'].includes(status) ? stageReceived : null,
     stage_anchor_at: ['assessment','interview'].includes(status) ? maxIso(stageReceived, status === 'interview' ? fields.interview_scheduled_at : null) : null,
     last_site_observed_at: fields.last_site_observed_at || null,
@@ -252,7 +262,7 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
   return one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [id, ownerId]);
 }
 
-function fillMissingFields(app, fields, eventId, sourceMethod) {
+export function fillMissingFields(app, fields, eventId, sourceMethod) {
   const updates = {};
   const fillable = ['company_name', 'job_title', 'jd_summary', 'jd_text', 'job_url', 'canonical_job_url', 'status_url', 'location', 'recruitment_batch',
     'site_job_id', 'site_application_id', 'deadline_at', 'interview_scheduled_at', 'round_label', 'interview_round'];
@@ -319,12 +329,21 @@ function maybeSetRound(app, fields, eventId, sourceMethod) {
 }
 
 export function applyStatusTransition(app, targetStatus, event, { sourceMethod, reviewTerminal = true } = {}) {
+  // 网络模型调用期间用户可能已经手动改过状态；用数据库当前版本作为最终依据。
+  const current = one('SELECT * FROM applications WHERE id = ? AND owner_id = ?', [app.id, app.owner_id]);
+  if (current && current.version > app.version) app = current;
   if (!STATUSES.includes(targetStatus)) {
     return { ok: false, review: { kind: 'status_conflict', reasonCode: 'UNKNOWN_STATUS', summary: '无法识别目标状态' } };
   }
   if (app.status === targetStatus) {
     let updated = maybeSetRound(app, event.payload || {}, event.id, sourceMethod);
     return { ok: true, app: updated, changed: false };
+  }
+  // 用户手动状态之后的旧证据直接视为“无需变更”，不覆盖也不制造待确认。
+  const evidenceAt = eventEvidenceAt(event);
+  const manualAt = parseIso(app.manual_status_at);
+  if (manualAt && (!evidenceAt || Date.parse(evidenceAt) <= Date.parse(manualAt))) {
+    return { ok: true, app, changed: false, ignored: 'MANUAL_STATUS_NEWER' };
   }
   if (TERMINAL.has(app.status)) {
     return { ok: false, review: { kind: 'terminal_conflict', reasonCode: 'TERMINAL_LOCKED', summary: '记录已处于终态，自动事件不能覆盖' } };
@@ -338,23 +357,20 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
   if (APPLIED_STATUSES.has(targetStatus) && !app.has_applied) {
     return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'HAS_APPLIED_UNCONFIRMED', summary: '状态需要正式申请确证' } };
   }
-  const oldRank = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 }[app.status];
-  const newRank = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 }[targetStatus];
-  if (newRank < oldRank && !TERMINAL.has(targetStatus)) {
-    return { ok: false, review: { kind: 'status_conflict', reasonCode: 'STATUS_REGRESSION', summary: '后到事件试图回退状态' } };
-  }
+  // 不按固定状态阶梯拦截：笔试、测评、面试并不总按同一顺序发生。
   const changedAt = event.occurred_at || nowIso();
   const updates = {
     status: targetStatus,
     has_applied: 1,
     last_status_changed_at: changedAt,
-    last_progress_at: changedAt
+    last_progress_at: changedAt,
+    manual_status_at: null
   };
   if (!app.applied_at) {
     const appliedAt = eventAppliedAt(event);
     if (appliedAt) {
       updates.applied_at = appliedAt;
-      updates.applied_at_precision = 'exact';
+      updates.applied_at_precision = event.payload?.applied_at_precision === 'inferred_before' ? 'inferred_before' : 'exact';
     } else if (!config.d12AllowMissingAppliedAt) {
       return { ok: false, review: { kind: 'application_confirmation', reasonCode: 'D12_MISSING_APPLIED_AT', summary: '缺少可信投递时间，D12 未冻结' } };
     }
@@ -416,6 +432,27 @@ function reviewForEvent(event, details) {
   });
 }
 
+function meaningfulCaptureText(value, min = 2) {
+  const text = normalizeWhitespace(value, 2000);
+  if (text.length < min) return false;
+  if (/系统判断|待补充|还没有投递记录|招聘邮件更新候选|加分项或注意事项|基本信息|点击申请|立即申请|登录|首页|加载中|暂无|编辑/i.test(text)) return false;
+  if (/^2027\s*届\s*[·|｜]\s*(全国|广东|上海|多省|多省区)/i.test(text)) return false;
+  return true;
+}
+function hasValidJobInfo(p) {
+  return meaningfulCaptureText(p.job_title, 2) || meaningfulCaptureText(p.jd_summary, 4)
+    || meaningfulCaptureText(p.jd_text, 20) || meaningfulCaptureText(p.status_text, 2);
+}
+function isLocalSelfUrl(value) {
+  try {
+    const u = new URL(String(value || ''));
+    return ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)
+      && (u.pathname === '/' || u.pathname === '/mail-selftest.html'
+        || u.pathname.startsWith('/api/') || u.pathname.startsWith('/assets/')
+        || u.searchParams.has('panel'));
+  } catch { return false; }
+}
+
 function processView(event, { explicit = false, discovered = false } = {}) {
   const p = event.payload;
   const existing = one('SELECT * FROM applications WHERE owner_id = ? AND latest_event_id = ?', [event.owner_id, event.id]);
@@ -423,13 +460,20 @@ function processView(event, { explicit = false, discovered = false } = {}) {
   // 只要能追溯到具体岗位（稳定 ID 或岗位链接），就进「看过没投」；
   // 公司/岗位/城市/批次缺了只标待补充，不再因为字段不全把普通浏览丢进待确认。
   const hasStableIdentity = !!(p.site_application_id || p.site_job_id || p.job_url);
+  if (isLocalSelfUrl(p.job_url) || isLocalSelfUrl(p.status_url)) {
+    return { state: 'ignored', reason: 'SELF_PAGE' };
+  }
+  // 页面空状态、导航/占位文案、系统摘要不是岗位。没有稳定岗位链接且无有效内容时直接忽略；
+  // 有真实岗位链接但标题/摘要暂时缺失，仍保留为可追溯的浏览记录，避免丢失真实岗位入口。
+  const titlePlaceholderOnly = Boolean(p.job_title) && !meaningfulCaptureText(p.job_title, 2)
+    && !meaningfulCaptureText(p.jd_summary, 4) && !meaningfulCaptureText(p.jd_text, 20)
+    && !meaningfulCaptureText(p.status_text, 2);
+  if ((!hasValidJobInfo(p) && !hasStableIdentity) || titlePlaceholderOnly) {
+    return { state: 'ignored', reason: 'NO_VALID_JOB_INFO' };
+  }
   if (!hasStableIdentity) {
-    const review = reviewForEvent(event, {
-      kind: 'field_missing', reasonCode: 'VIEW_IDENTITY_MISSING',
-      summary: '这条浏览没有可追溯的岗位身份（既没有岗位链接，也没有站点岗位 ID），无法建立台账',
-      suggested: { status: 'pending' }, fields: p
-    });
-    return { state: 'pending', review };
+    // 有明确岗位内容但没有 URL/站点 ID：保留为浏览线索；没有内容则上面已经忽略。
+    // 这里继续走建档路径，不因为缺稳定 ID 强行丢进待确认。
   }
   const dwellMs = Number(p.visible_dwell_ms);
   const dwellBelowThreshold = Number.isFinite(dwellMs) && dwellMs < 3000;
@@ -509,12 +553,8 @@ function processFormStarted(event) {
     ...p, canonical_job_url: canonicalJobUrl(p.job_url)
   }).filter((c) => ['site_application_id', 'site_job_id', 'canonical_job_url'].includes(c.reason));
   if (candidates.length !== 1) {
-    const review = reviewForEvent(event, {
-      kind: 'field_missing', reasonCode: 'FORM_START_UNMATCHED',
-      summary: '检测到填写动作，但无法唯一归属到已有浏览线索',
-      suggested: { form_started_at: event.occurred_at, status: 'pending' }, fields: p
-    });
-    return { state: 'pending', review };
+    // 表单开始不是招聘进展，也不足以证明投递；无法归属时直接忽略，不进入待确认。
+    return { state: 'ignored', reason: 'FORM_START_UNMATCHED' };
   }
   let app = candidates[0].application;
   if (!app.form_started_at) {
@@ -528,6 +568,7 @@ function processFormStarted(event) {
 function processSubmitted(event) {
   const p = event.payload;
   if (event.evidence_level !== 'strong') {
+    if (!hasValidJobInfo(p)) return { state: 'ignored', reason: 'NO_VALID_JOB_INFO' };
     const review = reviewForEvent(event, {
       kind: 'suspect_submission', reasonCode: 'WEAK_SUBMISSION_EVIDENCE',
       summary: '疑似投递，但成功证据不足，未计入累计投递',
@@ -652,10 +693,21 @@ export function processPluginEvent(event) {
   return result;
 }
 
+const INVALID_MANUAL_NAME = /^(?:待补充|未知|不详|未填写|未识别|系统判断|面试|通知|提醒|加分项或注意事项|批次待补充|城市待补充|无|—|-)?$/i;
+function validManualName(value) {
+  const text = normalizeWhitespace(value, 200);
+  return text.length >= 2 && !INVALID_MANUAL_NAME.test(text)
+    && !/系统判断|批次待补充|城市待补充|还没有投递记录|招聘邮件更新候选|加分项或注意事项|基本信息/i.test(text);
+}
+
 export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) {
   const company = normalizeWhitespace(body.company_name, 200);
   const title = normalizeWhitespace(body.job_title, 200);
-  if (!company || !title) throw new AppError(400, 'VALIDATION_ERROR', '公司和岗位为必填');
+  if (!validManualName(company) || !validManualName(title)) {
+    throw new AppError(422, 'REVIEW_FIELDS_REQUIRED', '公司和岗位必须是有效名称，不能使用空值、占位词或阶段词', {
+      details: { missing: [!validManualName(company) ? 'company_name' : null, !validManualName(title) ? 'job_title' : null].filter(Boolean) }
+    });
+  }
   const hasApplied = !!body.has_applied;
   let status = normalizeStatus(body.status) || (hasApplied ? 'applied' : 'pending');
   if (!hasApplied && status !== 'pending' && status !== 'closed') {
@@ -682,6 +734,7 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
   if (body.status_url && !isSafeHttpUrl(body.status_url)) throw new AppError(400, 'VALIDATION_ERROR', '状态链接不是安全的 http(s) URL');
   const fields = {
     company_name: company, job_title: title,
+    manual_status_at: nowIso(),
     channel: body.channel || '手动',
     jd_summary: body.jd_summary,
     job_url: body.job_url,
@@ -778,8 +831,7 @@ export function processMailEvent(event) {
     let app = candidates[0].application;
     // Check protections before mutating fields or inferring the applied fact.
     if (TERMINAL.has(app.status) && status !== app.status) return review({kind:'terminal_conflict',reasonCode:'TERMINAL_LOCKED',summary:'记录已处于终态，自动事件不能覆盖'});
-    const rank={pending:0,applied:1,assessment:2,interview:3};
-    if (status==='pending'||(!terminal&&rank[status]<rank[app.status])) return review({kind:'status_conflict',reasonCode:'STATUS_REGRESSION',summary:'后到证据不能自动回退状态'});
+    if (status==='pending') return review({kind:'status_conflict',reasonCode:'APPLIED_FACT_REMOVAL',summary:'自动事件不能撤销已投事实'});
     if (!app.has_applied) {
       const explicit = parseIso(p.applied_at);
       const inferred = source === 'mail' && config.d12AllowMailInferredAppliedAt ? parseIso(p.source_received_at || event.occurred_at) : null;

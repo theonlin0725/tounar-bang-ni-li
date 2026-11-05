@@ -6,8 +6,8 @@ export const STATUS_LABELS = {
   applied: '已投递',
   assessment: '笔试/测评',
   interview: '面试中',
-  offer: 'Offer',
-  rejected: '已拒绝',
+  offer: '录用',
+  rejected: '拒绝',
   closed: '已结束'
 };
 export const STATUS_ORDER = ['pending', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'closed'];

@@ -35,7 +35,7 @@ const production=process.argv.includes('--production');
 const out=path.join(ROOT,'.tmp',selectedSite?`plugin-acceptance-${selectedSite}`:real?'plugin-acceptance-live':production?'plugin-acceptance-production':'plugin-acceptance');fs.mkdirSync(out,{recursive:true});
 const checks=[],rows=[],events=[],receipts=new Map(),errors=[];
 const report={generated_at:new Date().toISOString(),mode:real?`live-${selectedSite||'tencent'}`:production?'production-permission':'stable-fixture',permission_mode:production?'Chrome optional permission UI':'manifest pregrant; permission dialog NOT tested',commit:execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim(),metrics:{detail_denominator:real?3:8},extension_version:JSON.parse(fs.readFileSync(path.join(ROOT,'extension/manifest.json'))).version,checks,rows};
-report.source_fingerprint=crypto.createHash('sha256').update(['extension/content/tracker.js','extension/content/adapters.js','extension/background/service-worker.js','extension/lib/learned.js','server/src/plugin.js','server/src/domain/applications.js'].map(p=>fs.readFileSync(path.join(ROOT,p),'utf8')).join('\n')).digest('hex');
+report.source_fingerprint=crypto.createHash('sha256').update(['extension/content/tracker.js','extension/content/adapters.js','extension/background/service-worker.js','extension/lib/learned.js','server/src/modules/data-capture/plugin.js','server/src/domain/applications.js'].map(p=>fs.readFileSync(path.join(ROOT,p),'utf8')).join('\n')).digest('hex');
 report.working_tree_dirty=!!execFileSync('git',['status','--porcelain'],{cwd:ROOT,encoding:'utf8'}).trim();
 let server,fixture,context,sw,popup,web,jobPage,cookie,extensionId,launchOptions,failed=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));

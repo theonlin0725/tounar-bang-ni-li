@@ -36,7 +36,7 @@ if (!/^[0-9a-f]{64}$/i.test(masterKeyHex)) {
 }
 const internalTickToken = process.env.INTERNAL_TICK_TOKEN || loadOrCreateSecret('internal-tick.token');
 const allowedEmails = new Set(
-  (process.env.ALLOWED_EMAILS || 'demo@tounar.local,peer@tounar.local')
+  (process.env.ALLOWED_EMAILS ?? 'demo@tounar.local,peer@tounar.local')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 );
 
@@ -53,7 +53,13 @@ export const config = {
   // 不设置则完全不影响本机与普通域名。
   shareCode: process.env.SHARE_CODE || '',
   appEnv: process.env.APP_ENV || 'development',
+  appVersion: process.env.APP_VERSION || 'phase3-20261024e',
   allowedEmails,
+  adminEmails: new Set((process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
+  testMailRecipients: new Set((process.env.TEST_MAIL_RECIPIENTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
+  enableMailBusinessTest: boolEnv('ENABLE_MAIL_BUSINESS_TEST', false),
+  // 仅本机开发/自测：管理员 OTP 直接回显，不发送邮件。默认关闭，生产禁止开启。
+  enableSelftestLogin: boolEnv('ENABLE_SELFTEST_LOGIN', false),
   masterKey: Buffer.from(masterKeyHex, 'hex'),
   otpPepper: process.env.OTP_PEPPER || crypto.createHash('sha256').update(masterKeyHex + ':otp').digest('hex'),
   sessionDays: intEnv('SESSION_DAYS', 30),
@@ -93,6 +99,8 @@ export const config = {
   imapConnectTimeoutMs: intEnv('IMAP_CONNECT_TIMEOUT_MS', 20000),
   maxEventBatch: intEnv('MAX_EVENT_BATCH', 50),
   pairingTtlMinutes: intEnv('PAIRING_TTL_MINUTES', 10),
+  // 共享邀请码：默认 10 个新邮箱；邀请码由 init-beta 生成哈希，不在网页/插件内硬编码。
+  betaInviteMaxUses: intEnv('BETA_INVITE_MAX_USES', 10),
   deviceTokenDays: intEnv('DEVICE_TOKEN_DAYS', 180),
   reminderLinkDays: intEnv('REMINDER_LINK_DAYS', 14),
   confirmationTtlMinutes: intEnv('CONFIRMATION_TTL_MINUTES', 10),
@@ -101,7 +109,36 @@ export const config = {
   cloudEndpoint: process.env.CLOUD_ENDPOINT || '',
   cloudPublishableKey: process.env.CLOUD_PUBLISHABLE_KEY || '',
   cloudLlmEnabled: boolEnv('CLOUD_LLM_ENABLED', true),
-  cloudLlmTimeoutMs: intEnv('CLOUD_LLM_TIMEOUT_MS', 20000)
+  cloudLlmTimeoutMs: intEnv('CLOUD_LLM_TIMEOUT_MS', 20000),
+  // SQLite remains the transactional store. Production uploads encrypted,
+  // consistent snapshots to the app's managed database so redeploys can restore.
+  cloudPersistenceEnabled: boolEnv('CLOUD_PERSISTENCE_ENABLED', false),
+  cloudSnapshotStream: process.env.CLOUD_SNAPSHOT_STREAM || 'bangnili-beta-v1',
+  // 简历/岗位分析通常比邮件分类长；仍由同一个 WorkBuddy 云端客户端执行。
+  aiLlmTimeoutMs: intEnv('AI_LLM_TIMEOUT_MS', 60000),
+  aiMaxJobs: intEnv('AI_MAX_JOBS', 12),
+  // 可选：OpenAI 兼容模型网关（服务端持有 key；未配置时回退现有 WorkBuddy 云端客户端）
+  aiApiUrl: process.env.AI_API_URL || '',
+  aiApiKey: process.env.AI_API_KEY || '',
+  aiModel: process.env.AI_MODEL || '',
+  aiProvider: process.env.AI_PROVIDER || (process.env.AI_API_URL ? 'openai_compatible' : 'workbuddy_cloud'),
+  // 招聘进展自动工作流：LLM 提取 → Jev 判断 → 服务端校验 → 自动入账/更新/待确认。
+  jevApiUrl: process.env.JEV_API_URL || 'https://api.typesafe.ai/v1/systemone',
+  jevApiKey: process.env.JEV_API_KEY || '',
+  jevModel: process.env.JEV_MODEL || 'jev-latest',
+  jevTimeoutMs: intEnv('JEV_TIMEOUT_MS', 30000),
+  // 本机到 TypeSafe 被区域限制时的 Dify 云兜底（同一工作流内有真实 Jev HTTP 节点）
+  difyApiUrl: process.env.DIFY_API_URL || '',
+  difyApiKey: process.env.DIFY_API_KEY || '',
+  difyUserId: process.env.DIFY_USER_ID || 'tounar-confirm',
+  difyTimeoutMs: intEnv('DIFY_TIMEOUT_MS', 30000),
+  autoIntakeEnabled: boolEnv('AUTO_INTAKE_ENABLED', Boolean(process.env.AI_API_URL && process.env.AI_API_KEY && process.env.JEV_API_KEY)),
+  autoIntakeMinProgress: confidenceEnv('AUTO_INTAKE_MIN_PROGRESS', 0.72),
+  autoIntakeMinEvidence: confidenceEnv('AUTO_INTAKE_MIN_EVIDENCE', 0.65),
+  autoIntakeMinStatus: confidenceEnv('AUTO_INTAKE_MIN_STATUS', 0.6),
+  autoIntakeMinCandidate: confidenceEnv('AUTO_INTAKE_MIN_CANDIDATE', 0.6),
+  autoIntakeMinTerminal: confidenceEnv('AUTO_INTAKE_MIN_TERMINAL', 0.85),
+  autoIntakeRetryMinutes: intEnv('AUTO_INTAKE_RETRY_MINUTES', 5),
 };
 
 export const featureFlags = {
@@ -117,5 +154,6 @@ export const featureFlags = {
   D10: 'custom local pairing/whitelist; external platform verification blocked (G01/G03)',
   D11: 'frozen: 08:00 Asia/Shanghai trigger; same-day retry; no second-precision guarantee',
   D12: 'frozen: auto-capture default; manual entry fallback with lead autofill',
+  AUTO_INTAKE: config.autoIntakeEnabled ? `frozen 2026-11-01: LLM extraction + Jev judgment + server validation; thresholds ${config.autoIntakeMinProgress}/${config.autoIntakeMinEvidence}` : 'disabled by config or missing AI/JEV credentials',
   D13: 'pending user decision (note field)'
 };

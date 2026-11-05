@@ -23,7 +23,18 @@
     "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js",
     "test:plugin-acceptance": "node tests/e2e/plugin-acceptance.mjs",
     "test:plugin-backend": "node tests/e2e/backend-access.mjs",
-    "test:toast": "node tests/e2e/toast-feedback.mjs"
+    "test:toast": "node tests/e2e/toast-feedback.mjs",
+    "test:self-page": "node tests/e2e/self-page-guard.mjs",
+    "audit:self-captures": "node server/scripts/audit-self-captures.js",
+    "test:career-ai": "node tests/e2e/career-ai.mjs",
+    "test:intake": "node --test --test-concurrency=1 server/test/intake-workflow.test.js server/test/plugin-auto-intake.test.js",
+    "eval:intake": "node --env-file-if-exists .env tools/eval-intake.mjs",
+    "mail:selftest": "node server/scripts/mail-selftest.js start",
+    "mail:selftest:stop": "node server/scripts/mail-selftest.js stop",
+    "mail:selftest:status": "node server/scripts/mail-selftest.js status",
+    "test:mail-admin": "node tests/e2e/mail-admin.mjs",
+    "build:plugin": "node tools/build-beta-plugin.mjs",
+    "init:beta": "node server/scripts/init-beta.mjs"
   },
   "dependencies": {
     "@tencent-ai/workbuddy-cloud-sdk": "^0.1.4-dev.ca27990.202610161713",

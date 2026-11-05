@@ -1,0 +1,20 @@
+{
+  "web": {
+    "generated_at": "2026-11-03T01:52:56.898Z",
+    "total": 57,
+    "passed": 57,
+    "failed": 0
+  },
+  "plugin": {
+    "generated_at": "2026-11-03T01:56:40.687Z",
+    "total": 67,
+    "passed": 67,
+    "failed": 0
+  },
+  "backend": {
+    "total": 155,
+    "passed": 154,
+    "failed": 1,
+    "failure": "server/test/cloud-persistence.test.js:101 pending expected true, actual false"
+  }
+}

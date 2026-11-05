@@ -4,7 +4,8 @@ import { ensurePreferences, one, run, transaction } from './db.js';
 import {
   AppError, assert, hashSecret, isValidEmail, newId, normalizeEmail, nowIso, randomToken, sha256
 } from './util.js';
-import { sendOtpMail } from './mailer.js';
+import { sendOtpMail } from './modules/mail-push/mailer.js';
+import { activeInvite, assertInviteUsable, inviteCodeHash, normalizeInviteCode, redeemInvite } from './modules/beta/invite.js';
 
 const OTP_CONTEXT = 'tounar-otp-v1';
 
@@ -46,6 +47,21 @@ function rateLimit(key, windowSeconds, limit) {
   return true;
 }
 
+function isLoopbackRequest(req) {
+  const ip = String(req.socket?.remoteAddress || '');
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+// 仅本机开发/自测使用：管理员 OTP 不回显给非本机、非开发或非管理员账号。
+function isSelftestAdminOtp(email, req) {
+  return config.enableSelftestLogin
+    && config.appEnv === 'development'
+    && /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(config.appBaseUrl)
+    && isLoopbackRequest(req)
+    && config.adminEmails.has(email)
+    && config.allowedEmails.has(email);
+}
+
 export async function requestOtp(emailRaw, req) {
   const email = normalizeEmail(emailRaw);
   assert(isValidEmail(email), 400, 'VALIDATION_ERROR', '请输入有效邮箱地址');
@@ -73,6 +89,22 @@ export async function requestOtp(emailRaw, req) {
     (id, email_normalized, code_hash, expires_at, attempts, max_attempts, created_at, request_ip_hash)
     VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
   [challengeId, email, otpHash(email, code), expiresAt, config.otpMaxAttempts, nowIso(), ipHash]);
+
+  if (isSelftestAdminOtp(email, req)) {
+    const user = one('SELECT id FROM users WHERE email_normalized = ?', [email]);
+    run(`INSERT INTO audit_log (id, owner_id, actor, action, target_type, target_id, meta_json, created_at)
+         VALUES (?, ?, 'system:selftest', 'auth.selftest_otp_issued', 'otp_challenge', ?, ?, ?)`,
+    [newId('aud'), user?.id || null, challengeId,
+      JSON.stringify({ email, remote_address: req.socket?.remoteAddress || null, app_env: config.appEnv }), nowIso()]);
+    console.log(JSON.stringify({ level: 'info', event: 'selftest_admin_otp_issued', challenge_id: challengeId }));
+    return {
+      sent: true,
+      selftest: true,
+      selftest_code: code,
+      expires_in: config.otpTtlMinutes * 60,
+      resend_after: config.otpResendSeconds
+    };
+  }
 
   try {
     await sendOtpMail(email, code, config.otpTtlMinutes);
@@ -124,28 +156,84 @@ function issueSession(ownerId, req) {
   return { token, expiresAt, sessionId };
 }
 
-export async function verifyOtp(emailRaw, code, req) {
+export async function verifyOtp(emailRaw, code, req, inviteCodeRaw = '') {
   const email = normalizeEmail(emailRaw);
   assert(isValidEmail(email), 400, 'VALIDATION_ERROR', '请输入有效邮箱地址');
   const challenge = verifyChallenge(email, code);
-  if (!config.allowedEmails.has(email)) {
-    throw new AppError(403, 'NOT_ALLOWLISTED', '当前账号暂未获得内测资格');
-  }
   let user = one('SELECT * FROM users WHERE email_normalized = ?', [email]);
   if (user?.deletion_blocked) {
     throw new AppError(403, 'DELETION_IN_PROGRESS', '该账号的数据删除任务尚未完成，暂不能登录');
   }
-  if (!user) {
-    const ownerId = newId('usr');
+  const isAdmin = config.adminEmails.has(email);
+  const invite = activeInvite();
+  const anyInvite = one('SELECT id FROM beta_invites LIMIT 1');
+  const alreadyRedeemed = one('SELECT * FROM beta_invite_redemptions WHERE email_normalized = ?', [email]);
+  const existingEligible = !!user?.allowlisted || !!alreadyRedeemed;
+
+  if (isAdmin || existingEligible) {
+    // 管理员和已激活账号不消耗邀请名额，后续登录不再要求邀请码。
     transaction(() => {
-      run(`INSERT INTO users (id, email_normalized, email_display, allowlisted, created_at, last_login_at)
-           VALUES (?, ?, ?, 1, ?, ?)`, [ownerId, email, email, nowIso(), nowIso()]);
-      ensurePreferences(ownerId);
+      if (!user) {
+        const ownerId = newId('usr');
+        run(`INSERT INTO users (id, email_normalized, email_display, allowlisted, created_at, last_login_at)
+             VALUES (?, ?, ?, 1, ?, ?)`, [ownerId, email, email, nowIso(), nowIso()]);
+        ensurePreferences(ownerId);
+        user = one('SELECT * FROM users WHERE id = ?', [ownerId]);
+      } else {
+        run('UPDATE users SET last_login_at = ?, allowlisted = 1 WHERE id = ?', [nowIso(), user.id]);
+        user = one('SELECT * FROM users WHERE id = ?', [user.id]);
+      }
     });
-    user = one('SELECT * FROM users WHERE id = ?', [ownerId]);
+  } else if (invite) {
+    // 有启用中的共享邀请码时，静态 ALLOWED_EMAILS 不再成为绕过 10 人上限的新用户入口。
+    const normalizedCode = normalizeInviteCode(inviteCodeRaw);
+    if (!normalizedCode) {
+      throw new AppError(403, 'INVITE_REQUIRED', '首次激活需要内测邀请码');
+    }
+    if (inviteCodeHash(normalizedCode) !== invite.code_hash) {
+      throw new AppError(403, 'INVITE_INVALID', '邀请码不正确，请核对后重试');
+    }
+    try {
+      transaction(() => {
+        const currentInvite = activeInvite();
+        assertInviteUsable(currentInvite);
+        if (!user) {
+          const ownerId = newId('usr');
+          run(`INSERT INTO users (id, email_normalized, email_display, allowlisted, created_at, last_login_at)
+               VALUES (?, ?, ?, 1, ?, ?)`, [ownerId, email, email, nowIso(), nowIso()]);
+          ensurePreferences(ownerId);
+          user = one('SELECT * FROM users WHERE id = ?', [ownerId]);
+        } else {
+          run('UPDATE users SET last_login_at = ?, allowlisted = 1 WHERE id = ?', [nowIso(), user.id]);
+          user = one('SELECT * FROM users WHERE id = ?', [user.id]);
+        }
+        redeemInvite({ invite: currentInvite, email, userId: user.id });
+      });
+    } catch (err) {
+      // 预检查失败时不先创建用户；事务内失败会整体回滚。
+      throw err;
+    }
+  } else if (anyInvite) {
+    // 已初始化但尚未开放：不能回落到静态白名单，避免绕过内测开关。
+    throw new AppError(403, 'INVITE_CLOSED', '内测邀请尚未开放，请稍后再试');
+  } else if (config.allowedEmails.has(email)) {
+    // 兼容旧库/开发隔离测试：没有启用邀请码时，保留静态白名单行为。
+    transaction(() => {
+      if (!user) {
+        const ownerId = newId('usr');
+        run(`INSERT INTO users (id, email_normalized, email_display, allowlisted, created_at, last_login_at)
+             VALUES (?, ?, ?, 1, ?, ?)`, [ownerId, email, email, nowIso(), nowIso()]);
+        ensurePreferences(ownerId);
+        user = one('SELECT * FROM users WHERE id = ?', [ownerId]);
+      } else {
+        run('UPDATE users SET last_login_at = ?, allowlisted = 1 WHERE id = ?', [nowIso(), user.id]);
+        user = one('SELECT * FROM users WHERE id = ?', [user.id]);
+      }
+    });
   } else {
-    run('UPDATE users SET last_login_at = ?, allowlisted = 1 WHERE id = ?', [nowIso(), user.id]);
+    throw new AppError(403, 'NOT_ALLOWLISTED', '当前账号暂未获得内测资格');
   }
+  if (!user) throw new AppError(500, 'INTERNAL_ERROR', '账号激活失败');
   const session = issueSession(user.id, req);
   return {
     user: { owner_id: user.id, email: user.email_display, allowlisted: true },
@@ -210,6 +298,7 @@ export function authMe(auth) {
   return {
     user: {
       email: auth.user.email_display,
+      is_admin: config.adminEmails.has(auth.user.email_normalized),
       allowlisted: !!auth.user.allowlisted,
       created_at: auth.user.created_at
     },

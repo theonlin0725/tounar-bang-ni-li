@@ -1,0 +1,578 @@
+app:
+  description: 帮你理：招聘信息确认入账演示。LLM 只提取文本，真实 Jev 做字段/归属/状态核验；最终写入由帮你理服务端完成。
+  icon: 🧭
+  icon_background: '#E8F3EE'
+  icon_type: emoji
+  mode: workflow
+  name: 帮你理-确认入账-LLM+Jev
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+site:
+  chat_color_theme: null
+  chat_color_theme_inverted: false
+  copyright: null
+  custom_disclaimer: ''
+  default_language: zh-Hans
+  description: null
+  icon: 🧭
+  icon_background: '#E8F3EE'
+  icon_type: emoji
+  input_placeholder: null
+  privacy_policy: null
+  show_workflow_steps: true
+  title: 帮你理确认入账演示
+  use_icon_as_answer_icon: false
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions: []
+      allowed_file_types: []
+      allowed_file_upload_methods: []
+      enabled: false
+      fileUploadConfig:
+        file_size_limit: 15
+        batch_count_limit: 5
+        file_upload_limit: 50
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods: []
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: e1
+      source: start
+      sourceHandle: source
+      target: llm_extract
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: e2
+      source: llm_extract
+      sourceHandle: source
+      target: format
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: http-request
+      id: e3
+      source: format
+      sourceHandle: source
+      target: jev
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: http-request
+        targetType: code
+      id: e4
+      source: jev
+      sourceHandle: source
+      target: parse
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: e5
+      source: parse
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 输入原始信息
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: 原始主题
+          options: []
+          placeholder: 邮件主题/页面标题
+          required: true
+          type: text-input
+          variable: subject
+        - default: ''
+          hint: ''
+          label: 原始正文/JD
+          options: []
+          placeholder: 可粘贴邮件正文或 JD；没有正文可留空
+          required: false
+          type: paragraph
+          variable: body
+        - default: ''
+          hint: ''
+          label: 公司线索
+          options: []
+          placeholder: 可留空，不当作已验证事实
+          required: false
+          type: text-input
+          variable: company_hint
+        - default: ''
+          hint: ''
+          label: 岗位线索
+          options: []
+          placeholder: 可留空，不当作已验证事实
+          required: false
+          type: text-input
+          variable: job_title_hint
+        - default: '[]'
+          hint: ''
+          label: 候选台账 JSON
+          options: []
+          placeholder: '[{"application_id":"app_x","company_name":"..","job_title":"..","status":"pending"}]'
+          required: false
+          type: paragraph
+          variable: candidates_json
+      height: 220
+      id: start
+      position:
+        x: 0
+        y: 120
+      positionAbsolute:
+        x: 0
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        selected: false
+        title: LLM 提取字段
+        type: llm
+        model:
+          completion_params:
+            temperature: 0.1
+          mode: chat
+          name: z-ai/glm-5.3-flash
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - id: sys-recruit
+          role: system
+          text: "你是招聘信息字段提取器，只根据用户给出的原始邮件/页面内容提取，不得编造。\n只输出一个 JSON 对象，不要 markdown，不要解释。字段：\n\
+            {\n  \"company_name\": \"公司名，没有则 null；不能填面试、通知、提醒、待补充、未知、系统判断\",\n  \"\
+            job_title\": \"岗位名，没有则 null；不能填面试、通知、加分项或注意事项、岗位详情等页面词\",\n  \"status\"\
+            : \"pending|applied|assessment|interview|offer|rejected|closed|no_status\
+            \ 之一\",\n  \"recruitment_batch\": \"招聘批次或 null\",\n  \"applied_at\": \"\
+            原文明确的投递时间 ISO8601，或 null；不要用收信时间冒充精确投递时间\",\n  \"evidence\": [{\"field\"\
+            : \"字段名\", \"quote\": \"原文中逐字出现的证据\"}],\n  \"uncertainties\": [\"不确定点\"\
+            ]\n}\n规则：\n1. 公司名和岗位名必须能在原文或原始字段中找到直接依据。\n2. 面试/笔试/测评通知是招聘进展，不等于岗位名。\n\
+            3. 字段疑似错位时保留原文证据，不要为了凑字段强行交换。\n4. 无法确定的字段填 null，不要猜。"
+        - id: user-recruit
+          role: user
+          text: '原始主题：
+
+            {{#start.subject#}}
+
+
+            原始正文/JD：
+
+            {{#start.body#}}
+
+
+            原始公司提示（只能是线索，不是已验证事实）：
+
+            {{#start.company_hint#}}
+
+
+            原始岗位提示（只能是线索，不是已验证事实）：
+
+            {{#start.job_title_hint#}}'
+        vision:
+          enabled: false
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          query_prompt_template: ''
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 10
+      height: 100
+      id: llm_extract
+      position:
+        x: 280
+        y: 120
+      positionAbsolute:
+        x: 280
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        code: "import json\n\ndef main(extracted: str, subject: str, body: str, candidates_json:\
+          \ str, company_hint: str = \"\", job_title_hint: str = \"\") -> dict:\n\
+          \    def clean_json(s):\n        s = (s or \"\").strip()\n        if s.startswith(\"\
+          ```\"):\n            s = s.strip(\"`\")\n            if s.startswith(\"\
+          json\"):\n                s = s[4:]\n        start, end = s.find(\"{\"),\
+          \ s.rfind(\"}\")\n        if start >= 0 and end > start:\n            s\
+          \ = s[start:end+1]\n        try:\n            return json.loads(s)\n   \
+          \     except Exception:\n            return {}\n    ex = clean_json(extracted)\n\
+          \    try:\n        candidates = json.loads(candidates_json or \"[]\")\n\
+          \    except Exception:\n        candidates = []\n    if not isinstance(candidates,\
+          \ list):\n        candidates = []\n    candidates = candidates[:8]\n   \
+          \ criteria = {}\n    for i, c in enumerate(candidates):\n        label =\
+          \ \" · \".join([x for x in [c.get(\"company_name\"), c.get(\"job_title\"\
+          )] if x]) or str(c.get(\"application_id\") or \"\")\n        criteria[f\"\
+          c{i}\"] = f\"候选 {i+1}：{label}；当前状态 {c.get('status') or '未知'}\"\n    criteria[\"\
+          no_match\"] = \"不属于任何候选\"\n    criteria[\"uncertain\"] = \"无法确定\"\n    questions\
+          \ = {\n        \"actual_progress\": {\"type\": \"noul\", \"instructions\"\
+          : \"这段内容是否明确描述了当前用户本人的招聘进展？收到笔试/测评/面试邀请、录用或拒绝通知都属于已发生的进展，即使考试或面试尚未进行；流程说明、广告、转发、历史引用或纯未来条件句不算。\"\
+          , \"criteria\": {\"true\": \"已经发生的本人招聘进展\", \"false\": \"流程介绍/广告/转发/历史/未来条件或无法判断\"\
+          }},\n        \"company_valid\": {\"type\": \"noul\", \"instructions\": \"\
+          提取出的公司名是否被原文直接支持，并且确实是公司/组织名？如果它是面试、通知、未知、待补充、提醒等阶段/页面词，或原文没有公司证据，回答否。\"\
+          , \"criteria\": {\"true\": \"原文明确支持的公司名\", \"false\": \"缺失、占位或字段错位\"}},\n\
+          \        \"job_title_valid\": {\"type\": \"noul\", \"instructions\": \"\
+          提取出的岗位名是否被原文直接支持，并且确实是岗位/职位名？如果它是面试、通知、未知、待补充、加分项或注意事项等阶段/页面/标题词，或原文没有岗位证据，回答否。\"\
+          , \"criteria\": {\"true\": \"原文明确支持的岗位名\", \"false\": \"缺失、占位或字段错位\"}},\n\
+          \        \"fields_consistent\": {\"type\": \"noul\", \"instructions\": \"\
+          公司字段和岗位字段是否没有互换、串行或明显错位？只有字段映射合理时回答是。\", \"criteria\": {\"true\": \"字段映射合理\"\
+          , \"false\": \"疑似错位/无法核对\"}},\n        \"status\": {\"type\": \"choice\"\
+          , \"instructions\": \"这段内容最支持哪个当前招聘阶段？收到测评邀请选 assessment，收到面试邀请选 interview；只有明确证据才选择，流程说明不能推断为已发生。\"\
+          , \"criteria\": {\"applied\": \"已投递/申请已收到\", \"assessment\": \"笔试或测评\",\
+          \ \"interview\": \"面试\", \"offer\": \"录用/Offer\", \"rejected\": \"拒绝/未通过\"\
+          , \"closed\": \"岗位关闭/流程结束\", \"no_status\": \"没有可确定的阶段\"}},\n        \"\
+          evidence_support\": {\"type\": \"noul\", \"instructions\": \"原文证据是否直接支持这是当前用户的实际进展以及所选阶段？仅有泛泛措辞或流程介绍时回答否。\"\
+          , \"criteria\": {\"true\": \"证据直接支持\", \"false\": \"证据不足或只支持流程介绍\"}},\n\
+          \        \"newness\": {\"type\": \"choice\", \"instructions\": \"相对于候选记录的当前状态，这条信息是新进展、重复/旧信息，还是无法判断？\"\
+          , \"criteria\": {\"new\": \"新的、时间更晚的进展\", \"duplicate_or_old\": \"重复或旧信息\"\
+          , \"uncertain\": \"无法判断新旧\"}},\n        \"candidate\": {\"type\": \"choice\"\
+          , \"instructions\": \"这条进展属于哪个候选岗位？不能确定时必须选择 uncertain；没有任何候选匹配时选择 no_match。不要为了凑匹配而选公司名相同的其他岗位。\"\
+          , \"criteria\": criteria},\n    }\n    body = {\n        \"model\": \"jev-1.14.0\"\
+          ,\n        \"state\": {\"source\": \"mail_or_page\", \"subject\": subject\
+          \ or \"\", \"body_text\": body or \"\", \"extracted\": ex,\n           \
+          \       \"company_hint\": company_hint or \"\", \"job_title_hint\": job_title_hint\
+          \ or \"\",\n                  \"candidates\": candidates},\n        \"questions\"\
+          : questions,\n    }\n    return {\"body\": json.dumps(body, ensure_ascii=False)}\n"
+        code_language: python3
+        outputs:
+          body:
+            children: null
+            type: string
+        variables:
+        - value_selector:
+          - llm_extract
+          - text
+          value_type: string
+          variable: extracted
+        - value_selector:
+          - start
+          - subject
+          value_type: string
+          variable: subject
+        - value_selector:
+          - start
+          - body
+          value_type: string
+          variable: body
+        - value_selector:
+          - start
+          - candidates_json
+          value_type: string
+          variable: candidates_json
+        - value_selector:
+          - start
+          - company_hint
+          value_type: string
+          variable: company_hint
+        - value_selector:
+          - start
+          - job_title_hint
+          value_type: string
+          variable: job_title_hint
+        selected: false
+        title: 整理 Jev 判断输入
+        type: code
+      height: 90
+      id: format
+      position:
+        x: 560
+        y: 120
+      positionAbsolute:
+        x: 560
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        authorization:
+          config:
+            api_key: __JEV_API_KEY__
+            type: bearer
+          type: api-key
+        body:
+          data:
+          - id: key-value-body
+            key: ''
+            type: text
+            value: '{{#format.body#}}'
+          type: raw-text
+        headers: Content-Type:application/json
+        method: post
+        params: ''
+        retry_config:
+          max_retries: 1
+          retry_enabled: true
+          retry_interval: 100
+        ssl_verify: true
+        timeout:
+          max_connect_timeout: 0
+          max_read_timeout: 0
+          max_write_timeout: 0
+        url: https://api.typesafe.ai/v1/systemone
+        variables: []
+        selected: false
+        title: 调用真实 Jev
+        type: http-request
+      height: 90
+      id: jev
+      position:
+        x: 840
+        y: 120
+      positionAbsolute:
+        x: 840
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        code: "import json\n\ndef main(body: str, status_code: int, extracted: str\
+          \ = \"\") -> dict:\n    def clean_json(s):\n        s = (s or \"\").strip()\n\
+          \        if s.startswith(\"```\"):\n            s = s.strip(\"`\")\n   \
+          \         if s.startswith(\"json\"):\n                s = s[4:]\n      \
+          \  a, b = s.find(\"{\"), s.rfind(\"}\")\n        if a >= 0 and b > a:\n\
+          \            s = s[a:b+1]\n        try:\n            return json.loads(s)\n\
+          \        except Exception:\n            return {}\n    ex = clean_json(extracted)\n\
+          \    try:\n        data = json.loads(body or \"{}\")\n        ans = data.get(\"\
+          answers\") or {}\n        def noul(k):\n            v = ans.get(k, {}).get(\"\
+          noul\")\n            try:\n                return float(v)\n           \
+          \ except Exception:\n                return None\n        def choice(k):\n\
+          \            v = ans.get(k) or {}\n            return v.get(\"choice\"),\
+          \ float(v.get(\"confidence\") or 0)\n        company = ex.get(\"company_name\"\
+          ) or \"\"\n        title = ex.get(\"job_title\") or \"\"\n        cv, jv,\
+          \ fc = noul(\"company_valid\"), noul(\"job_title_valid\"), noul(\"fields_consistent\"\
+          )\n        status, status_conf = choice(\"status\")\n        cand, cand_conf\
+          \ = choice(\"candidate\")\n        actual = noul(\"actual_progress\")\n\
+          \        evidence = noul(\"evidence_support\")\n        missing = []\n \
+          \       if cv is None or cv < 0.6 or not company:\n            missing.append(\"\
+          company_name\")\n        if jv is None or jv < 0.6 or not title:\n     \
+          \       missing.append(\"job_title\")\n        if not status or status ==\
+          \ \"no_status\" or status_conf < 0.6:\n            missing.append(\"status\"\
+          )\n        ambiguous = cand in (None, \"uncertain\") or (cand == \"no_match\"\
+          \ and bool(data.get(\"state\", {}).get(\"candidates\")))\n        if ambiguous:\n\
+          \            missing.append(\"application_id\")\n        decision = \"可入账\"\
+          \ if not missing else (\"归属待确认\" if \"application_id\" in missing else \"\
+          需要补录\")\n        return {\"company_name\": company, \"job_title\": title,\
+          \ \"status\": status or \"\",\n                \"missing\": \",\".join(missing),\
+          \ \"matched_candidate\": cand or \"\",\n                \"candidate_confidence\"\
+          : cand_conf,\n                \"actual_progress\": actual if actual is not\
+          \ None else 0,\n                \"evidence_support\": evidence if evidence\
+          \ is not None else 0,\n                \"fields_consistent\": fc if fc is\
+          \ not None else 0,\n                \"decision\": decision,\n          \
+          \      \"error\": \"\" if status_code == 200 else f\"HTTP {status_code}:\
+          \ {str(body)[:200]}\"}\n    except Exception as e:\n        return {\"company_name\"\
+          : \"\", \"job_title\": \"\", \"status\": \"\", \"missing\": \"company_name,job_title,status\"\
+          ,\n                \"matched_candidate\": \"\", \"candidate_confidence\"\
+          : 0, \"actual_progress\": 0,\n                \"evidence_support\": 0, \"\
+          fields_consistent\": 0, \"decision\": \"调用失败\", \"error\": str(e)[:300]}\n"
+        code_language: python3
+        outputs:
+          company_name:
+            children: null
+            type: string
+          job_title:
+            children: null
+            type: string
+          status:
+            children: null
+            type: string
+          missing:
+            children: null
+            type: string
+          matched_candidate:
+            children: null
+            type: string
+          candidate_confidence:
+            children: null
+            type: number
+          actual_progress:
+            children: null
+            type: number
+          evidence_support:
+            children: null
+            type: number
+          fields_consistent:
+            children: null
+            type: number
+          decision:
+            children: null
+            type: string
+          error:
+            children: null
+            type: string
+        variables:
+        - value_selector:
+          - jev
+          - body
+          value_type: string
+          variable: body
+        - value_selector:
+          - jev
+          - status_code
+          value_type: number
+          variable: status_code
+        - value_selector:
+          - llm_extract
+          - text
+          value_type: string
+          variable: extracted
+        selected: false
+        title: 校验并汇总判断
+        type: code
+      height: 120
+      id: parse
+      position:
+        x: 1120
+        y: 120
+      positionAbsolute:
+        x: 1120
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    - data:
+        outputs:
+        - value_selector:
+          - parse
+          - company_name
+          value_type: string
+          variable: company_name
+        - value_selector:
+          - parse
+          - job_title
+          value_type: string
+          variable: job_title
+        - value_selector:
+          - parse
+          - status
+          value_type: string
+          variable: status
+        - value_selector:
+          - parse
+          - missing
+          value_type: string
+          variable: missing
+        - value_selector:
+          - parse
+          - matched_candidate
+          value_type: string
+          variable: matched_candidate
+        - value_selector:
+          - parse
+          - candidate_confidence
+          value_type: number
+          variable: candidate_confidence
+        - value_selector:
+          - parse
+          - actual_progress
+          value_type: number
+          variable: actual_progress
+        - value_selector:
+          - parse
+          - evidence_support
+          value_type: number
+          variable: evidence_support
+        - value_selector:
+          - parse
+          - fields_consistent
+          value_type: number
+          variable: fields_consistent
+        - value_selector:
+          - parse
+          - decision
+          value_type: string
+          variable: decision
+        - value_selector:
+          - parse
+          - error
+          value_type: string
+          variable: error
+        selected: false
+        title: 输出确认入账结果
+        type: end
+      height: 220
+      id: end
+      position:
+        x: 1400
+        y: 120
+      positionAbsolute:
+        x: 1400
+        y: 120
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+      zIndex: 0
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.8
+  rag_pipeline_variables: []
