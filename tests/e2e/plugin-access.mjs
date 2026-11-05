@@ -1,0 +1,77 @@
+// Isolated real-browser checks for pairing and the webpage permission bridge.
+// The fixture pregrants only the local backend; production manifest is unchanged.
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+import {startTestServer} from '../../server/test/helpers.js';
+const root=path.resolve(import.meta.dirname,'../..');
+const dir=path.join(root,'.tmp','plugin-access-'+Date.now()); fs.mkdirSync(dir,{recursive:true});
+const checks=[]; let server,context;
+function check(name,value){assert.ok(value,name);checks.push(name);console.log('PASS '+name);}
+try {
+  server=await startTestServer({name:'plugin-access-'+Date.now()});
+  const ext=path.join(dir,'extension');fs.cpSync(path.join(root,'extension'),ext,{recursive:true});
+  const manifest=JSON.parse(fs.readFileSync(path.join(ext,'manifest.json')));
+  manifest.host_permissions=['http://127.0.0.1/*'];fs.writeFileSync(path.join(ext,'manifest.json'),JSON.stringify(manifest));
+  const executablePath=process.env.E2E_CHROME;
+  context=await chromium.launchPersistentContext(path.join(dir,'profile'),{headless:true,...(executablePath?{executablePath}:{}),args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
+  const sw=context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+  const errors=[];context.on('page',p=>p.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message);}));
+  await sw.evaluate(async base=>{await TounarCommon.setSettings({serverUrl:base});await syncAppBridge();},server.base);
+  const cookie=(await server.login('demo@tounar.local')).cookie;
+  const [name,...value]=cookie.split(';')[0].split('=');await context.addCookies([{name,value:value.join('='),url:server.base}]);
+  // Auto-onboarding has its own fresh-profile suite; focus this suite on explicit management.
+  await context.addInitScript(()=>{if (/^https?:$/.test(location.protocol)) sessionStorage.setItem('tounar.plugin.onboarding.demo@tounar.local','connection');});
+  const page=await context.newPage();await page.goto(server.base);
+  const request=(action,payload={})=>page.evaluate(async({action,payload})=>{const m=await import('/assets/js/views/plugin-access.js');return m.extensionRequest(action,payload);},{action,payload});
+  const status=await request('status');check('backend permission excluded from site count',status.groups.every(g=>g.granted.length===0));
+  await page.locator('[data-test="open-settings-data"]').click();
+  const card=page.locator('[data-test="site-access-card"]');
+  await card.getByText('已授权 0 个网站',{exact:true}).waitFor();
+  check('ByteDance preselected without granting permission',await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
+  check('other companies hidden initially',await card.getByRole('checkbox',{name:'腾讯招聘',exact:true}).count()===0);
+  await card.getByRole('button',{name:'展开更多招聘网站'}).click();
+  await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('join.qq.com');
+  check('search finds company by domain',await card.getByRole('checkbox',{name:'腾讯招聘',exact:true}).count()===1);
+  await page.screenshot({path:path.join(dir,'site-search.png'),fullPage:true});
+  await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('');
+  await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).uncheck();
+  await page.waitForTimeout(300);
+  await page.reload();await page.locator('[data-test="open-settings-data"]').click();
+  await page.locator('[data-test="site-access-summary"]').getByText('已授权 0 个网站').waitFor();
+  check('explicit deselection survives reload',!await page.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
+  const pending=await sw.evaluate(async base=>startPairing({serverUrl:base,deviceName:'Browser test'}),server.base);
+  await page.goto(server.base+'/?panel=plugin-connect');
+  await page.locator('[data-test="plugin-connect-confirm"]').waitFor();
+  check('no manual pairing field',await page.locator('[data-test="pair-code"]').count()===0);
+  await page.locator('[data-test="plugin-connect-confirm"]').click();
+  await page.getByText('连接成功！接下来选择允许采集的招聘网站。').waitFor();
+  check('web confirmation exchanges actual device token',await sw.evaluate(async()=>!!(await TounarCommon.getSettings()).deviceToken));
+  check('request secret not exposed to webpage',!Object.hasOwn(await request('status'),'request_secret'));
+  const originGuard=await sw.evaluate(async()=>{try{await webAccess({action:'status'},{url:'https://evil.example/',frameId:0,tab:{id:1}});return false;}catch{return true;}});
+  check('foreign webpage rejected',originGuard);
+  const invalid=await request('permissions',{operation:'grant',origins:['https://evil.example/*']}).then(()=>false,()=>true);check('arbitrary grant rejected',invalid);
+  const protect=await request('permissions',{operation:'revoke',origins:['http://127.0.0.1/*']}).then(()=>false,()=>true);check('backend revocation rejected',protect);
+  await sw.evaluate(async base=>{await clearPairing();await startPairing({serverUrl:base,deviceName:'Cancel test'});},server.base);
+  await page.goto(server.base+'/?panel=plugin-connect');await page.locator('[data-test="plugin-connect-confirm"]').waitFor();
+  await page.getByRole('button',{name:'取消',exact:true}).click();await page.waitForTimeout(300);
+  check('cancel clears pending connection',await sw.evaluate(async()=>!(await TounarCommon.getSettings()).pendingPairing));
+  await sw.evaluate(async base=>{await startPairing({serverUrl:base,deviceName:'Expiry test'});const s=await TounarCommon.getSettings();await TounarCommon.setSettings({pendingPairing:{...s.pendingPairing,expires_at:new Date(0).toISOString()}});},server.base);
+  await page.goto(server.base+'/?panel=plugin-connect');await page.getByText('连接请求已取消或过期，请在插件中重新发起').waitFor();check('expired connection cannot be approved',await page.locator('[data-test="plugin-connect-confirm"]').count()===0);
+  await page.goto(server.base+'/?panel=plugin-sites');
+  await page.getByRole('button',{name:'添加网站',exact:true}).click();
+  await page.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).check();
+  const pageCount=context.pages().length;
+  await page.getByRole('button',{name:'授权选中网站',exact:true}).click();
+  const prompt=page.frameLocator('[data-test=permission-frame]');
+  await prompt.getByRole('button',{name:'确认授权',exact:true}).waitFor();
+  check('permission request opens inline confirmation without a new tab',context.pages().length===pageCount);
+  await page.screenshot({path:path.join(dir,'permission-confirm.png')});
+  await prompt.getByRole('button',{name:'取消',exact:true}).click();
+  await page.locator('[data-test=permission-confirm-modal]').waitFor({state:'detached'});
+  check('cancelled permission request does not grant access',(await request('status')).groups.every(g=>!g.granted.length));
+  check('no browser script errors',errors.length===0);
+  fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify({checks,errors,note:'Native Chrome permission allow/deny requires manual verification; fixture pregrants backend only.'},null,2));
+  console.log('Artifacts: '+dir);
+} finally {await context?.close();await server?.stop();}

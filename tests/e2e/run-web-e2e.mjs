@@ -151,6 +151,8 @@ try {
   browserSource = resolved.source;
   browser = await chromium.launch({ executablePath: resolved.path, headless: true });
   ctx1 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: server.base });
+  // Plugin onboarding is covered with/without the extension in plugin-web-first.mjs.
+  await ctx1.addInitScript(email=>sessionStorage.setItem('tounar.plugin.onboarding.'+email,'connection'), EMAIL);
   const page = await ctx1.newPage();
   page.setDefaultTimeout(20000);
   page.on('pageerror', (err) => browserLog.push(`pageerror: ${err.message}`));
@@ -447,6 +449,7 @@ try {
     `subject=${reminderMail?.subject || ''} token=${reminderToken ? reminderToken.slice(0, 10) + '…' : 'missing'}`);
 
   ctx2 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: server.base });
+  await ctx2.addInitScript(email=>sessionStorage.setItem('tounar.plugin.onboarding.'+email,'connection'), EMAIL);
   const page2 = await ctx2.newPage();
   page2.setDefaultTimeout(20000);
   page2.on('pageerror', (err) => browserLog.push(`page2 pageerror: ${err.message}`));
@@ -508,10 +511,13 @@ try {
     method: 'POST', body: { device_name: 'Web E2E 设备二' }
   });
   const pair = pairRes.json?.data;
-  await page.fill('[data-test=pair-code]', pair.code);
-  await page.click('[data-test=pair-approve]');
-  await waitToast(page, '插件已绑定');
-  check('W-25 网页 UI 输入配对码绑定设备（真实配对协议）', pairRes.status === 201, `code=${pair.code}`);
+  // This web-only suite has no extension; real confirmation is in plugin-access.mjs.
+  const pairingApproved = await page.evaluate(async pair => {
+    const {api} = await import('/assets/js/api.js');
+    return api.post('/api/v1/plugin-pairings/approve', {pairing_id:pair.pairing_id, code:pair.code});
+  }, pair);
+  check('W-25 网页不再要求手动配对码；绑定协议保持兼容',
+    pairRes.status === 201 && pairingApproved.data.status === 'approved' && await page.locator('[data-test=pair-code]').count() === 0);
 
   const exchangeRes = await server.request('/api/v1/plugin-pairings/exchange', {
     method: 'POST', body: { request_id: pair.request_id, request_secret: pair.request_secret }

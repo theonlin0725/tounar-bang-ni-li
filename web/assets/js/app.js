@@ -1,3 +1,4 @@
+import { confirmPluginConnection, openSiteManager, promptPluginConnection } from './views/plugin-access.js';
 /* 应用壳：会话代际守卫、路由（/ 与 /r/<token>）、顶栏、视图挂载。
    要求：退出/换号立即作废旧请求（gen 校验），不把 A 用户的数据渲染给 B。 */
 
@@ -66,13 +67,19 @@ export async function enterApp(panel = null) {
   const currentRoute = route();
   if ((panel || currentRoute.panel) === 'mail-admin') {
     await renderMailAdmin(main, { isCurrent: () => !isStale(gen) });
+    if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
   }
   if ((panel || currentRoute.panel) === 'career') {
     await renderCareer(main, { gen, apps: currentRoute.apps });
+    if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
   }
   await renderLedger(main, { gen, panel: panel || currentRoute.panel, applicationId: currentRoute.applicationId });
+  if (isStale(gen)) return;
+  if ((panel || currentRoute.panel) === 'plugin-connect') confirmPluginConnection();
+  else if ((panel || currentRoute.panel) === 'plugin-sites') openSiteManager();
+  else promptPluginConnection({automatic:true});
 }
 
 function buildHeader() {

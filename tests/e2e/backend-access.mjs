@@ -1,4 +1,4 @@
-// Targeted network regression: untouched production manifest, no host pregrant,
+// Targeted network regression: production manifest with app-only handshake permissions,
 // no mocked browser APIs. Isolated test credentials exercise real CORS requests.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,10 +29,10 @@ try {
     };
   },{base:server.base,token,unavailable:`http://127.0.0.1:${await freePort()}`});
   function check(name,fn){try{fn();checks.push({name,ok:true});console.log('✔ '+name);}catch(e){checks.push({name,ok:false,error:e.message});throw e;}}
-  check('原版扩展未预授权任何后台主机',()=>assert.deepEqual(result.origins,[]));
+  check('原版扩展仅预置帮你理网页检测范围',()=>assert.ok(result.origins.every(p=>['http://127.0.0.1/*','http://localhost/*','https://bangnili.app.workbuddy.host/*'].includes(p))));
   check('健康检查与带设备凭证的跨域请求均可到达后端',()=>{assert.equal(result.health.ok,true);assert.equal(result.heartbeat.ok,true,JSON.stringify(result.heartbeat));assert.equal(result.device.ok,true);});
   check('无效设备返回真实 401，不再误报网络无法连接',()=>assert.equal(result.invalid.status,401,JSON.stringify(result.invalid)));
   check('未授权且请求失败时给出授权入口，不臆断没有服务监听',()=>{assert.equal(result.unavailable.code,'BACKEND_PERMISSION_REQUIRED');assert.ok(!result.unavailable.message.includes('没有服务在监听'));});
-  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({generated_at:new Date().toISOString(),extension_version:JSON.parse(fs.readFileSync(path.join(ext,'manifest.json'))).version,permission_mode:'untouched production manifest; no grants',checks,result,not_covered:'Native permission allow/deny UI is not exercised by this targeted CORS test.'},null,2));
+  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({generated_at:new Date().toISOString(),extension_version:JSON.parse(fs.readFileSync(path.join(ext,'manifest.json'))).version,permission_mode:'production manifest; app-only handshake origins, no recruiting grants',checks,result,not_covered:'Native permission allow/deny UI is not exercised by this targeted CORS test.'},null,2));
 } catch(error) {console.error(error);process.exitCode=1;fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({checks,error:error.message},null,2));}
 finally {await context?.close();await server?.stop();}

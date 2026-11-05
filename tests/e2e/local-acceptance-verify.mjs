@@ -186,17 +186,15 @@ async function main() {
   }, { label: 'popup 显示后台可达' });
   check('7. popup 显示「后台可达」并带地址', healthText.includes('后台可达') && healthText.includes(base), healthText);
 
-  // 5. 配对：插件出示配对码 → 网页会话批准 → 插件确认绑定
+  // 5. 配对协议初始化（真实网页确认 UI 在 plugin-access.mjs 验证）
   await popup.click('#start-pairing');
-  // 配对码是 8 位，字符集 A-Z/2-9 且排除易混淆的 I/O/0/1；占位符是 8 个短横线。
-  const code = await waitFor(async () => {
-    const text = ((await popup.textContent('#pairing-code')) || '').trim();
-    return /^[A-HJ-NP-Z2-9]{8}$/.test(text) ? text : null;
-  }, { label: '配对码', timeout: 15000 });
-  await popup.screenshot({ path: path.join(SHOT_DIR, '03-pairing-code.png') });
+  const code = await waitFor(async () => popup.evaluate(async () =>
+    (await send({type:'get_status'})).settings?.pendingPairing?.code), {label:'内部配对请求'});
+  await popup.screenshot({ path: path.join(SHOT_DIR, '03-pairing-request.png') });
   const approved = await request('/api/v1/plugin-pairings/approve', { method: 'POST', cookie, body: { code } });
   check('8. 网页会话批准配对码', approved.status === 200, `code=${code} status=${approved.status}`);
-  await popup.click('#poll-pairing');
+  await popup.evaluate(() => send({type:'poll_pairing_now'}));
+  await popup.evaluate(() => refresh());
   const paired = await waitFor(async () => popup.evaluate(() => {
     const el = document.getElementById('paired');
     return el && !el.classList.contains('hidden');

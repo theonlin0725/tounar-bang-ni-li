@@ -59,8 +59,12 @@ try{
  const cdp=await context.newCDPSession(context.pages()[0]);report.browser=(await cdp.send('Browser.getVersion')).product;await cdp.detach();
  web=await context.newPage();await web.goto(server.base);await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();await web.locator('[data-test=tab-viewed]').waitFor();cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
  popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);await popup.locator('#server-url').fill(proxyBase);await popup.click('#save-server');await popup.click('#start-pairing');
- const code=await wait(async()=>{const t=await popup.locator('#pairing-code').textContent();return /^[A-HJ-NP-Z2-9]{8}$/.test(t)?t:null;},'pair code');
- await web.goto(server.base+'/?panel=settings');await web.locator('[data-test=settings-tab-data]').click();await web.locator('[data-test=pair-code]').fill(code);await web.locator('[data-test=pair-approve]').click();await popup.click('#poll-pairing');await popup.locator('#paired').waitFor({state:'visible'});
+ // This suite tests a proxy transport; use the session API for pairing setup.
+ // The dedicated plugin-access suite covers the real confirmation UI.
+ const code=await wait(async()=>popup.evaluate(async()=>(await send({type:'get_status'})).settings?.pendingPairing?.code),'pair request');
+ await server.request('/api/v1/plugin-pairings/approve',{method:'POST',cookie,body:{code}});
+ await popup.evaluate(()=>send({type:'poll_pairing_now'}));await popup.evaluate(()=>refresh());await popup.locator('#paired').waitFor({state:'visible'});
+ await web.goto(server.base+'/?panel=settings');await web.locator('[data-test=settings-tab-data]').click();
  await web.getByRole('button',{name:'关闭',exact:true}).click();await web.locator('[data-test=tab-viewed]').click();
  await popup.locator('#server-url').fill(proxyBase+'/?sharecode=test-gateway');await popup.click('#save-server');
  page=await context.newPage();await page.goto(fixtures.base+'/jobs/1001');await page.bringToFront();await popup.click('#grant-current');
