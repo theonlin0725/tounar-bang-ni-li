@@ -349,7 +349,67 @@
     const text = String(document.querySelector('main')?.innerText || document.body?.innerText || '').trim();
     return text.length < 4000 && /职位已过期|岗位已下线|职位不存在|岗位不存在|职位已关闭|职位已停止招聘|验证后继续访问|完成安全验证|安全验证|访问异常|job (?:is )?(?:expired|no longer available)/i.test(text);
   }
-  function detectJob({ useTemplate = true } = {}) {
+  // Model mode reads visible paragraphs without per-company field selectors.
+  let jdModelMode = null;
+  let modelJob = null;
+  let modelSignature = '';
+  let modelInFlight = null;
+  let modelError = '';
+  let modelRoute = location.href;
+  let priorModelText = '';
+  const modelReady = new Promise(resolve => {
+    try { chrome.runtime.sendMessage({type:'jd_model_config'}, response => {
+      // Unreachable backend must not silently produce rule-derived records.
+      jdModelMode = response?.ok ? response.data?.enabled === true : null;
+      modelError = response?.error || '';
+      resolve();
+    }); } catch { resolve(); }
+  });
+  function visiblePageText() {
+    const root = document.querySelector('main,[role="main"],article') || document.body;
+    if (!root) return '';
+    const lines = document.title ? [document.title] : [];
+    const walker = document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node=walker.nextNode())) {
+      const parent=node.parentElement;
+      if (!parent || parent.closest('script,style,noscript,nav,header,footer,aside,form,input,textarea,select,[contenteditable],button,[data-tounar-toast]')) continue;
+      if (!visible(parent)) continue;
+      const text = String(node.textContent || '').trim();
+      if (text) lines.push(text);
+    }
+    return lines.join('\n').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
+  }
+  function detectJob() {
+    if (jdModelMode === false) return detectJobLegacy();
+    if (jdModelMode !== true || capturePaused || isSelfPage() || blockedPage() || document.visibilityState !== 'visible') return null;
+    if (modelRoute !== location.href) {
+      priorModelText = modelSignature.slice(modelSignature.indexOf('\n')+1);
+      modelRoute=location.href;modelJob=null;modelSignature='';modelError='';
+    }
+    const text = visiblePageText();
+    if (priorModelText && text===priorModelText) return null;
+    if (text!==priorModelText) priorModelText='';
+    const signature = location.href+'\n'+text;
+    if (signature === modelSignature) return modelJob;
+    if (modelInFlight || Date.now()-lastDomChange<1500 || text.length<30) return null;
+    modelSignature=signature;modelJob=null;
+    if (text.length>30000) {modelError='页面内容过长，请打开单个岗位详情';return null;}
+    const href=location.href;
+    modelError='';
+    modelInFlight = new Promise(resolve=>{
+      chrome.runtime.sendMessage({type:'jd_model_extract',text},response=>{
+        if (location.href===href && visiblePageText()===text) {
+          modelJob=response?.ok ? response.data.job : null;
+          modelError=response?.ok ? '' : response?.error || '岗位整理失败，请稍后重新采集';
+
+        } else modelSignature='';
+        resolve();
+      });
+    }).finally(()=>{modelInFlight=null;});
+    return null;
+  }
+  function detectJobLegacy({ useTemplate = true } = {}) {
     if (blockedPage()) return null;
     detectionScope = [...document.querySelectorAll('[role="dialog"],[class*="drawer"],[class*="Drawer"]')]
       .find(n => visible(n) && /岗位职责|职位描述|任职要求|Responsibilities|Requirements/i.test(n.innerText || '')) || document;
@@ -576,7 +636,7 @@
     if (isSelfPage()) return Promise.resolve({ ok: false, skipped: 'self_page' });
     if (['job_viewed','form_started','application_submitted'].includes(event.event_type)) {
       const current=detectJob();
-      if ((current && (current.job_title !== event.payload.job_title || current.site_job_id !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url)) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
+      if ((current && (current.job_title !== event.payload.job_title || (current.site_job_id || '') !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url)) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
         detectAndTrackRoute(); return Promise.resolve({ok:false,skipped:'job_changed'});
       }
     }
@@ -708,7 +768,7 @@
           evidenceCode: 'visible-dwell-3000ms',
           occurredAt: pageState.viewStartedAt || nowIso(),
           payload: { visible_dwell_ms: pageState.visibleMs }
-        })).then(result => { if (!result?.ok && pageState.job?.site_job_id === job.site_job_id && pageState.job?.job_url === job.job_url) pageState.viewSent = false; else if (result?.ok) auditTemplate(job); });
+        })).then(result => { if (!result?.ok && pageState.job?.site_job_id === job.site_job_id && pageState.job?.job_url === job.job_url) pageState.viewSent = false; else if (result?.ok && jdModelMode === false) auditTemplate(job); });
         probe();
       }
     }
@@ -1059,10 +1119,19 @@
 
   async function captureNow(reason = 'user') {
     if (isSelfPage()) return { ok: false, detected: false, status: 'self_page', reason: 'self_page' };
-    await loadTemplate();
+    await modelReady;
+    if (jdModelMode === false) await loadTemplate();
+    if (jdModelMode === true) {
+      if (modelError) modelSignature='';
+      showToast('正在理解岗位内容…', {ttl:28000});
+      await new Promise(resolve=>setTimeout(resolve,Math.max(0,1500-(Date.now()-lastDomChange))));
+      detectJob();
+      if (modelInFlight) await modelInFlight;
+    }
+    if (jdModelMode === null || modelError) return {ok:false,detected:false,status:'failed',error:modelError || '请检查后台连接后刷新页面'};
     const job = detectJob();
     if (!job || !job.job_title) {
-      const discovered = await captureList(true);
+      const discovered = jdModelMode === false ? await captureList(true) : [];
       if(discovered.length) {
         const results = [];
         for (const id of discovered) results.push(await chrome.runtime.sendMessage({type:'event_result',clientEventId:id}));
@@ -1100,7 +1169,7 @@
       showFeedback({ status, serverUrl: result?.serverUrl, kind: 'job_captured' });
     }
     pageState.viewSent = true;
-    const learned = await auditTemplate(job);
+    const learned = jdModelMode === false ? await auditTemplate(job) : null;
     return {
       ok: status !== 'rejected' && status !== 'failed',
       detected: true,
@@ -1180,7 +1249,7 @@
     if (capturePaused || isSelfPage()) return;
     detectAndTrackRoute();
     tickDwell();
-    if (!pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});
+    if (jdModelMode === false && !pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});
     scanForSubmission();
     scanStatusHooks();
     scanAdapterStatusPage();

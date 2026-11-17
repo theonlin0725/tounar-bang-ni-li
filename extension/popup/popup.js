@@ -50,7 +50,6 @@ async function refresh() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   } else if (pending) {
     show($('pairing-box'), true);
-    $('pairing-code').textContent = pending.code;
     $('pairing-expire').textContent = `有效期至 ${new Date(pending.expires_at).toLocaleTimeString('zh-CN')}；在网页确认后自动完成`;
     if (!pollTimer) {
       pollTimer = setInterval(async () => {
@@ -150,26 +149,10 @@ async function renderLearned() {
 }
 
 function renderSites(grantedOrigins) {
-  const container = $('site-list');
-  if (container.childElementCount === 0) {
-    for (const host of TounarAdapters.supportedHosts()) {
-      const label = document.createElement('label');
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = `https://${host}/*`;
-      checkbox.dataset.host = host;
-      const adapter = TounarAdapters.ADAPTERS.find((a) => a.hosts.includes(host));
-      label.append(checkbox, document.createTextNode(`${adapter?.label || host}（${host}）`));
-      container.append(label);
-    }
-  }
-  const granted = new Set(grantedOrigins.map((o) => o.replace(/\/\*$/, '').replace(/^https?:\/\//, '')));
-  for (const checkbox of container.querySelectorAll('input[type="checkbox"]')) {
-    const host = checkbox.dataset.host;
-    const isGranted = [...granted].some((g) => g === host || g.endsWith(`.${host}`) || host.endsWith(`.${g}`));
-    checkbox.checked = isGranted;
-  }
+  const groups = TounarSiteAccess.groups(grantedOrigins, $('server-url').value);
+  $('site-summary').textContent = `已授权 ${groups.filter(g => g.granted.length).length} 个网站`;
 }
+$('manage-sites').addEventListener('click', () => send({ type: 'open_access_page', panel: 'plugin-sites' }));
 
 async function ensureContentScript() {
   const result = await send({type:'sync_permissions'});
@@ -257,14 +240,11 @@ $('start-pairing').addEventListener('click', async () => {
     return;
   }
   show($('pair-error'), false);
+  await send({ type: 'open_access_page', panel: 'plugin-connect' });
   await refresh();
 });
 
-$('poll-pairing').addEventListener('click', async () => {
-  const result = await send({ type: 'poll_pairing_now' });
-  if (result?.result?.waiting) $('pairing-expire').textContent = '尚未在网页确认；确认后会自动绑定';
-  await refresh();
-});
+$('poll-pairing').addEventListener('click', () => send({ type: 'open_access_page', panel: 'plugin-connect' }));
 
 $('cancel-pairing').addEventListener('click', async () => {
   await send({ type: 'cancel_pairing' });
@@ -325,23 +305,7 @@ $('clear-learned').addEventListener('click', async () => {
   $('capture-status').textContent = '已清除学习记录，下次采集会重新学习';
 });
 
-$('grant-selected').addEventListener('click', async () => {
-  const origins = [...document.querySelectorAll('#site-list input:checked')].map((c) => c.value);
-  if (!origins.length) { $('sites-status').textContent = '请先勾选要授权的站点'; return; }
-  const granted = await chrome.permissions.request({ origins });
-  $('sites-status').textContent = granted ? `已授权 ${origins.length} 个站点` : '未授权（用户取消）';
-  await ensureContentScript();
-  await refresh();
-});
-
-$('revoke-all').addEventListener('click', async () => {
-  const all = await chrome.permissions.getAll();
-  const origins = all.origins || [];
-  if (origins.length) await chrome.permissions.remove({ origins });
-  await chrome.scripting.unregisterContentScripts().catch(() => {});
-  $('sites-status').textContent = '已撤销全部站点授权';
-  await refresh();
-});
+$('revoke-all').addEventListener('click', () => send({ type: 'open_access_page', panel: 'plugin-sites' }));
 
 $('toggle-pause').addEventListener('click', async () => { await send({type:'set_capture_paused',paused:$('toggle-pause').dataset.paused !== '1'}); await refresh(); });
 $('clear-queue').addEventListener('click', async () => { if(confirm('清空未上传事件？已入账记录和模板不受影响。')) { await send({type:'clear_queue'}); await refresh(); } });

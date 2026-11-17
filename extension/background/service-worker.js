@@ -1,5 +1,5 @@
 /* Tounar 帮你理 · MV3 service worker（classic，importScripts 共享 lib） */
-importScripts('../lib/common.js', '../lib/queue.js', '../lib/api.js');
+importScripts('../lib/common.js', '../lib/queue.js', '../lib/api.js', '../content/adapters.js', '../lib/site-access.js', 'site-access.js');
 
 const { getSettings, setSettings, clearPairing } = globalThis.TounarCommon;
 const Queue = globalThis.TounarQueue;
@@ -456,6 +456,39 @@ async function unpair({ cleanup = true } = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message?.type) {
+      case 'jd_model_config':
+      case 'jd_model_extract': {
+        const settings = await getSettings();
+        try {
+          if (!sender.tab || sender.frameId !== 0 || !settings.deviceToken || settings.capturePaused) throw new Error('请先连接账号并开启采集');
+          const url = new URL(sender.url);
+          if (!/^https?:$/.test(url.protocol) || selfOrigins(settings.serverUrl).has(url.origin)) throw new Error('此页面不能采集');
+          if (!await chrome.permissions.contains({origins:[url.origin+'/*']})) throw new Error('请先授权当前招聘网站');
+          const extract = message.type === 'jd_model_extract';
+          const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
+            method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
+            ...(extract?{body:{url:url.href,text:message.text}}:{})
+          });
+          sendResponse({ok:true,data:result.data});
+        } catch(err) {sendResponse({ok:false,error:err.message || '岗位识别暂不可用'});}
+        return;
+      }
+      case 'permission_context': {
+        try { sendResponse({ok:true, data:await permissionContext(message.id, sender)}); }
+        catch (err) { sendResponse({ok:false, error:err.message}); }
+        return;
+      }
+      case 'web_access': {
+        try { sendResponse({ok:true, data:await webAccess(message, sender)}); }
+        catch (err) { sendResponse({ok:false, error:err.message}); }
+        return;
+      }
+      case 'open_access_page': {
+        if (!sender.url?.startsWith(chrome.runtime.getURL('popup/'))) { sendResponse({ok:false}); return; }
+        try { await openAccessPage(message.panel); sendResponse({ok:true}); }
+        catch (err) { sendResponse({ok:false,error:{message:err.message}}); }
+        return;
+      }
       case 'enqueue_event': {
         const settings = await getSettings();
         if (settings.capturePaused) { sendResponse({ok:false,error:'CAPTURE_PAUSED'}); return; }
@@ -521,6 +554,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'set_server_url': {
         try {
           const result = await changeBackend(message.serverUrl);
+          await syncAppBridge();
           if (!result.changed) flushQueue().catch(() => {});
           sendResponse({ ok: true, result });
         } catch (err) {
@@ -683,9 +717,10 @@ flushQueue().catch(() => {});
 let registration = Promise.resolve();
 function syncContentScripts() {
   registration = registration.catch(() => {}).then(async () => {
+    await syncAppBridge();
     const settings = await getSettings();
     const all = await chrome.permissions.getAll();
-    const matches = settings.capturePaused ? [] : (all.origins || []);
+    const matches = settings.capturePaused ? [] : TounarSiteAccess.captureOrigins(all.origins || [], settings.serverUrl);
     const registered = await chrome.scripting.getRegisteredContentScripts();
     if (registered.some(s => s.id === 'tounar-tracker')) {
       if (matches.length) await chrome.scripting.updateContentScripts([{id:'tounar-tracker',matches,js:['lib/learned.js','content/adapters.js','content/tracker.js'],runAt:'document_idle',persistAcrossSessions:true}]);
@@ -720,9 +755,11 @@ chrome.runtime.onStartup.addListener(() => syncContentScripts().catch(() => {}))
 syncContentScripts().catch(() => {});
 
 async function injectAuthorizedTabs() {
+  const settings = await getSettings();
   for (const tab of await chrome.tabs.query({})) {
     if(!/^https?:/.test(tab.url || '')) continue;
     const origin = new URL(tab.url).origin;
+    if (!TounarSiteAccess.captureOrigins([origin+'/*'], settings.serverUrl).length) continue;
     if(await chrome.permissions.contains({origins:[origin+'/*']})) {
       await chrome.scripting.executeScript({target:{tabId:tab.id},files:['lib/learned.js','content/adapters.js','content/tracker.js']}).catch(()=>{});
     }

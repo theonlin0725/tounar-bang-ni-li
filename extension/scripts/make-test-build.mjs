@@ -20,12 +20,9 @@ export function buildTestExtension({ outDir = OUT } = {}) {
   const manifestPath = path.join(ROOT, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 
-  const manifestText = JSON.stringify(manifest);
-  for (const origin of TEST_ORIGINS) {
-    const bare = origin.replace('/*', '');
-    if (manifestText.includes(bare)) {
-      throw new Error(`生产 manifest 不得包含测试主机 ${bare}，请检查 manifest.json`);
-    }
+  // Production may register the app-only handshake on localhost, but never a capture script.
+  if ((manifest.host_permissions || []).length || (manifest.content_scripts || []).some(s => s.js.some(file => file !== 'content/app-bridge.js'))) {
+    throw new Error('生产扩展不得预授权采集站点或静态注入采集脚本');
   }
 
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -38,6 +35,7 @@ export function buildTestExtension({ outDir = OUT } = {}) {
     ...manifest,
     host_permissions: TEST_ORIGINS,
     content_scripts: [
+      ...(manifest.content_scripts || []),
       {
         matches: TEST_ORIGINS,
         js: ['lib/learned.js', 'content/adapters.js', 'content/tracker.js'],

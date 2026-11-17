@@ -87,10 +87,10 @@ try {
   await web.locator('[data-test=tab-viewed]').waitFor();
   cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
   await openPopup();await popup.locator('#server-url').fill(server.base);await popup.click('#save-server');await popup.click('#start-pairing');
-  const code=await wait(async()=>{const t=await popup.locator('#pairing-code').textContent();return /^[A-HJ-NP-Z2-9]{8}$/.test(t)?t:null;},'配对码');
-  await web.goto(server.base+'/?panel=settings');
-  await web.locator('[data-test=settings-tab-data]').click();await web.locator('[data-test=pair-code]').fill(code);await web.locator('[data-test=pair-approve]').click();
-  await popup.click('#poll-pairing');await popup.locator('#paired').waitFor({state:'visible'});
+  await web.goto(server.base+'/?panel=plugin-connect');
+  await web.locator('[data-test=plugin-connect-confirm]').click();
+  await web.getByText('连接成功！接下来选择允许采集的招聘网站。').waitFor();
+  await popup.evaluate(() => refresh());await popup.locator('#paired').waitFor({state:'visible'});
   await web.getByRole('button',{name:'关闭',exact:true}).click();await web.locator('[data-test=tab-viewed]').click();
   await check('配对走扩展与前端 UI；台账提前打开',async()=>assert.equal((await ledger()).items.length,0));
   if(real) { await (['greenhouse','smartrecruiters'].includes(selectedSite)?genericLiveAcceptance:selectedSite&&selectedSite!=='tencent'?currentSiteAcceptance:tencentLiveAcceptance)({site:selectedSite,context,web,popup,events,receipts,ledger,detail,wait,check,rows,out,report}); } else {
