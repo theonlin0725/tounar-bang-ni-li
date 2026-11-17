@@ -14,7 +14,7 @@ function resize() { notify('height', {height:Math.ceil(document.body.getBounding
     request = response.data;
     const revoke = request.operation === 'revoke';
     document.getElementById('summary').textContent = `${request.labels.join('、')} · ${request.origins.length} 个域名`;
-    document.getElementById('description').textContent = revoke ? '撤销后停止采集所选网站，已有台账保留。' : '仅在所选网站识别岗位和投递线索。Chrome 如需进一步确认，将显示系统权限提示。';
+    document.getElementById('description').textContent = revoke ? '撤销后停止采集所选网站，已有台账保留。' : '仅在所选网站采集。启用智能识别时，疑似单个岗位详情的可见正文会经帮你理后台发送给模型服务；表单输入不会发送。Chrome 可能再次确认权限。';
     confirmButton.textContent = revoke ? '确认撤销' : '确认授权';
     for (const origin of request.origins) {const li=document.createElement('li');li.textContent=origin;document.getElementById('domains').append(li);}
     document.getElementById('details').hidden=false;

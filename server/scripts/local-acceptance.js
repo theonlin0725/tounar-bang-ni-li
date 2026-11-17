@@ -245,6 +245,14 @@ const childEnv = {
   // 云大模型默认关闭，避免验收时把邮件内容发到外部服务；需要时单独开。
   CLOUD_LLM_ENABLED: 'false'
 };
+// The existing local AI_API_KEY may be reused for the isolated JD review only
+// when the caller explicitly enables it. Never print or write the key to the
+// acceptance manifest or acceptance.env.
+if (process.env.JD_AI_ENABLED === 'true') {
+  childEnv.JD_AI_ENABLED = 'true';
+  childEnv.JD_AI_API_KEY = process.env.JD_AI_API_KEY || process.env.AI_API_KEY || '';
+  childEnv.JD_AI_MODEL = process.env.JD_AI_MODEL || process.env.AI_MODEL || 'deepseek-flash';
+}
 if (mailModeFlag === 'smtp' && !childEnv.SMTP_URL) {
   fail('要求 --mail-mode=smtp，但源 .env 里没有 SMTP_URL。', '改用默认 outbox，或在原 .env 配置 SMTP_URL 后重试。');
 }

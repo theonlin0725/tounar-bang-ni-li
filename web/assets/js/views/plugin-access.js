@@ -102,7 +102,7 @@ export function createSiteAccessCard({manager = false} = {}) {
   const summary = h('p', {class:'tn-small', text:'正在读取授权范围…', 'data-test':'site-access-summary'});
   const content = h('div');
   const message = h('p', {class:'tn-small tn-muted', role:'status'});
-  element.append(h('h4', {text:'招聘网站授权'}), h('p', {class:'tn-small tn-muted', text:'仅在你授权的招聘网站采集岗位与投递线索。'}), summary, content, message);
+  element.append(h('h4', {text:'招聘网站授权'}), h('p', {class:'tn-small tn-muted', text:'仅在你授权的网站采集；启用智能识别时，疑似单个岗位详情的可见正文会经帮你理后台发送给模型服务。'}), summary, content, message);
   function dispose() {disposed=true; clearTimeout(timer); permissionDialog?.close();}
   async function remember() {
     try {await extensionRequest('preferences', {selection:[...selected]});}

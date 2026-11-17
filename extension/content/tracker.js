@@ -359,16 +359,53 @@
   let priorModelText = '';
   const modelReady = new Promise(resolve => {
     try { chrome.runtime.sendMessage({type:'jd_model_config'}, response => {
-      // Unreachable backend must not silently produce rule-derived records.
-      jdModelMode = response?.ok ? response.data?.enabled === true : null;
+      if (response?.ok) {
+        jdModelMode = response.data?.enabled === true;
+        chrome.storage?.local?.set?.({'tounar.jd-model-enabled':jdModelMode})?.catch?.(() => {});
+      } else {
+        // Keep the last confirmed mode while offline: deployments without JD AI
+        // must retain their existing rule-based capture and upload queue.
+        if (chrome.storage?.local?.get) {
+          chrome.storage.local.get('tounar.jd-model-enabled').then(value => {
+            if (typeof value?.['tounar.jd-model-enabled'] === 'boolean') jdModelMode = value['tounar.jd-model-enabled'];
+            resolve();
+          }).catch(() => resolve());
+          return;
+        }
+      }
       modelError = response?.error || '';
       resolve();
     }); } catch { resolve(); }
   });
   function visiblePageText() {
-    const root = document.querySelector('main,[role="main"],article') || document.body;
-    if (!root) return '';
-    const lines = document.title ? [document.title] : [];
+    // Decide locally before sending anything to the JD provider. A list, account,
+    // application or login page must never be classified by uploading its text.
+    // Keep this list narrow: a false block is recoverable by opening the original
+    // detail page, while a false send cannot be undone.
+    const path = location.pathname + location.hash;
+    if (/(?:^|[\/#])(?:login|signin|register|profile|resume|account|message|chat|search|list|applications?|apply|settings|preferences|notifications|inbox|saved|favorites|dashboard|interviews?|offers?|users?|personal|members?)(?:[\/#?]|$)/i.test(path)) return '';
+    // Exact list landing pages such as /jobs or /positions are not a single job.
+    // /jobs/123 and /job/123 still pass this check.
+    if (/(?:^|\/)(?:jobs?|positions?|job-search|recruitment)(?:\/)?(?:[?#]|$)/i.test(path)) return '';
+    const legacy = detectJobLegacy();
+    const root = document.querySelector('[data-tounar-job-id], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article');
+    if (!legacy && (!root || !visible(root))) return '';
+    const headings = root ? [...root.querySelectorAll('h1,[class*="job-title"],[class*="jobTitle"],[class*="position-title"]')]
+      .filter(visible).map(node => String(node.textContent || '').trim()).filter(Boolean) : [];
+    const title = headings[0] || '';
+    const detailUrl = (adapter.jobUrlPatterns || []).some(pattern => pattern.test(location.href));
+    const structuredJob = !!readJobPostingJsonLd()?.title;
+    const sectionText = String(root?.innerText || '');
+    const duty = /岗位职责|工作职责|职位描述|岗位描述|工作内容|Responsibilities|Job Description/i.test(sectionText);
+    const requirements = /任职要求|任职资格|职位要求|岗位要求|Qualifications|Requirements/i.test(sectionText);
+    const apply = !!root?.querySelector('button,[role="button"],a[href]') && /立即申请|立即投递|申请职位|投递简历|Apply(?: now)?/i.test(sectionText);
+    if (!legacy && (headings.length !== 1 || title.length < 2 || title.length > 120 || /^(?:职位|岗位|招聘|工作机会|搜索结果|个人中心|我的简历|Job openings|Careers)$/i.test(title)
+      || (!detailUrl && !structuredJob && !(duty && requirements && apply)) || !(duty || requirements))) return '';
+    const lines = [document.title,legacy?.job_title,legacy?.company_name,legacy?.location].filter(Boolean);
+    if (!root || !visible(root)) {
+      lines.push(legacy?.jd_text || legacy?.jd_summary || '');
+      return lines.join('\n').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
+    }
     const walker = document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
     let node;
     while ((node=walker.nextNode())) {
@@ -378,6 +415,7 @@
       const text = String(node.textContent || '').trim();
       if (text) lines.push(text);
     }
+    if (legacy?.jd_text && sectionText.length < legacy.jd_text.length / 2) lines.push(legacy.jd_text);
     return lines.join('\n').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
   }
   function detectJob() {
@@ -1131,7 +1169,7 @@
     if (jdModelMode === null || modelError) return {ok:false,detected:false,status:'failed',error:modelError || '请检查后台连接后刷新页面'};
     const job = detectJob();
     if (!job || !job.job_title) {
-      const discovered = jdModelMode === false ? await captureList(true) : [];
+      const discovered = await captureList(true);
       if(discovered.length) {
         const results = [];
         for (const id of discovered) results.push(await chrome.runtime.sendMessage({type:'event_result',clientEventId:id}));
@@ -1249,7 +1287,7 @@
     if (capturePaused || isSelfPage()) return;
     detectAndTrackRoute();
     tickDwell();
-    if (jdModelMode === false && !pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});
+    if (!pageState.job && document.visibilityState === 'visible' && Date.now()-lastDomChange>=800) captureList().catch(() => {});
     scanForSubmission();
     scanStatusHooks();
     scanAdapterStatusPage();

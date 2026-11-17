@@ -18,6 +18,9 @@ try {
  const executablePath=process.env.E2E_CHROME;
  context=await chromium.launchPersistentContext(path.join(dir,'profile'),{headless:true,...(executablePath?{executablePath}:{}),args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`]});
  const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
+ // A local review backend must be configured explicitly; arbitrary local ports
+ // are not trusted to start a pairing from page JavaScript.
+ await sw.evaluate(async base=>{await TounarCommon.setSettings({serverUrl:base});await syncContentScripts();},server.base);
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(server.base);await page.locator('[data-test=login-email]').waitFor();
  check('logged out page does not prompt binding',await page.locator('[data-test=plugin-connect-modal]').count()===0);
@@ -30,7 +33,7 @@ try {
  check('legacy dismissed flag recovers once plugin is detected',true);
  check('opening logged-in website automatically prompts connection',true);
  const before=await sw.evaluate(()=>TounarCommon.getSettings());
- check('no pairing or backend switch before consent',!before.pendingPairing && !before.deviceToken && before.serverUrl==='http://127.0.0.1:4310');
+ check('no pairing or backend switch before consent',!before.pendingPairing && !before.deviceToken && before.serverUrl===server.base);
  check('connection dialog has no placeholder artifacts',!(await page.locator('[data-test=plugin-connect-modal]').innerText()).includes('null'));
  check('no manual pairing input',await page.locator('[data-test=pair-code]').count()===0);
  await page.screenshot({path:path.join(dir,'01-auto-connect.png'),fullPage:true});
@@ -58,6 +61,8 @@ try {
  const after=await sw.evaluate(()=>TounarCommon.getSettings());check('declining account switch retains original owner',after.pairedOwnerHint==='demo@tounar.local');
  const blocked=await sw.evaluate(async()=>{try{await webAccess({action:'begin'},{tab:{id:1},frameId:0,url:'https://untrusted.example/'});return false;}catch{return true;}});
  check('untrusted site cannot initiate binding',blocked);
+ const localBlocked=await sw.evaluate(async base=>{try{await webAccess({action:'begin'},{tab:{id:1},frameId:0,url:base.replace(/:\d+$/,':47999')+'/'});return false;}catch{return true;}},server.base);
+ check('unrelated localhost port cannot initiate binding',localBlocked);
  missingContext=await chromium.launchPersistentContext(path.join(dir,'no-extension'),{headless:true,...(executablePath?{executablePath}:{})});
  await login(missingContext,'demo@tounar.local');const noPlugin=await missingContext.newPage();await noPlugin.goto(server.base);
  await noPlugin.locator('[data-test=plugin-install-modal]').waitFor();check('missing plugin shows installation guidance',true);

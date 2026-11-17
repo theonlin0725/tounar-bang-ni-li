@@ -48,7 +48,16 @@ try{
  await page.screenshot({path:'.tmp/jd-detail-preview.png',fullPage:true});
  check('detail page has no script errors',errors.length===0);
  const capture=await browser.newPage();
- await capture.route('https://example.com/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:'<title>平台工程师 - 测试公司</title><main><p>平台工程师</p><p>测试公司</p><p>北京</p><p>1、设计平台。</p><p>2、维护服务。</p><p>1、本科以上学历。</p><form><input value="private-secret"></form></main>'}));
+ await capture.route('https://example.com/**',r=>{
+  const url=new URL(r.request().url());
+  const path=url.pathname;
+  const detail='<title>平台工程师 - 测试公司</title><main><h1>平台工程师</h1><p>测试公司</p><p>北京</p><h2>岗位职责</h2><p>1、设计平台。</p><p>2、维护服务。</p><h2>任职要求</h2><p>1、本科以上学历。</p><form><input value="private-secret"></form></main>';
+  const page=path==='/profile'?'<title>个人资料</title><main><h1>平台工程师</h1><p>岗位职责</p><p>我的私人履历</p><p>任职要求</p></main>'
+   :path==='/job/expired'?'<title>职位已过期 - 测试公司</title><main><h1>平台工程师</h1><h2>岗位职责</h2><p>设计平台。</p><h2>任职要求</h2><p>本科。</p><button>立即申请</button><p>职位已过期</p></main>'
+   :path==='/article/hello'?'<title>团队介绍 - 测试公司</title><main><h1>平台工程师</h1><p>这是团队介绍文章，不是岗位详情。</p></main>'
+   :detail;
+  r.fulfill({contentType:'text/html; charset=utf-8',body:page});
+ });
  await capture.addInitScript(job=>{
   window.events=[];window.modelInputs=[];
   window.chrome={runtime:{sendMessage(m,cb){
@@ -66,6 +75,22 @@ try{
  check('stable page invokes model once',await capture.evaluate(()=>window.modelInputs.length===1));
  await capture.evaluate(()=>{history.pushState({},'','/job/2');});await capture.waitForTimeout(2000);
  check('SPA URL change with stale content does not capture wrong job',await capture.evaluate(()=>window.events.length===1&&window.modelInputs.length===1));
+ for (const path of ['/profile','/resume','/account','/login','/messages','/search?q=x','/applications','/settings','/jobs','/positions']) {
+  await capture.goto('https://example.com'+path);
+  await capture.addScriptTag({path:'extension/content/adapters.js'});await capture.addScriptTag({path:'extension/content/tracker.js'});
+  await capture.waitForTimeout(2200);
+  check(path+' never sends page text to the model',await capture.evaluate(()=>window.modelInputs.length===0));
+ }
+ for (const path of ['/job/expired','/article/hello']) {
+  await capture.goto('https://example.com'+path);
+  await capture.addScriptTag({path:'extension/content/adapters.js'});await capture.addScriptTag({path:'extension/content/tracker.js'});
+  await capture.waitForTimeout(2200);
+  check(path+' has no job evidence and never calls the model',await capture.evaluate(()=>window.modelInputs.length===0));
+ }
+ await capture.goto('https://example.com/job/1?from=search');
+ await capture.addScriptTag({path:'extension/content/adapters.js'});await capture.addScriptTag({path:'extension/content/tracker.js'});
+ await capture.waitForTimeout(2200);
+ check('query string search hint does not block a real detail page',await capture.evaluate(()=>window.modelInputs.length===1));
  const extDir=server.dir+'/extension';fs.cpSync('extension',extDir,{recursive:true});
  const manifest=JSON.parse(fs.readFileSync(extDir+'/manifest.json','utf8'));
  manifest.host_permissions=['http://127.0.0.1/*','https://jobs.example.test/*'];
@@ -73,7 +98,7 @@ try{
  extensionContext=await chromium.launchPersistentContext(server.dir+'/browser',{executablePath:process.env.E2E_CHROME,headless:true,args:[`--disable-extensions-except=${extDir}`,`--load-extension=${extDir}`]});
  const sw=extensionContext.serviceWorkers()[0]||await extensionContext.waitForEvent('serviceworker');
  await sw.evaluate(async({base,device})=>{await TounarCommon.setSettings({serverUrl:base,deviceToken:device.device_token,deviceId:device.device_id,bindingVersion:device.binding_version});await syncContentScripts();},{base:server.base,device});
- await extensionContext.route('https://jobs.example.test/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:'<title>平台工程师 - 测试公司</title><main><p>平台工程师</p><p>测试公司</p><p>北京</p><p>1、设计平台。</p><p>2、维护服务。</p><p>1、本科以上学历。</p></main>'}));
+ await extensionContext.route('https://jobs.example.test/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:'<title>平台工程师 - 测试公司</title><main><h1>平台工程师</h1><p>测试公司</p><p>北京</p><h2>岗位职责</h2><p>1、设计平台。</p><p>2、维护服务。</p><h2>任职要求</h2><p>1、本科以上学历。</p></main>'}));
  const realPage=await extensionContext.newPage();await realPage.goto('https://jobs.example.test/job/1');
  const popup=await extensionContext.newPage();await popup.goto(`chrome-extension://${new URL(sw.url()).host}/popup/popup.html`);
  await realPage.bringToFront();

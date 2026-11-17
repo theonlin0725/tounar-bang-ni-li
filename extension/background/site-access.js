@@ -30,8 +30,9 @@ async function webAccess(message, sender) {
   if (!sender.tab || sender.frameId !== 0) throw new Error('仅支持帮你理网页主窗口');
   const pageUrl = new URL(sender.url);
   const sameBackend = pageUrl.origin === new URL(settings.serverUrl).origin;
-  const bootstrap = (pageUrl.protocol === 'http:' && ['127.0.0.1','localhost'].includes(pageUrl.hostname))
-    || pageUrl.origin === 'https://bangnili.app.workbuddy.host';
+  // An unrelated local web server must not be able to replace the backend or
+  // clear an existing pairing. Local review works after its exact URL is set.
+  const bootstrap = pageUrl.origin === 'https://bangnili.app.workbuddy.host';
   if (!sameBackend && !(bootstrap && ['discovery','begin'].includes(message.action))) throw new Error('此页面不是插件当前连接的帮你理后台');
   const payload = message.payload || {};
   switch (message.action) {

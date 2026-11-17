@@ -8,7 +8,7 @@ export async function captureRegression(check){
   const resolved=await resolveChromiumExecutable();const browser=await chromium.launch({executablePath:resolved.path,headless:true});
   try{
     async function pageFor(url,html){const context=await browser.newContext();await context.route('**/*',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:html}));const page=await context.newPage();
-      await page.addInitScript(()=>{window.__captured=[];window.chrome={runtime:{sendMessage(m,cb){window.__captured.push(m.event);cb?.({ok:true});}}};});
+      await page.addInitScript(()=>{window.__captured=[];window.chrome={runtime:{sendMessage(m,cb){if(m.type==='jd_model_config')return cb?.({ok:true,data:{enabled:false}});if(m.event)window.__captured.push(m.event);cb?.({ok:true});}}};});
       page.on('pageerror',e=>console.error('capture script:',e.message));await page.goto(url);await page.addScriptTag({path:root+'/extension/content/adapters.js'});await page.addScriptTag({path:root+'/extension/content/tracker.js'});return {page,context};}
     async function capture(page){await page.waitForFunction(()=>window.__captured.some(e=>e?.event_type==='job_viewed'),null,{timeout:9000}).catch(async e=>{console.error(await page.evaluate(()=>({attrs:document.documentElement.outerHTML.slice(0,600),captured:window.__captured})));throw e;});return page.evaluate(()=>window.__captured.filter(e=>e?.event_type==='job_viewed').at(-1).payload);}
     {
