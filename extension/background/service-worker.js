@@ -456,6 +456,23 @@ async function unpair({ cleanup = true } = {}) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message?.type) {
+      case 'jd_model_config':
+      case 'jd_model_extract': {
+        const settings = await getSettings();
+        try {
+          if (!sender.tab || sender.frameId !== 0 || !settings.deviceToken || settings.capturePaused) throw new Error('请先连接账号并开启采集');
+          const url = new URL(sender.url);
+          if (!/^https?:$/.test(url.protocol) || selfOrigins(settings.serverUrl).has(url.origin)) throw new Error('此页面不能采集');
+          if (!await chrome.permissions.contains({origins:[url.origin+'/*']})) throw new Error('请先授权当前招聘网站');
+          const extract = message.type === 'jd_model_extract';
+          const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
+            method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
+            ...(extract?{body:{url:url.href,text:message.text}}:{})
+          });
+          sendResponse({ok:true,data:result.data});
+        } catch(err) {sendResponse({ok:false,error:err.message || '岗位识别暂不可用'});}
+        return;
+      }
       case 'permission_context': {
         try { sendResponse({ok:true, data:await permissionContext(message.id, sender)}); }
         catch (err) { sendResponse({ok:false, error:err.message}); }

@@ -410,3 +410,21 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 /* 插件下载与安装指引（不重做 UI，只复用现有弹窗/按钮） */
 .tn-plugin-steps { margin: 14px 0 12px 20px; padding: 0; color: var(--text); font-size: 13px; line-height: 1.8; }
 .tn-plugin-steps li { margin: 2px 0; }
+
+/* Readable model-organized job content; source text is never rendered as HTML. */
+.tn-jd-sections { margin: 24px 0; }
+.tn-jd-sections .tn-drawer-section { margin: 0 0 28px; }
+.tn-jd-items { margin: 12px 0 0; padding-left: 1.5em; line-height: 1.9; overflow-wrap: anywhere; }
+div.tn-jd-items { padding-left: 0; }
+.tn-jd-items li { padding-left: .4em; margin: 0 0 12px; white-space: pre-wrap; }
+.tn-jd-items p { margin: 0 0 12px; white-space: pre-wrap; }
+.tn-jd-items li::marker { color: var(--muted, #66756e); font-variant-numeric: tabular-nums; }
+.tn-jd-original { line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* JD prose and compact attributes: scoped to the job-content section. */
+.tn-jd-prose { line-height: 1.85; overflow-wrap: anywhere; }
+.tn-jd-prose p { margin: 0 0 12px; }
+.tn-jd-prose p:last-child { margin-bottom: 0; }
+.tn-jd-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 10px; }
+.tn-jd-tag { display: inline-block; max-width: 100%; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.tn-jd-note { flex-basis: 100%; line-height: 1.85; overflow-wrap: anywhere; }

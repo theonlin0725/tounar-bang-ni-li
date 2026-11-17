@@ -40,7 +40,7 @@ export async function promptPluginConnection({automatic = false} = {}) {
       h('p', {class:'tn-small tn-muted', text:'请使用安装了插件的 Chrome 窗口；浏览器尚未允许插件访问此页时，也可能暂时检测不到。'}));
     let modal;
     body.append(h('div', {class:'tn-action-row'},
-      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:'下载新版插件（0.2.5）'}),
+      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:'下载新版插件（0.2.6）'}),
       h('button', {class:'tn-btn', text:'已安装，重新检测', onclick:() => {modal.close(); promptPluginConnection();}}),
       h('button', {class:'tn-btn', text:'暂不连接', onclick:() => modal.close()})));
     modal = openModal({title:'连接帮你理插件', body, testid:'plugin-install-modal', onClose:() => dismissForVisit('missing')});

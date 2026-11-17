@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { jdEnabled, extractJd } from '../modules/jd-extraction/service.js';
+import { getApplication, markApplicationChanged, transaction } from '../db.js';
 import { config, featureFlags } from '../config.js';
 import { all, dataRevision, one, run } from '../db.js';
 import { route, jsonStatus, stripInternal } from '../http.js';
@@ -135,6 +137,34 @@ export function registerRoutes() {
   route('POST', '/api/v1/plugin-pairings/:id/approve', (req) => {
     const auth = requireAuth(req);
     return { data: approvePairing(auth.ownerId, req.params.id, req.body.code) };
+  });
+
+  route('GET', '/api/v1/plugin-jd/config', (req) => {
+    authenticateDevice(req);
+    return {data:{enabled:jdEnabled()}};
+  }, {public:true});
+  route('POST', '/api/v1/plugin-jd/extract', async (req) => {
+    const device = authenticateDevice(req);
+    return {data:await extractJd(device.owner_id, req.body || {})};
+  }, {public:true,csrf:false});
+  route('POST', '/api/v1/applications/:id/organize-jd', async (req) => {
+    const auth = requireAuth(req);
+    const app = getApplication(auth.ownerId,req.params.id);
+    if (!app) throw new AppError(404,'NOT_FOUND','记录不存在');
+    if (app.version !== req.body.expected_version) throw new AppError(409,'VERSION_CONFLICT','记录已更新，请刷新');
+    if (one("SELECT field FROM application_field_sources WHERE owner_id = ? AND application_id = ? AND field IN ('jd_text','jd_summary') AND source_method = 'manual'",[auth.ownerId,app.id])) throw new AppError(409,'JD_MANUAL_PROTECTED','正文有人工修改，已保留原文');
+    // Existing records only reorganize their saved source, never fetch arbitrary URLs.
+    const result = await extractJd(auth.ownerId,{url:app.job_url,text:[app.job_title,app.company_name,app.location,app.jd_text || app.jd_summary || ''].filter(Boolean).join('\n')});
+    if (!result.job) throw new AppError(422,'JD_NOT_FOUND','原文不足以识别岗位，请在原网站重新采集');
+    transaction(()=>{
+      const latest = getApplication(auth.ownerId,app.id);
+      if (!latest || latest.version !== app.version) throw new AppError(409,'VERSION_CONFLICT','整理期间记录已更新，请刷新');
+      const protectedJd = one("SELECT field FROM application_field_sources WHERE owner_id = ? AND application_id = ? AND field IN ('jd_text','jd_summary') AND source_method = 'manual'",[auth.ownerId,app.id]);
+      if (protectedJd) throw new AppError(409,'JD_MANUAL_PROTECTED','正文有人工修改，请保留原文或在原网站重新核对');
+      markApplicationChanged(auth.ownerId,app.id,null,'plugin',{jd_text:result.job.jd_text,jd_summary:result.job.jd_summary,jd_status:'complete'},
+        {reason:'岗位内容整理',fieldConfidence:{jd_text:'high',jd_summary:'high'}});
+    });
+    return {data:{usage:result.usage,estimated_cost:result.estimated_cost,cached:result.cached}};
   });
 
   // ---------- device API ----------

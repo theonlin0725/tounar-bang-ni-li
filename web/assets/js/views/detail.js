@@ -94,22 +94,66 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     if (app.deadline_at) fact('截止时间', fmtDate(app.deadline_at) + (app.deadline_precision === 'date' ? '（日期级）' : ''));
     bodyEl.append(section('核心字段', facts));
 
-    /* JD 摘要 */
-    bodyEl.append(section('JD 摘要', app.jd_summary && app.field_confidence?.jd_summary !== 'low'
-      ? h('div', { class: 'tn-evidence', text: app.jd_summary })
-      : h('div', { class: 'tn-link-disabled', text: '摘要待补充（纯文本，不渲染网页 HTML）' })));
-
-    /* JD 全文（插件采集的完整职责/要求；没有则回退摘要） */
-    if (app.jd_text && String(app.jd_text).trim()) {
-      bodyEl.append(section(app.jd_status === 'truncated' || app.jd_status === 'partial' ? 'JD 正文（不完整）' : 'JD 全文', h('div', {
-        class: 'tn-evidence tn-jd-full',
-        'data-test': 'detail-jd-text',
-        style: 'white-space:pre-wrap;max-height:320px;overflow:auto',
-        text: app.jd_text
-      })));
+    const jd = String(app.jd_text || app.jd_summary || '').trim();
+    const titles = ['团队介绍','岗位职责','任职要求','其他信息'];
+    const chunks = jd.split(/\n(?=团队介绍\n|岗位职责\n|任职要求\n|其他信息\n)/).map(x=>x.trim());
+    const organized = chunks.length > 0 && chunks.every(x=>titles.includes(x.split('\n')[0]));
+    const jdHost = h('div', {'data-test':'detail-jd-text',class:'tn-jd-sections'});
+    if (organized) {
+      for (const chunk of chunks) {
+        const [title,...rest] = chunk.split('\n');
+        const items = rest.join('\n').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+        if (!items.length) continue;
+        const numbered = /^\s*(\d{1,2})[、.．）)]\s*/;
+        let content;
+        if (title === '团队介绍') {
+          // A captured text fragment is not necessarily a paragraph. Join continuations,
+          // while retaining paragraph breaks after complete sentences.
+          const paragraphs = [];
+          for (const item of items) {
+            const text = item.replace(/\s*\n\s*/g, ' ').trim();
+            const previous = paragraphs.at(-1);
+            if (previous && !/[。！？.!?][”’"']?$/.test(previous)) {
+              paragraphs[paragraphs.length-1] += /[A-Za-z0-9]$/.test(previous) && /^[A-Za-z0-9]/.test(text) ? ' '+text : text;
+            } else paragraphs.push(text);
+          }
+          content = h('div', {class:'tn-jd-prose'}, paragraphs.map(text=>h('p',{text})));
+        } else if (title === '其他信息') {
+          content = h('div', {class:'tn-jd-meta'});
+          for (let i=0;i<items.length;i++) {
+            let text = items[i].replace(/\s+/g,' ').trim();
+            const next = items[i+1]?.replace(/\s+/g,' ').trim();
+            // Keep an adjacent abbreviation and its department name in one item.
+            if (/^[A-Z][A-Z0-9&-]{1,9}$/.test(text) && next && next.length<=30 && /(?:事业群|部门|中心|团队)$/.test(next)) {
+              text += ' · '+next;i++;
+            }
+            content.append(h('span',{class:text.length<=48?'tn-jd-tag':'tn-jd-note',text}));
+          }
+        } else {
+          const isNumbered = items.every(item=>numbered.test(item));
+          content = h(isNumbered?'ol':'ul', {class:'tn-jd-items'});
+          for (const item of items) {
+            const match = isNumbered && item.match(numbered);
+            content.append(h('li',{...(match?{value:Number(match[1])}:{}),text:match?item.slice(match[0].length):item}));
+          }
+        }
+        jdHost.append(section(title,content));
+      }
+    } else {
+      jdHost.append(section('岗位原文',h('div',{class:'tn-jd-original',text:jd || '尚未获取正文，请打开原岗位页面采集。'})));
+      if (jd) jdHost.append(h('p',{class:'tn-small tn-muted',text:'这条记录尚未分类，整理后将按职责和要求分段展示。'}));
     }
-
-    if (!app.jd_text) bodyEl.append(section('JD 待补充', h('p', { text: app.jd_status === 'too_long' ? '原页正文超过支持上限，本次未保存。' : '打开岗位详情后，插件会自动补充正文。' })));
+    if (jd && app.job_url) {
+      const organize = h('button',{class:'tn-btn tn-btn-sm','data-test':'organize-jd',text:organized?'重新整理':'整理岗位内容',onclick:async()=>{
+        organize.disabled=true;organize.textContent='正在理解岗位内容…';
+        try {
+          await api.post(`/api/v1/applications/${encodeURIComponent(id)}/organize-jd`,{expected_version:app.version},{timeoutMs:30000});
+          await load();onChanged?.();toast('岗位内容已整理');
+        } catch(err) {toast(err.message || '整理失败，原记录已保留','error');organize.disabled=false;organize.textContent='重新尝试整理';}
+      }});
+      jdHost.append(organize);
+    }
+    bodyEl.append(jdHost);
 
     /* 链接 */
     const links = h('div', { class: 'tn-links-row' });
@@ -126,16 +170,7 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     sourcesBox.append(h('div', { class: 'tn-kv' }, h('div', { class: 'tn-kv-item' },
       h('span', { class: 'tn-kv-key', text: '来源方式' }),
       h('span', { text: methods.length ? methods.join(' / ') : '未知' }))));
-    if (app.field_sources && app.field_sources.length) {
-      const list = h('div', { class: 'tn-kv', style: { marginTop: '6px' } });
-      for (const f of app.field_sources) {
-        list.append(h('div', { class: 'tn-kv-item' },
-          h('span', { class: 'tn-kv-key', text: f.field }),
-          h('span', { text: `${SOURCE_LABELS[f.source_method] || f.source_method} · ${ {high:'高把握',medium:'中把握',low:'待补充'}[f.confidence] || '把握度未知'} · ${fmtDateTime(f.updated_at)}` })));
-      }
-      sourcesBox.append(h('details', {}, h('summary', { class: 'tn-small tn-muted', text: `字段来源明细（${app.field_sources.length} 项）` }), list));
-    }
-    bodyEl.append(section('来源与证据（最短证据）', sourcesBox));
+    bodyEl.append(section('信息来源', sourcesBox));
 
     /* 待确认关联 */
     if (app.open_reviews && app.open_reviews.filter((r) => r.status === 'open').length) {
@@ -151,11 +186,11 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     for (const entry of app.history || []) {
       const from = entry.from_status ? (STATUS_LABELS[entry.from_status] || entry.from_status) : '—';
       const to = entry.to_status ? (STATUS_LABELS[entry.to_status] || entry.to_status) : '—';
-      const fields = Object.keys(entry.changed_fields || {});
+
       tl.append(h('li', {},
         h('div', { class: 'tn-h-time', text: fmtDateTime(entry.changed_at) }),
         h('div', { class: 'tn-h-main', text: entry.from_status === entry.to_status ? `${to}（无状态变化）` : `${from} → ${to}` }),
-        h('div', { class: 'tn-h-fields', text: `${SOURCE_LABELS[entry.source_method] || entry.source_method}${entry.reason ? ` · ${entry.reason}` : ''}${fields.length ? ` · 变更字段：${fields.join(', ')}` : ''}` })
+        h('div', { class: 'tn-h-fields', text: `${SOURCE_LABELS[entry.source_method] || '信息更新'}${entry.reason === '岗位内容整理' ? ' · 岗位内容已整理' : ''}` })
         ,entry.source_method === 'mail' && entry.from_status !== entry.to_status ? h('button', {
           class: 'tn-btn tn-btn-sm', 'data-test': 'undo-mail', text: '这条改错了，撤回',
           onclick: async () => {
