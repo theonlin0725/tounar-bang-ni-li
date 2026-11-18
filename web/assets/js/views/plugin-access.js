@@ -1,6 +1,6 @@
 import { h, clear, openModal } from '../util.js';
 import { api, errorText } from '../api.js';
-import { pluginDownloadLink } from './plugin-help.js';
+import { PLUGIN_VERSION, pluginDownloadLink } from './plugin-help.js';
 import { App } from '../app.js?v=20261102-1';
 
 export function extensionRequest(action, payload = {}) {
@@ -73,7 +73,7 @@ export async function promptPluginConnection({automatic = false} = {}) {
       h('p', {class:'tn-small tn-muted', text:'请使用安装了插件的 Chrome 窗口；浏览器尚未允许插件访问此页时，也可能暂时检测不到。'}));
     let modal;
     body.append(h('div', {class:'tn-action-row'},
-      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:'下载新版插件（0.2.7）'}),
+      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:`下载新版插件（${PLUGIN_VERSION}）`}),
       h('button', {class:'tn-btn', text:'已安装，刷新页面重新检测', onclick:() => {
         try {sessionStorage.removeItem(dismissKey());} catch {}
         location.reload();
@@ -231,6 +231,9 @@ export function createSiteAccessCard({manager = false} = {}) {
         const state=group.granted.length ? (group.domains.every(d => d.granted) ? '已授权' : '部分域名已授权') : '待授权';
         row.append(h('label', {class:'tn-check', style:{margin:'0'}}, check, h('strong', {text:group.label}), h('span', {class:'tn-small tn-muted', text:state})));
         const details=h('details', {style:{marginLeft:'24px', marginTop:'6px'}}, h('summary', {class:'tn-small tn-muted', style:{cursor:'pointer'}, text:'查看域名'}));
+        if (group.entryUrl) {
+          details.append(h('p', {class:'tn-small'}, h('a', {href:group.entryUrl, target:'_blank', rel:'noopener noreferrer', text:'打开招聘入口'})));
+        }
         for (const domain of group.domains) {
           const origin='https://'+domain.host+'/*';
           const domainCheck=h('input', {type:'checkbox', 'aria-label':domain.host});

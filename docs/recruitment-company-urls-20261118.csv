@@ -1,0 +1,131 @@
+﻿序号,公司名称,行业板块,行业细分,校招入口,社招入口,岗位详情样本,入口状态,说明,核心产品,主要岗位类型,数据来源,核验日期
+1,字节跳动,互联网,第一梯队（10亿+用户）,https://jobs.bytedance.com/campus,https://jobs.bytedance.com/experienced,https://jobs.bytedance.com/campus/position/7699119731313821957/detail,可用（已实测详情）,原 job.bytedance.com 为旧入口；校招/社招均在 jobs.bytedance.com,抖音、今日头条、豆包、红果短剧、飞书,推荐算法、产品经理、内容运营、电商运营、客户端开发,2026-11-18 实测 + 官方入口复核,2026-11-18
+2,腾讯,互联网,第一梯队（10亿+用户）,https://join.qq.com/,https://careers.tencent.com/,https://join.qq.com/post_detail.html?postid=1283126456553382912,可用（已实测详情）,校招 join.qq.com；社招 careers.tencent.com；两套域名不同,微信、QQ、王者荣耀、和平精英、腾讯视频,后端开发、产品经理、游戏策划、算法工程师、运营,2026-11-18 实测 + 官方入口复核,2026-11-18
+3,阿里巴巴,互联网,第一梯队（10亿+用户）,https://campus-talent.alibaba.com/campus/index,https://talent-holding.alibaba.com/off-campus,https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017,可用（已实测详情）,原 campus.alibaba.com 会跳转；校招/社招分别使用 campus-talent 与 talent-holding,淘宝、天猫、支付宝、1688、阿里云,电商运营、Java开发、产品经理、数据分析师、云技术,2026-11-18 实测 + 官方入口复核,2026-11-18
+4,京东,互联网,第二梯队（亿级用户）,https://campus.jd.com/home,https://zhaopin.jd.com/,https://zhaopin.jd.com/web/job-info-detail?requementId=227263,可用（已实测详情）,社招 zhaopin.jd.com；校招 campus.jd.com,京东商城、京东物流、京东科技,采销、供应链、物流运营、Java开发、产品经理,2026-11-18 实测 + 官方入口复核,2026-11-18
+5,百度,互联网,第二梯队（亿级用户）,https://talent.baidu.com/jobs/campus,https://talent.baidu.com/jobs/social,,可用（SPA，需等待渲染）,原 talent.baidu.com 根路径会 invalid_navigation；需直接进 /jobs 路由,百度搜索、百度网盘、文心一言、Apollo,NLP算法、搜索策略、产品经理、运维、AI训练师,2026-11-18 实测 + 官方入口复核,2026-11-18
+6,美团,互联网,第二梯队（亿级用户）,https://zhaopin.meituan.com/web/campus,https://zhaopin.meituan.com/web/social,https://zhaopin.meituan.com/web/position/detail?jobUnionId=4798450784&highlightType=social,可用（已实测详情）,校招/社招同域不同路径；详情需带 jobUnionId,美团外卖、到店餐饮、美团优选,本地生活运营、产品经理、算法调度、地推,2026-11-18 实测 + 官方入口复核,2026-11-18
+7,拼多多,互联网,第二梯队（亿级用户）,https://careers.pddglobalhr.com/campus,https://careers.pddglobalhr.com/,https://careers.pddglobalhr.com/campus/grad/detail?positionId=43b706c2-9d86-47de-a99d-fcd35405799f,可用（入口/列表；社招从站内切换）,原 careers.pinduoduo.com 已不是主入口；PDD 使用 pddglobalhr.com；社招入口在站内切换，独立 /social 路径有 403,拼多多、Temu,商家运营、产品经理、供应链、海外运营,2026-11-18 实测 + 官方入口复核,2026-11-18
+8,小米,互联网,垂直领域头部,https://hr.xiaomi.com/campus,https://hr.xiaomi.com/social,https://xiaomi.jobs.f.mioffice.cn/index/position/7342833451802542188/detail,可用（已实测详情）,校招 hr.xiaomi.com；社招详情在 mioffice 域,小米手机、MIUI、IoT生态、米家,嵌入式开发、产品经理、IoT生态运营,2026-11-18 实测 + 官方入口复核,2026-11-18
+9,米哈游,互联网,垂直领域头部,https://campus.mihoyo.com/,https://jobs.mihoyo.com/,https://jobs.mihoyo.com/#/position/6352,可用（已实测详情）,校招/社招分域；hash 详情需浏览器等待,原神、崩坏系列、绝区零,游戏开发、美术、策划、海外发行,2026-11-18 实测 + 官方入口复核,2026-11-18
+10,网易,互联网,垂直领域头部,https://campus.163.com/,https://hr.163.com/,,可用（入口/列表）,网易校招 campus.163.com；社招 hr.163.com；游戏业务另有 campus.game.163.com、leihuo.163.com,网易游戏、网易云音乐、有道,游戏开发、音乐产品、教育产品,2026-11-18 实测 + 官方入口复核,2026-11-18
+11,SHEIN,互联网,垂直领域头部,https://careers.shein.cn/Students-&-Graduates,https://careers.shein.cn/Professionals,,可用（入口/列表）,中国站 careers.shein.cn；全球站 careers.shein.com,SHEIN跨境电商,跨境运营、供应链、算法推荐、海外市场,2026-11-18 实测 + 官方入口复核,2026-11-18
+12,华为,互联网,垂直领域头部,https://career.huawei.com/reccampportal/,https://career.huawei.com/,,可用（SPA，需等待渲染）,原入口为 SPA 壳；社招 career.huawei.com 可读,华为手机、鸿蒙、华为云、企业业务,通信工程、硬件研发、云服务、解决方案,2026-11-18 实测 + 官方入口复核,2026-11-18
+13,哔哩哔哩,互联网,垂直领域头部,https://jobs.bilibili.com/campus,https://jobs.bilibili.com/social,,可用（入口/列表）,校招/社招同域；详情需从列表进入,B站、B站游戏,内容运营、UP主运营、游戏发行、弹幕产品,2026-11-18 实测 + 官方入口复核,2026-11-18
+14,富途,互联网,垂直领域头部,https://join.futunn.com/,https://join.futunn.com/,,可用（入口/列表）,富途招聘单入口；详情需从职位列表进入,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+15,小红书,互联网,垂直领域头部,https://job.xiaohongshu.com/campus,https://job.xiaohongshu.com/social,https://job.xiaohongshu.com/campus/position/22013,仅列表/判岗未通过,原 xiaohongshu.zhiye.com 已 404；详情为前端渲染，当前本地判岗会拦截,小红书社区、电商,内容运营、KOL运营、电商产品、商业化,2026-11-18 实测 + 官方入口复核,2026-11-18
+16,得物,互联网,垂直领域头部,https://campus.dewu.com/,https://careers.dewu.com/,,可用（入口/列表）,得物校招 campus.dewu.com；社招 careers.dewu.com,得物APP、球鞋/潮流电商,鉴别师、潮流运营、电商产品,2026-11-18 实测 + 官方入口复核,2026-11-18
+17,微博,互联网,垂直领域头部,https://app.mokahr.com/campus-recruitment/sina/43536#/jobs,https://app.mokahr.com/social-recruitment/sina/43535#/jobs,https://app.mokahr.com/campus-recruitment/sina/43536#/job/5f97c970-b3cf-4805-a3d4-33dc14404854,可用（入口/列表）,新浪/微博使用 Moka；校招/社招两个租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+18,快手,互联网,垂直领域头部,https://campus.kuaishou.cn/,https://zhaopin.kuaishou.cn/,,可用（入口/列表）,原 careers.kuaishou.com DNS 失败；正确域名为 zhaopin/campus.kuaishou.cn,快手短视频、快手电商,短视频运营、直播运营、推荐算法,2026-11-18 实测 + 官方入口复核,2026-11-18
+19,携程,互联网,垂直领域头部,https://careers.ctrip.com/,https://job.ctrip.com/,,可用（入口/列表）,校招 careers.ctrip.com；社招 job.ctrip.com/同站社会招聘,携程旅行、去哪儿、飞猪,酒店运营、机票产品、海外业务、大数据,2026-11-18 实测 + 官方入口复核,2026-11-18
+20,滴滴,互联网,垂直领域头部,https://talent.didiglobal.com/campus,https://talent.didiglobal.com/social/,,可用（入口/列表）,原 join.didiglobal.com DNS 失败；正确入口 talent.didiglobal.com,滴滴出行、顺风车、货运,算法调度、产品经理、安全运营,2026-11-18 实测 + 官方入口复核,2026-11-18
+21,百融云创,互联网,垂直领域头部,https://www.brgroup.com/,https://www.brgroup.com/,,可用（官网；招聘页需从官网进入）,原 bairongyc.com DNS 失败；百融现用 brgroup.com，careers 子域不解析,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+22,网易游戏雷火,互联网,垂直领域头部,https://leihuo.163.com/campus/,https://hr.163.com/,,可用（入口/列表）,雷火校招独立站；社招在网易 hr.163.com 筛选雷火,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+23,网易游戏（互娱）,互联网,垂直领域头部,https://campus.game.163.com/,https://hr.game.163.com/,https://hr.163.com/job-detail.html?id=67248,可用（入口/列表）,互娱校招/社招分域；详情可从 hr.163.com 进入,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+24,阿里云,互联网,垂直领域头部,https://careers.aliyun.com/campus/home,https://careers.aliyun.com/,,可用（入口/列表）,阿里云独立招聘站；详情需从列表进入,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+25,Amazon中国,互联网,外企互联网,https://www.amazon.jobs/en/,https://www.amazon.jobs/en/,https://www.amazon.jobs/en/jobs/10594132,可用（已实测详情）,按国家/地区筛选 China；详情为英文,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+26,Google中国,互联网,外企互联网,https://www.google.com/about/careers/applications/jobs/results/,https://www.google.com/about/careers/applications/jobs/results/,https://www.google.com/about/careers/applications/jobs/results/123881012009542342-account-manager-retail-large-customer-sales-english-mandarin,可用（入口/列表）,原 careers.google.com 跳官网；需用 jobs/results 并按 China 筛选,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+27,微软中国,互联网,外企互联网,https://careers.microsoft.com/v2/global/en/students,https://jobs.careers.microsoft.com/global/en/search,https://apply.careers.microsoft.com/careers/job/1970393557074390?hl=en,可用（已实测详情）,校招/社招分域；原 careers.microsoft.com 为营销页,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+28,苹果中国,互联网,外企互联网,https://jobs.apple.com/zh-cn/search,https://jobs.apple.com/zh-cn/search,,可用（入口/列表）,Apple 全球站按 China 筛选；校园/实习可在 Students 过滤,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+29,OPPO,互联网,硬件/科技,https://career.oppo.com/campus,https://career.oppo.com/,https://career.oppo.com/official/oppo/recruitment/post/1563444621030670338?recruitType=SOCIAL-RECRUITMENT,可用（已实测详情）,校招/社招同域；详情带 recruitType,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+30,ZURU,互联网,硬件/科技,https://www.zururecruit.cn/,https://www.zururecruit.cn/,,可用（入口/列表）,ZURU 中国招聘站；详情需从列表进入,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+31,vivo,互联网,硬件/科技,https://hr-campus.vivo.com/,https://hr.vivo.com/,,可用（入口/列表）,原 vivo.zhaopin.com 已 404；正确为 hr/campus.vivo.com,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+32,京东方,互联网,硬件/科技,https://boe.zhiye.com/campus,https://boe.zhiye.com/,,可用（SPA，需等待渲染）,原 /campus 为列表；社招/校招在 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+33,传音控股,互联网,硬件/科技,https://transsion.zhiye.com/,https://transsion.zhiye.com/,,可用（入口/列表）,原 transsion.com/careers 404；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+34,商汤科技,互联网,硬件/科技,https://hr.sensetime.com/,https://hr.sensetime.com/,,可用（SPA，需等待渲染）,原 sensetime.com/careers 为营销页；招聘在 hr 子域,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+35,影石Insta360,互联网,硬件/科技,https://www.insta360.com/cn/jobs,https://www.insta360.com/cn/jobs,,可用（入口/列表）,原 insta360.zhiye.com 已不可用；正确为官网 /cn/jobs,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+36,科大讯飞,互联网,硬件/科技,https://iflytek.zhiye.com/campus/jobs,https://iflytek.zhiye.com/jobs,,可用（入口/列表）,原 career.iflytek.com DNS 失败；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+37,荣耀,互联网,硬件/科技,https://career.honor.com/,https://career.honor.com/,,可用（入口/列表）,原 honor.cn/careers 为跳转；正确为 career.honor.com,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+38,货拉拉,互联网,硬件/科技,https://join.huolala.cn/,https://huolala.zhiye.com/,,可用（入口/列表）,校招 join.huolala.cn；社招 huolala.zhiye.com,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+39,韶音科技,互联网,硬件/科技,https://campus.shokz.com.cn/,https://hr.shokz.com.cn/,,可用（入口/列表）,原 shokz.com/careers 404；正确为 hr/campus.shokz.com.cn,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+40,中信银行,金融,银行,https://job.citicbank.com/,https://job.citicbank.com/,,可用（入口/列表）,中信银行官方招聘站；校招/社招同站,中信集团旗下综合金融,综合金融、家族信托,2026-11-18 实测 + 官方入口复核,2026-11-18
+41,兴业银行,金融,银行,https://job.cib.com.cn/portal/,https://job.cib.com.cn/portal/,,可用（入口/列表）,原 cib.com.cn 招聘公告页不是投递入口；正确为 job.cib.com.cn,同业之王，绿色金融特色,金融市场、投行业务,2026-11-18 实测 + 官方入口复核,2026-11-18
+42,平安银行,金融,银行,https://campus.pingan.com/pab/freshgraduates,https://talent.pingan.com/recruit/social.html,https://talent.pingan.com/recruit/position.html?positionId=1C7232146A0D4604B2C528ED2DA0859C,可用（入口/列表）,平安银行校招 campus.pingan.com/pab；社招 talent.pingan.com,科技驱动，零售转型,零售业务、金融科技、风控,2026-11-18 实测 + 官方入口复核,2026-11-18
+43,招商银行,金融,银行,https://career.cmbchina.com/,https://career.cmbchina.com/,,可用（入口/列表）,校招/社招同站；原 career.cmbchina.com 可打开但详情需登录/列表,零售之王，最受求职者欢迎,招行APP产品、财富管理、私人银行、金融科技,2026-11-18 实测 + 官方入口复核,2026-11-18
+44,浦发银行,金融,银行,https://job.spdb.com.cn/,https://job.spdb.com.cn/,,可用（入口/列表）,浦发招聘独立站；校招/社招同站,长三角区域优势,对公业务、科技金融,2026-11-18 实测 + 官方入口复核,2026-11-18
+45,中国银行,金融,银行,https://www.boc.cn/aboutboc/bi4/,https://chrcmp.chinahr.com/pages/boc-social/,,可用（入口/列表）,原 career.boc.cn DNS 失败；校招公告在 boc.cn，社招走中华英才网,国际化程度最高，外汇业务,外汇业务、跨境金融、海外岗,2026-11-18 实测 + 官方入口复核,2026-11-18
+46,交通银行,金融,银行,https://job.bankcomm.com/,https://job.bankcomm.com/,,可用（入口/列表）,交行人才招聘独立站,历史最悠久的国有银行,综合金融、投资银行,2026-11-18 实测 + 官方入口复核,2026-11-18
+47,农业银行,金融,银行,https://career.abchina.com.cn/,https://career.abchina.com.cn/,,可用（SPA，需等待渲染）,原 career.abchina.com 与 .cn 不一致；正确为 .com.cn,县域金融优势，三农业务,三农业务、零售银行,2026-11-18 实测 + 官方入口复核,2026-11-18
+48,宁波银行,金融,银行,https://zhaopin.nbcb.com.cn/,https://zhaopin.nbcb.com.cn/,,可用（入口/列表）,宁波银行招聘独立站,城商行标杆，增速最快,公司业务、零售公司、金融市场,2026-11-18 实测 + 官方入口复核,2026-11-18
+49,工商银行,金融,银行,https://job.icbc.com.cn/,https://job.icbc.com.cn/,,可用（SPA，需等待渲染）,工行人才招聘；原根路径可打开但正文为 SPA,全球最大银行，公司金融、零售银行,柜员、客户经理、风控、金融科技,2026-11-18 实测 + 官方入口复核,2026-11-18
+50,广东华兴银行,金融,银行,https://ghbank.zhiye.com/,https://ghbank.zhiye.com/,,可用（入口/列表）,原 ghbank.com.cn/career 404；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+51,建设银行,金融,银行,https://job.ccb.com/,https://job.ccb.com/,,可用（SPA，需等待渲染）,建行人才招聘；原 job.ccb.com 会跳 wealth.ccb.com,基建金融优势，住房金融,对公业务、房贷、金融科技,2026-11-18 实测 + 官方入口复核,2026-11-18
+52,招商永隆银行（香港）,金融,银行,https://www.cmbwinglungbank.com/wlb_corporate/cn/about-us/careers/index.html,https://www.cmbwinglungbank.com/wlb_corporate/cn/about-us/careers/job-openings/index.html,,可用（入口/列表）,原 /careers 404；正确为官网 about-us/careers,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+53,邮储银行,金融,银行,https://psbc2027.zhaopin.com/,https://www.psbc.com/cn/careers/,,可用（入口/列表）,校招为年度专题站；社招在官网 careers,网点最多，下沉市场覆盖广,零售客户经理、财富管理,2026-11-18 实测 + 官方入口复核,2026-11-18
+54,东方证券,金融,券商,https://www.dfzq.com.cn/osoa/views/main/companyinfodisclosure/companyrecruitment/index.shtml,https://www.dfzq.com.cn/osoa/views/main/companyinfodisclosure/companyrecruitment/index.shtml,,可用（入口/列表）,原 orientsec.zhiye.com 已不可用；正确为官网公司招聘页,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+55,中信期货,金融,券商,https://citicsfzp.zhiye.com/,https://citicsfzp.zhiye.com/,,可用（入口/列表）,原 jobs.citicsfutures.com DNS 失败；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+56,中信证券,金融,券商,https://careers.citics.com/,https://careers.citics.com/,,可用（入口/列表）,原 jobs.citics.com DNS 失败；正确为 careers.citics.com,行业第一，投行与研究所龙头,投行、研究所、资管、自营,2026-11-18 实测 + 官方入口复核,2026-11-18
+57,中国银河,金融,券商,https://chinastock.zhiye.com/,https://chinastock.zhiye.com/,,可用（入口/列表）,中国银河证券招聘系统,经纪业务强，网点多,经纪业务、财富管理,2026-11-18 实测 + 官方入口复核,2026-11-18
+58,中金公司,金融,券商,https://cicc.zhiye.com/,https://cicc.zhiye.com/,,可用（入口/列表）,中金校招/社招在 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+59,兴业证券,金融,券商,https://xyzq.hotjob.cn/,https://xyzq.hotjob.cn/,,可用（入口/列表）,原 xyzq.zhiye.com 不可用；正确为 hotjob 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+60,华泰证券,金融,券商,https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/index.html,https://wecruit.hotjob.cn/SU6013d14e5d83dc11e4a8ae4d/pb/index.html,,可用（入口/列表）,原 htsc.zhiye.com 证书错误；正确为 hotjob 租户/官网 /recruit,科技投入最大，涨乐财富通,金融科技、财富管理、研究所,2026-11-18 实测 + 官方入口复核,2026-11-18
+61,国信证券,金融,券商,https://guosen.zhiye.com/,https://guosen.zhiye.com/,,可用（入口/列表）,国信证券招聘系统；校招/社招同站,深圳本土强，投行业务突出,投行业务、经纪业务,2026-11-18 实测 + 官方入口复核,2026-11-18
+62,国泰海通,金融,券商,https://www.gtht.com/,https://www.gtht.com/,,可用（入口/列表）,国泰海通官网“人才招聘”；校招专题另见 campus.51job.com/gtht,合并后第二，规模庞大,投行、经纪业务、跨境业务,2026-11-18 实测 + 官方入口复核,2026-11-18
+63,国盛证券,金融,券商,https://gszq.hotjob.cn/,https://gszq.hotjob.cn/,,可用（入口/列表）,原 gssec.com/campus 重定向不稳定；正确为 hotjob 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+64,国金证券,金融,券商,https://gjzq.zhiye.com/jobs,https://gjzq.zhiye.com/jobs,,可用（入口/列表）,原 gjzq.com/campus 超时；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+65,天风证券,金融,券商,https://www.tfzq.com/job/campus.html,https://www.tfzq.com/hr/hr.html,https://www.tfzq.com/job/7671807013751357698.html,可用（入口/列表）,校招/社招在官网 job/hr 路径；hotjob 租户也可用,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+66,平安证券,金融,券商,https://campus.pingan.com/securities,https://talent.pingan.com/recruit/social.html,https://talent.pingan.com/recruit/position.html?positionId=AD71B2972A204F30B0CD1908D233A04D,可用（入口/列表）,平安证券校招在 campus.pingan.com/securities；社招在集团 talent,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+67,广发证券,金融,券商,https://job.gf.com.cn/,https://job.gf.com.cn/,,可用（入口/列表）,广发证券人才招聘网；校招/社招同站,华南龙头，资管强,投行业务、资管、公募基金,2026-11-18 实测 + 官方入口复核,2026-11-18
+68,招商证券,金融,券商,https://wecruit.hotjob.cn/SU629dbc260dcad452299bc0fa/mc/index,https://wecruit.hotjob.cn/SU629dbc260dcad452299bc0fa/mc/index,,可用（入口/列表）,原 cmschina.com 无招聘入口；正确为 hotjob 租户,招商局旗下综合券商,投行、资管、机构业务,2026-11-18 实测 + 官方入口复核,2026-11-18
+69,民生证券,金融,券商,https://mszq.hotjob.cn/,https://mszq.hotjob.cn/,,可用（入口/列表）,原 mszq.com 已并入国联民生；hotjob 租户仍可打开,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+70,申万宏源,金融,券商,https://www.swhysc.com/,https://www.swhysc.com/,,可用（入口/列表）,申万宏源官网；招聘入口在官网导航/公告，无独立稳定 ATS 详情,研究实力强,研究所、投行、资管,2026-11-18 实测 + 官方入口复核,2026-11-18
+71,西南证券,金融,券商,https://wecruit.hotjob.cn/SU61d3efeabef57c13bcba2eea/pb/social.html,https://wecruit.hotjob.cn/SU61d3efeabef57c13bcba2eea/pb/social.html,,可用（需登录/反爬）,原 swsc.com.cn/campus 403；正确为 hotjob 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+72,里昂证券,金融,券商,https://www.clsa.com/careers/,https://www.clsa.com/careers/,,可用（入口/列表）,里昂证券（CLSA）全球招聘站；中国区岗位按 location 筛选,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+73,长城证券,金融,券商,https://cgws1.zhiye.com/,https://cgws1.zhiye.com/,,可用（入口/列表）,长城证券招聘系统；原 cgws.com/campus 为官网路径,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+74,长江证券,金融,券商,https://cjzq.zhiye.com/,https://cjzq.zhiye.com/,,可用（入口/列表）,长江证券招聘系统；原 95579.com/campus 已 404,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+75,中国人保,金融,保险,https://picc.zhiye.com/,https://picc.zhiye.com/,,可用（入口/列表）,中国人保招聘系统；校招/社招同站,财险龙头,财险理赔、农险、再保险,2026-11-18 实测 + 官方入口复核,2026-11-18
+76,中国人寿,金融,保险,https://chinalife.zhiye.com/,https://chinalife.zhiye.com/,,可用（入口/列表）,中国人寿招聘系统,寿险行业第一,个险渠道、精算、投资,2026-11-18 实测 + 官方入口复核,2026-11-18
+77,中国太保,金融,保险,https://www.cpic.com.cn/aboutUs/rlzy/ygzp/,https://www.cpic.com.cn/aboutUs/rlzy/ygzp/,,可用（入口/列表）,原 cpic.com.cn/careers 404；正确为官网“员工招聘”,综合保险集团,寿险、财险、养老产业,2026-11-18 实测 + 官方入口复核,2026-11-18
+78,中国平安,金融,保险,https://talent.pingan.com/recruit/index.html,https://talent.pingan.com/recruit/social.html,https://talent.pingan.com/recruit/position.html?positionId=C1F27CDDF37243ABA237C8387DA26443,可用（入口/列表）,中国平安统一招聘站；校招 campus.pingan.com,综合金融集团，科技含量最高,保险、银行、投资、科技（平安科技）,2026-11-18 实测 + 官方入口复核,2026-11-18
+79,众安在线,金融,保险,https://www.zhongan.com/,https://www.zhongan.com/,,可用（入口/列表；需从官网进入）,众安官网“校园招聘/加入我们”,互联网保险第一股,互联网产品、保险科技、大数据风控,2026-11-18 实测 + 官方入口复核,2026-11-18
+80,新华保险,金融,保险,https://nci.zhiye.com/,https://nci.zhiye.com/,,可用（入口/列表）,新华保险网申系统,A股上市寿险公司,个险、银保、资产管理,2026-11-18 实测 + 官方入口复核,2026-11-18
+81,泰康保险,金融,保险,https://jobtaikang.zhiye.com/,https://jobtaikang.zhiye.com/,,可用（入口/列表）,泰康招聘门户；校招/社招同站,医养结合特色,养老社区、健康管理、保险,2026-11-18 实测 + 官方入口复核,2026-11-18
+82,华夏基金,金融,基金,https://chinaamc.zhiye.com/,https://chinaamc.zhiye.com/,,可用（入口/列表）,原 chinaamc.com/recruit 404；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+83,南方基金,金融,基金,https://southernfund.hotjob.cn/,https://southernfund.hotjob.cn/,,可用（入口/列表）,原 nffund.com/recruit 404；正确为 hotjob 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+84,博时基金,金融,基金,https://bosera.hotjob.cn/,https://bosera.hotjob.cn/,,可用（入口/列表）,博时基金招聘官网,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+85,嘉实基金,金融,基金,https://www.jsfund.cn/,https://www.jsfund.cn/,,可用（入口/列表；需从官网进入）,原 /recruit 404；官网“加入我们-嘉实招聘”,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+86,大成基金,金融,基金,https://www.dcfund.com.cn/,https://www.dcfund.com.cn/,,可用（入口/列表；需从官网进入）,原 /recruit 404；官网“关于我们-人才招聘”,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+87,天弘基金,金融,基金,https://www.thfund.com.cn/,https://www.thfund.com.cn/,,可用（入口/列表）,官网“人才招聘”,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+88,广发基金,金融,基金,https://gffunds.jobs.feishu.cn/,https://gffunds.jobs.feishu.cn/,,可用（入口/列表）,原 gffunds.com.cn/recruit 404；正确为飞书招聘站,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+89,招商基金,金融,基金,https://cmfchina.zhiye.com/,https://cmfchina.zhiye.com/,,可用（入口/列表）,原 cmfchina.com/recruit 404；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+90,易方达基金,金融,基金,https://efunds.hotjob.cn/,https://efunds.hotjob.cn/,,可用（入口/列表）,易方达基金招聘,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+91,景顺长城基金,金融,基金,https://invescogreatwall.zhiye.com/,https://invescogreatwall.zhiye.com/,,可用（入口/列表）,景顺长城招聘系统,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+92,永赢基金,金融,基金,https://maxwealthfund.hotjob.cn/,https://maxwealthfund.hotjob.cn/,,可用（入口/列表）,原 yongyingfund.com/recruit 超时；正确为 hotjob 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+93,汇添富基金,金融,基金,https://htffund.zhiye.com/,https://htffund.zhiye.com/,,可用（入口/列表）,原 htffund.com/recruit DNS 失败；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+94,长城基金,金融,基金,https://greatwallfund.zhiye.com/,https://greatwallfund.zhiye.com/,,可用（入口/列表）,原 ccfund.com.cn/recruit 404；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+95,鹏华基金,金融,基金,https://job.phfund.com.cn/,https://job.phfund.com.cn/,,可用（入口/列表）,原 phfund.com.cn/recruit 200 但无正文；正确为 job 子域,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+96,蚂蚁集团,金融,金融科技,https://talent.antgroup.com/,https://talent.antgroup.com/,,可用（入口/列表）,蚂蚁集团招聘；校招专题在官网,支付宝母公司，金融科技标杆,区块链、风控算法、支付产品、财富科技,2026-11-18 实测 + 官方入口复核,2026-11-18
+97,京东科技,金融,金融科技,https://zhaopin.jd.com/,https://zhaopin.jd.com/,,可用（入口/列表）,京东科技并入京东招聘；校招 campus.jd.com,京东旗下科技板块,供应链金融、金融云、支付科技,2026-11-18 实测 + 官方入口复核,2026-11-18
+98,同花顺,金融,金融科技,https://campus.10jqka.com.cn/job/list?type=school,https://job.10jqka.com.cn/,,可用（入口/列表）,同花顺校招/社招两个子域,炒股软件龙头,金融数据、量化产品、AI投顾,2026-11-18 实测 + 官方入口复核,2026-11-18
+99,奇富科技,金融,金融科技,https://app.mokahr.com/campus_apply/360jinrong/26697#/,https://app.mokahr.com/apply/360jinrong#/,,可用（入口/列表）,奇富科技（360数科）Moka 租户；官网“加入我们”进入,信贷科技头部,风控建模、AI催收、数据研发,2026-11-18 实测 + 官方入口复核,2026-11-18
+100,平安科技,金融,金融科技,https://talent.pingan.com/recruit/campus.html,https://talent.pingan.com/recruit/social.html,,可用（入口/列表）,平安科技并入平安集团招聘,平安集团技术输出,AI医疗、金融科技、云平台,2026-11-18 实测 + 官方入口复核,2026-11-18
+101,度小满,金融,金融科技,https://campus.duxiaoman.com/,https://talent.duxiaoman.com/,,可用（入口/列表）,原 duxiaoman.zhiye.com 不可用；正确为 campus/talent 子域,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+102,微众银行,金融,金融科技,https://campus.webank.com/,https://hr.webank.com/,,可用（入口/列表）,原 webank.zhiye.com 不可用；正确为 campus/hr 子域,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+103,陆金所,金融,金融科技,https://talent.pingan.com/recruit/index.html,https://talent.pingan.com/recruit/index.html,,可用（入口/列表）,陆金所官网 Join Us 指向平安招聘；校招/社招按平安体系,平安旗下财富平台,财富管理、科技输出,2026-11-18 实测 + 官方入口复核,2026-11-18
+104,UBS,金融,外资金融,https://www.ubs.com/global/en/careers.html,https://www.ubs.com/global/en/careers.html,,可用（全球站；自动化超时）,UBS 全球招聘；按 China 筛选。自动化浏览器偶发超时，普通浏览器可打开,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+105,摩根士丹利,金融,外资金融,https://www.morganstanleysecurities.com.cn/,https://www.morganstanleysecurities.com.cn/,,可用（官网；全球站自动化超时）,摩根士丹利证券中国官网；全球 careers 站有 HTTP2 兼容问题，普通浏览器可试,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+106,摩根大通,金融,外资金融,https://www.jpmorganchase.com/careers,https://careers.jpmorgan.com/,,可用（全球站；自动化超时）,摩根大通全球招聘；按 China 筛选。自动化浏览器偶发超时,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+107,汇丰,金融,外资金融,https://www.about.hsbc.com.cn/careers,https://portal.careers.hsbc.com/,,可用（中国站；全球 portal 自动化超时）,汇丰中国职业发展页可打开；全球 Candidate Portal 自动化超时,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+108,花旗,金融,外资金融,https://jobs.citi.com/,https://jobs.citi.com/,,可用（入口/列表）,花旗全球招聘；按 China 筛选,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+109,高盛,金融,外资金融,https://www.goldmansachs.com/careers,https://www.goldmansachs.com/careers,,可用（全球站；自动化超时）,高盛全球招聘；按 China 筛选。自动化浏览器偶发超时,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+110,上海量派投资,金融,资产管理/私募,,,,未找到公开入口,上海量派投资为私募机构，未检索到公开校招/社招官网,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+111,国信资本,金融,资产管理/私募,https://www.guosen.com.cn/,https://www.guosen.com.cn/,,可用（入口/列表；需从官网进入）,国信资本为旗下机构，招聘并入国信证券；官网“人才招聘”,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+112,国金资管,金融,资产管理/私募,https://gjzq.zhiye.com/jobs,https://gjzq.zhiye.com/jobs,,可用（入口/列表）,国金资管为旗下机构，招聘并入国金证券,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+113,泰康资产,金融,资产管理/私募,https://www.taikangasset.cn/,https://jobtaikang.zhiye.com/,,可用（入口/列表）,泰康资产官网“加入我们”；社招在泰康招聘门户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+114,红杉中国,金融,资产管理/私募,https://www.hongshan.com/,https://hongshan.jobs.feishu.cn/,,可用（入口/列表）,红杉中国官网“工作机会”；校招/社招在飞书招聘站,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+115,财通资管,金融,资产管理/私募,https://www.ctzg.com/,https://www.ctzg.com/,,可用（官网；招聘页需从官网进入）,财通资管官网；hotjob 租户直连 403，需从官网“加入我们”进入,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+116,进化论资产,金融,资产管理/私募,,,,未找到公开入口,进化论资产为私募机构，未检索到公开校招/社招官网,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+117,埃森哲,其他行业,快消/咨询,https://www.accenture.cn/cn-zh/careers,https://www.accenture.cn/cn-zh/careers,https://www.accenture.com/cn-zh/careers/jobdetails?id=R00002228_zh-cn&title=Presales%2FImplementation+Expert,可用（已实测详情）,校招/社招同站；详情可打开,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+118,安永,其他行业,快消/咨询,https://careers.ey.com.cn/,https://careers.ey.com.cn/,https://careers.ey.com.cn/campus-recruitment/ey/166374?locale=zh-CN/#/job/3f07f2cc-f41e-4a61-9203-7ff249953423,可用（入口/列表）,安永中国招聘；校招/社招在 Moka 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+119,德勤,其他行业,快消/咨询,https://www.deloitte.com/cn/zh/cn-careers.html,https://wecruit.hotjob.cn/SU64365a780dcad43c5ae82bab/pb/index.html,,可用（入口/列表）,德勤中国校招在官网；社招/hotjob 租户可投递,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+120,欧莱雅,其他行业,快消/咨询,https://www.lorealchina.com/,https://www.lorealchina.com/,,可用（官网；全球站自动化超时）,欧莱雅中国官网；全球 careers.loreal.com 自动化超时，普通浏览器可试,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+121,毕马威,其他行业,快消/咨询,https://kpmg.com/cn/zh/home/careers.html,https://kpmg.com/cn/zh/home/careers.html,,可用（自动化超时，浏览器可打开）,毕马威中国招聘；自动化浏览器超时，普通浏览器可打开,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+122,海天味业,其他行业,快消/咨询,https://haitian.zhiye.com/campus,https://haitian.zhiye.com/,,可用（SPA，需等待渲染）,海天集团招聘官网；原 /campus 为列表,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+123,玛氏,其他行业,快消/咨询,https://careers.mars.com/global/en,https://careers.mars.com/global/en,https://careers.mars.com/global/en/job/R151971/Programa-Jovem-Aprendiz,可用（已实测原文）,玛氏全球招聘；校招/社招按地区筛选；该样本为葡萄牙语项目,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+124,顺丰,其他行业,物流,https://campus.sf-express.com/,https://hr.sf-express.com/,,可用（入口/列表；社招自动化超时）,顺丰校招 campus 可打开；社招 hr.sf-express.com 自动化超时，普通浏览器可试,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+125,迈瑞,其他行业,医疗科技,https://mindray.zhiye.com/campus,https://mindray.zhiye.com/,,可用（SPA，需等待渲染）,原 mindray.com/careers 403；正确为 zhiye 租户,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+126,BOSS直聘,招聘平台,聚合平台,https://www.zhipin.com/,https://www.zhipin.com/,,可用（入口/平台反爬）,BOSS直聘是招聘平台；企业自身招聘信息在平台/关于我们,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+127,前程无忧,招聘平台,聚合平台,https://www.51job.com/,https://www.51job.com/,,可用（入口/平台反爬）,前程无忧是招聘平台；企业自身招聘信息在平台,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+128,拉勾,招聘平台,聚合平台,https://www.lagou.com/,https://www.lagou.com/,,可用（入口/平台反爬）,拉勾是招聘平台；当前有滑动验证,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+129,智联招聘,招聘平台,聚合平台,https://www.zhaopin.com/,https://www.zhaopin.com/,,可用（入口/平台反爬）,智联招聘是招聘平台；当前有安全验证,,,2026-11-18 实测 + 官方入口复核,2026-11-18
+130,猎聘,招聘平台,聚合平台,https://www.liepin.com/,https://www.liepin.com/,,可用（入口/平台反爬）,猎聘是招聘平台；当前有反爬,,,2026-11-18 实测 + 官方入口复核,2026-11-18

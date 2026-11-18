@@ -35,6 +35,11 @@ try {
   await card.getByRole('button',{name:'展开更多招聘网站'}).click();
   await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('join.qq.com');
   check('search finds company by domain',await card.getByRole('checkbox',{name:'腾讯招聘',exact:true}).count()===1);
+  await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('汇添富基金');
+  check('directory company is discoverable before granting permissions',await card.getByRole('checkbox',{name:'汇添富基金招聘',exact:true}).count()===1);
+  await card.getByText('查看域名',{exact:true}).click();
+  check('directory company shows the corrected recruitment URL',
+    await card.getByRole('link',{name:'打开招聘入口'}).getAttribute('href')==='https://htffund.zhiye.com/');
   await page.screenshot({path:path.join(dir,'site-search.png'),fullPage:true});
   await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('');
   await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).uncheck();

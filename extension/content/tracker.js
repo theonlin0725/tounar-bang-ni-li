@@ -22,6 +22,9 @@
   const SUBMIT_WINDOW_MS = 5 * 60 * 1000;
   const MAX_JD_CHARS = 80;
   const MAX_JD_TEXT = 100000;
+  const JD_DUTY_SIGNAL = /岗位职责|职位职责|工作职责|职位描述|岗位描述|工作内容|Responsibilities|Job Description|What you(?: will|'ll|’ll) do|A typical day/i;
+  const JD_REQUIREMENT_SIGNAL = /任职要求|任职资格|职位要求|岗位要求|Qualifications|Requirements|What you bring|Your expertise|What you have/i;
+  const JD_SECTION_HEADING = /^(职位描述|岗位描述|岗位职责|职位职责|工作职责|任职要求|岗位要求|职位要求|任职资格|工作内容|Description|Job Description|Responsibilities|Requirements|(?:Basic |Minimum |Preferred )?Qualifications|What you['’]ll do|What you will do|What you bring|What you have|About the role|Your responsibilities|A typical day|Your qualifications|Your expertise)\s*[:：]?$/i;
   const SUCCESS_TEXT = /投递成功|申请成功|提交成功|已成功提交|感谢(您|你)的?投递|简历投递成功|报名成功|application\s+(has been\s+)?submitted|successfully\s+submitted|submitted\s+successfully/i;
 
   const adapter = Adapters.resolveAdapter(location.hostname);
@@ -202,7 +205,9 @@
       if (slug && !/^(list|search|detail|index|all)$/i.test(slug[1])) return slug[1];
       const numberedSlug = route.pathname.match(/\/(\d{6,})-[^/]+\/?$/);
       if (numberedSlug) return numberedSlug[1];
-      return route.searchParams.get('code') || route.searchParams.get('job_id') || route.searchParams.get('requementId') || route.searchParams.get('jobId') || route.searchParams.get('positionId') || route.searchParams.get('postId') || route.searchParams.get('jobUnionId') || route.searchParams.get('id') || '';
+      const campusId = url.hostname === 'join.qq.com' && route.pathname === '/post_detail.html'
+        ? route.searchParams.get('postid') : null;
+      return route.searchParams.get('code') || route.searchParams.get('job_id') || route.searchParams.get('requementId') || route.searchParams.get('jobId') || route.searchParams.get('positionId') || route.searchParams.get('postId') || (/^\d+$/.test(campusId || '') ? campusId : '') || route.searchParams.get('jobUnionId') || route.searchParams.get('id') || '';
     } catch {
       return '';
     }
@@ -344,7 +349,7 @@
   }
 
   function blockedPage() {
-    if (isSelfPage()) return true;
+    if (isSelfPage() || Adapters.outsideRecruitmentDirectory(location.href)) return true;
     if (/\/(?:chat|im|message|login|signin|captcha)(?:[/?#]|$)/i.test(location.pathname + location.hash)) return true;
     const text = String(document.querySelector('main')?.innerText || document.body?.innerText || '').trim();
     return text.length < 4000 && /职位已过期|岗位已下线|职位不存在|岗位不存在|职位已关闭|职位已停止招聘|验证后继续访问|完成安全验证|安全验证|访问异常|job (?:is )?(?:expired|no longer available)/i.test(text);
@@ -377,7 +382,7 @@
       resolve();
     }); } catch { resolve(); }
   });
-  function visiblePageText() {
+  function modelInput(legacy) {
     // Decide locally before sending anything to the JD provider. A list, account,
     // application or login page must never be classified by uploading its text.
     // Keep this list narrow: a false block is recoverable by opening the original
@@ -387,25 +392,29 @@
     // Exact list landing pages such as /jobs or /positions are not a single job.
     // /jobs/123 and /job/123 still pass this check.
     if (/(?:^|\/)(?:jobs?|positions?|job-search|recruitment)(?:\/)?(?:[?#]|$)/i.test(path)) return '';
-    const legacy = detectJobLegacy();
-    const root = document.querySelector('[data-tounar-job-id], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article');
-    if (!legacy && (!root || !visible(root))) return '';
-    const headings = root ? [...root.querySelectorAll('h1,[class*="job-title"],[class*="jobTitle"],[class*="position-title"]')]
-      .filter(visible).map(node => String(node.textContent || '').trim()).filter(Boolean) : [];
+    const posting = readJobPostingJsonLd();
+    if (posting?.multiple) return '';
+    const redact = text => text.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
+    const fields = [legacy?.job_title, legacy?.company_name, legacy?.location, legacy?.recruitment_batch];
+    const localInput = () => legacy?.jd_text ? redact([...fields,legacy.jd_text].filter(Boolean).join('\n')) : '';
+    if (legacy?.field_sources.jd_text === 'verified_site_selector' || legacy?.field_sources.jd_text === 'json_ld') return localInput();
+
+    const root = [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
+      .find(node => visible(node) && (JD_DUTY_SIGNAL.test(node.innerText) || JD_REQUIREMENT_SIGNAL.test(node.innerText)));
+    if (!root) return localInput();
+    const headings = [...new Set([...root.querySelectorAll('h1,[class*="job-title"],[class*="jobTitle"],[class*="position-title"]')]
+      .filter(visible).map(textOf).filter(Boolean))];
     const title = headings[0] || '';
     const detailUrl = (adapter.jobUrlPatterns || []).some(pattern => pattern.test(location.href));
-    const structuredJob = !!readJobPostingJsonLd()?.title;
+    const structuredJob = !!posting?.title;
     const sectionText = String(root?.innerText || '');
-    const duty = /岗位职责|工作职责|职位描述|岗位描述|工作内容|Responsibilities|Job Description/i.test(sectionText);
-    const requirements = /任职要求|任职资格|职位要求|岗位要求|Qualifications|Requirements/i.test(sectionText);
-    const apply = !!root?.querySelector('button,[role="button"],a[href]') && /立即申请|立即投递|申请职位|投递简历|Apply(?: now)?/i.test(sectionText);
-    if (!legacy && (headings.length !== 1 || title.length < 2 || title.length > 120 || /^(?:职位|岗位|招聘|工作机会|搜索结果|个人中心|我的简历|Job openings|Careers)$/i.test(title)
-      || (!detailUrl && !structuredJob && !(duty && requirements && apply)) || !(duty || requirements))) return '';
-    const lines = [document.title,legacy?.job_title,legacy?.company_name,legacy?.location].filter(Boolean);
-    if (!root || !visible(root)) {
-      lines.push(legacy?.jd_text || legacy?.jd_summary || '');
-      return lines.join('\n').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
-    }
+    const duty = JD_DUTY_SIGNAL.test(sectionText);
+    const requirements = JD_REQUIREMENT_SIGNAL.test(sectionText);
+    const apply = [...root.querySelectorAll('button,[role="button"],a[href]')].some(node =>
+      visible(node) && /^(?:立即申请|立即投递|申请职位|投递简历|Apply(?: now)?)$/i.test(textOf(node))
+    );
+    if (headings.length !== 1 || !validTitle(title) || (!detailUrl && !structuredJob && !(duty && requirements && apply)) || !(duty || requirements)) return localInput();
+    const lines = [...fields, title, document.title].filter(Boolean);
     const walker = document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
     let node;
     while ((node=walker.nextNode())) {
@@ -415,35 +424,72 @@
       const text = String(node.textContent || '').trim();
       if (text) lines.push(text);
     }
-    if (legacy?.jd_text && sectionText.length < legacy.jd_text.length / 2) lines.push(legacy.jd_text);
-    return lines.join('\n').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
+    return redact(lines.join('\n'));
   }
-  function detectJob() {
-    if (jdModelMode === false) return detectJobLegacy();
-    if (jdModelMode !== true || capturePaused || isSelfPage() || blockedPage() || document.visibilityState !== 'visible') return null;
+
+  let candidateSnapshot;
+  function modelCandidate() {
+    if (candidateSnapshot?.href === location.href && candidateSnapshot.changedAt === lastDomChange) return candidateSnapshot;
+    const legacy = detectJobLegacy();
+    candidateSnapshot = {href:location.href,changedAt:lastDomChange,legacy,text:modelInput(legacy)};
+    return candidateSnapshot;
+  }
+  function detectJob({stableInput} = {}) {
+    if (capturePaused || isSelfPage()) return null;
+    if (jdModelMode !== true) return detectJobLegacy();
+    if (blockedPage() || document.visibilityState !== 'visible') return null;
     if (modelRoute !== location.href) {
       priorModelText = modelSignature.slice(modelSignature.indexOf('\n')+1);
       modelRoute=location.href;modelJob=null;modelSignature='';modelError='';
     }
-    const text = visiblePageText();
+    if (stableInput === undefined && Date.now()-lastDomChange<1500) return null;
+    const {legacy,text} = modelCandidate();
+    if (stableInput !== undefined && text !== stableInput) return null;
     if (priorModelText && text===priorModelText) return null;
     if (text!==priorModelText) priorModelText='';
     const signature = location.href+'\n'+text;
     if (signature === modelSignature) return modelJob;
-    if (modelInFlight || Date.now()-lastDomChange<1500 || text.length<30) return null;
+    if (modelInFlight) return null;
+    if (text.length<30) return legacy;
     modelSignature=signature;modelJob=null;
-    if (text.length>30000) {modelError='页面内容过长，请打开单个岗位详情';return null;}
+    if (text.length>30000) {
+      modelError='岗位正文超过智能整理长度上限';
+      modelJob=legacy;
+      return modelJob;
+    }
     const href=location.href;
     modelError='';
     modelInFlight = new Promise(resolve=>{
       chrome.runtime.sendMessage({type:'jd_model_extract',text},response=>{
-        if (location.href===href && visiblePageText()===text) {
-          modelJob=response?.ok ? response.data.job : null;
-          modelError=response?.ok ? '' : response?.error || '岗位整理失败，请稍后重新采集';
-
+        const runtimeError = chrome.runtime.lastError?.message;
+        if (location.href===href && modelCandidate().text===text) {
+          const extracted = response?.ok ? response.data?.job : null;
+          if (extracted) {
+            const jobUrl = legacy?.job_url || canonicalUrl(href);
+            modelJob = {
+              ...extracted,
+              job_url: jobUrl,
+              site_job_id: legacy?.site_job_id || idFromUrl(jobUrl),
+              channel: legacy?.channel || adapter.channel,
+              field_confidence: {...extracted.field_confidence},
+              field_sources: {...extracted.field_sources}
+            };
+            for (const field of ['job_title','company_name','location','recruitment_batch','site_job_id']) {
+              if (!legacy?.[field]) continue;
+              modelJob[field] = legacy[field];
+              modelJob.field_confidence[field] = legacy.field_confidence[field];
+              modelJob.field_sources[field] = legacy.field_sources[field];
+            }
+          } else modelJob=legacy;
+          modelError=extracted ? '' : response?.error || runtimeError || '模型未确认岗位详情';
         } else modelSignature='';
         resolve();
       });
+    }).catch(error => {
+      if (location.href === href && modelCandidate().text === text) {
+        modelJob = legacy;
+        modelError = error.message || '暂时无法连接岗位模型';
+      } else modelSignature = '';
     }).finally(()=>{modelInFlight=null;});
     return null;
   }
@@ -457,7 +503,8 @@
     if (ld?.multiple && !hook) return null;
     const list=(adapter.listUrlPatterns||[]).some(p=>p.test(location.href));
     const verifiedAdapter=adapter.site_verified&&(!adapter.verifiedUrlPatterns||adapter.verifiedUrlPatterns.some(pattern=>pattern.test(location.href)));
-    const semanticDetail = !!idFromUrl(location.href) && /岗位职责|职位描述|任职要求|Job Description|Responsibilities|Requirements/i.test(detectionScope.body?.innerText || detectionScope.innerText || '') && nodesFor(['h1']).length === 1;
+    const scopeText = detectionScope.body?.innerText || detectionScope.innerText || '';
+    const semanticDetail = !!idFromUrl(location.href) && (JD_DUTY_SIGNAL.test(scopeText) || JD_REQUIREMENT_SIGNAL.test(scopeText)) && nodesFor(['h1']).length === 1;
     const adapterDetail = verifiedAdapter && !!idFromUrl(location.href) && nodesFor(adapter.selectors.title).length === 1;
     if(!hook&&!posting&&((list && detectionScope === document)||(!findApplySignal()&&!semanticDetail&&!adapterDetail&&detectionScope===document)))return null;
     const candidates={};
@@ -487,6 +534,9 @@
     const fixed=Adapters.companyForHost(location.hostname);
     if(adapter.company_name&&!aggregator)add('company_name',adapter.company_name,98,'adapter_company');
     if(fixed&&!aggregator)add('company_name',fixed,91,'known_company_host');
+    if (!fixed && !aggregator && (posting || semanticDetail || adapterDetail)) {
+      add('company_name', Adapters.directoryEmployer(location.href), 80, 'recruitment_directory');
+    }
     if(posting){
       add('job_title',posting.title,95,'json_ld');
       add('company_name',posting.hiringOrganization?.name,99,'json_ld');
@@ -535,16 +585,15 @@
     }
     if(aggregator){for(const n of nodesFor(adapter.selectors.company))if(!n.querySelector('h1,h2,form')&&textOf(n).length<=60)add('company_name',textOf(n),verifiedAdapter?92:85,'company_card');}
     else for(const n of nodesFor(adapter.selectors.company))add('company_name',textOf(n),verifiedAdapter?89:67,'site_selector');
-    const jdHeading=/^(职位描述|岗位描述|岗位职责|工作职责|任职要求|岗位要求|职位要求|工作内容|Job Description|Responsibilities|Requirements|Qualifications|What you['’]ll do|What you will do|What you have|About the role|Your responsibilities|A typical day|Your qualifications|Your expertise)\s*[:：]?$/i;
     const jdSections = [];
     for(const n of nodesFor(['h2','h3','h4','strong','dt','[class*="title"]'])){
-      if(!jdHeading.test(textOf(n)))continue;
+      if(!JD_SECTION_HEADING.test(textOf(n)))continue;
       const chunks=[];let section=n,next=n.nextElementSibling;
       for(let i=0;!next&&i<3;i++){
         if(!section.parentElement||textOf(section.parentElement)!==textOf(n))break;
         section=section.parentElement;next=section.nextElementSibling;
       }
-      for(let i=0;next&&i<40;i++,next=next.nextElementSibling){if(jdHeading.test(textOf(next)) || next.matches('h1,h2,h3,h4') || /推荐职位|相关职位|公司介绍|投递须知|^#LI-/i.test(textOf(next).slice(0,30)))break;if(!visible(next)||next.matches('button,a')||next.querySelector('form,input,textarea,button'))continue;chunks.push(String(next.innerText||textOf(next)).trim());}
+      for(let i=0;next&&i<40;i++,next=next.nextElementSibling){if(JD_SECTION_HEADING.test(textOf(next)) || next.matches('h1,h2,h3,h4') || /推荐职位|相关职位|公司介绍|投递须知|^#LI-/i.test(textOf(next).slice(0,30)))break;if(!visible(next)||next.matches('button,a')||next.querySelector('form,input,textarea,button'))continue;chunks.push(String(next.innerText||textOf(next)).trim());}
       const text=chunks.join('\n\n');if(text.length>=10)jdSections.push(textOf(n) + '\n' + text);
     }
     if(jdSections.length) add('jd_summary', jdSections[0].split('\n').slice(1).join('\n'), 86, 'jd_heading_sections', jdSections.join('\n\n'));
@@ -555,6 +604,9 @@
       // 保证 JD 全文能看出职责与要求的分界（摘要值仍取第一段，兼容旧回归）。
       const labelFor = (node) => {
         const cls = String(node.parentElement?.className || '');
+        const campusHeading = node.closest('.post_detail > .detail_box')?.querySelector('.subtitle');
+        if (textOf(campusHeading) === '岗位描述') return '岗位职责';
+        if (textOf(campusHeading) === '岗位要求') return '任职要求';
         if (/requirement/i.test(cls)) return '任职要求';
         if (/introduction/i.test(cls)) return '项目介绍';
         if (/duty/i.test(cls)) return '岗位职责';
@@ -1158,17 +1210,41 @@
   async function captureNow(reason = 'user') {
     if (isSelfPage()) return { ok: false, detected: false, status: 'self_page', reason: 'self_page' };
     await modelReady;
-    if (jdModelMode === false) await loadTemplate();
+    const requestedUrl = location.href;
+    let job;
     if (jdModelMode === true) {
-      if (modelError) modelSignature='';
-      showToast('正在理解岗位内容…', {ttl:28000});
-      await new Promise(resolve=>setTimeout(resolve,Math.max(0,1500-(Date.now()-lastDomChange))));
-      detectJob();
-      if (modelInFlight) await modelInFlight;
+      // Some sites continually update banners or other elements outside the JD.
+      // Confirm that the actual input stays unchanged instead of waiting for
+      // the entire document to go idle.
+      const waitUntil = Date.now() + 4500;
+      let stableInput;
+      let stableSince;
+      while (location.href === requestedUrl && Date.now() < waitUntil) {
+        const candidate = modelCandidate();
+        if (candidate.text !== stableInput) {
+          stableInput = candidate.text;
+          stableSince = Date.now();
+        }
+        if (Date.now() - stableSince >= 1500) break;
+        await new Promise(resolve => setTimeout(resolve,250));
+      }
+      if (location.href !== requestedUrl) return {ok:false,status:'failed',error:'岗位页面已切换，请重新采集'};
+      if (Date.now() - stableSince < 1500) return {ok:false,status:'failed',error:'岗位正文仍在加载，请稍后重新采集'};
+      job = detectJob({stableInput});
+      const pending = modelInFlight;
+      if (pending) {
+        if (feedbackEnabled) showToast('正在理解岗位内容…', {ttl:28000});
+        await pending;
+        hideToast();
+        if (location.href !== requestedUrl) return {ok:false,status:'failed',error:'岗位页面已切换，请重新采集'};
+        job = detectJob({stableInput});
+      }
+    } else {
+      await loadTemplate();
+      job = detectJob();
     }
-    if (jdModelMode === null || modelError) return {ok:false,detected:false,status:'failed',error:modelError || '请检查后台连接后刷新页面'};
-    const job = detectJob();
     if (!job || !job.job_title) {
+      if (modelError) return {ok:false,detected:false,status:'failed',error:modelError};
       const discovered = await captureList(true);
       if(discovered.length) {
         const results = [];
@@ -1219,6 +1295,8 @@
       application_id: result?.result?.application_id || null,
       review_item_id: result?.result?.review_item_id || null,
       error: result?.result?.error || null,
+      model_used: job.field_sources?.jd_text === 'model_source_quote',
+      model_notice: jdModelMode === true && modelError ? '智能整理未完成，已使用网页识别结果' : null,
       learned: learned ? learned.status : null,
       job: { job_title: job.job_title, company_name: job.company_name || '', jd_chars: (job.jd_text || '').length }
     };

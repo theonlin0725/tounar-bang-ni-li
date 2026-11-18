@@ -32,10 +32,24 @@
   }
   function groups(origins, base) {
     const usable = captureOrigins(origins, base);
-    const list = TounarAdapters.ADAPTERS.filter(a => a.hosts.length).map(a => ({
-      id: a.key, label: a.label, hosts: a.hosts,
-      granted: usable.filter(p => a.hosts.some(host => covers(p, host))),
-      domains: a.hosts.map(host => ({ host, granted: usable.some(p => covers(p, host)), origins:usable.filter(p => covers(p,host)) }))
+    const registry = new Map(TounarAdapters.ADAPTERS.filter(adapter => adapter.hosts.length).map(adapter => [
+      adapter.key, {id: adapter.key, label: adapter.label, hosts: [...adapter.hosts]}
+    ]));
+    for (const {id, company, entryUrl, adapterKey, linkedUrls} of TounarAdapters.RECRUITMENT_DIRECTORY) {
+      const key = adapterKey || 'directory-' + id;
+      const group = registry.get(key) || {id:key, label:company + '招聘', hosts:[]};
+      group.entryUrl = entryUrl;
+      const hosts = [entryUrl, ...linkedUrls].map(url => new URL(url).hostname);
+      group.hosts = [...new Set([...group.hosts, ...hosts])];
+      registry.set(key, group);
+    }
+    const list = [...registry.values()].map(group => ({
+      ...group,
+      granted: usable.filter(pattern => group.hosts.some(host => covers(pattern, host))),
+      domains: group.hosts.map(host => {
+        const granted = usable.filter(pattern => covers(pattern, host));
+        return {host, granted:granted.length > 0, origins:granted};
+      })
     }));
     for (const pattern of usable) {
       if (!list.some(g => g.granted.includes(pattern))) {

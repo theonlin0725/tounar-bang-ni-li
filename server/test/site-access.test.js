@@ -36,3 +36,26 @@ test('webpage detection permissions are never counted or registered for recruitm
   assert.equal(groups(origins,base).filter(g=>g.granted.length).length,0);
   assert.equal(context.TounarSiteAccess.captureOrigins(origins,base).length,0);
 });
+
+test('each supplied recruitment URL has a selectable host and selecting one does not grant another',()=>{
+  const directory=context.TounarAdapters.RECRUITMENT_DIRECTORY;
+  assert.equal(directory.length,123);
+  const list=groups([],base);
+  for (const entry of directory) {
+    const group=list.find(g=>g.id===(entry.adapterKey||'directory-'+entry.id));
+    assert.equal(group.entryUrl,entry.entryUrl);
+    for (const url of [entry.entryUrl,...entry.linkedUrls]) {
+      assert.ok(group.domains.some(d=>d.host===new URL(url).hostname && !d.granted));
+    }
+  }
+  const apple=groups(['https://jobs.apple.com/*'],base).find(g=>g.id==='directory-28');
+  assert.equal(apple.domains.find(d=>d.host==='jobs.apple.com')?.granted,true);
+  assert.equal(apple.domains.some(d=>d.host==='www.apple.com'),false);
+});
+
+test('a company domain added for recruitment ignores corporate pages outside the career area',()=>{
+  const outside=context.TounarAdapters.outsideRecruitmentDirectory;
+  assert.equal(outside('https://www.accenture.com/cn-zh/services/cloud'),true);
+  assert.equal(outside('https://www.accenture.com/cn-zh/careers/jobdetails?id=R00002228'),false);
+  assert.equal(outside('https://zhaopin.meituan.com/web/social'),false);
+});

@@ -9,6 +9,14 @@ const fake=http.createServer(async(req,res)=>{
  let body='';for await(const c of req)body+=c;
  const paragraphs=JSON.parse(JSON.parse(body).messages[1].content).paragraphs;
  const find=text=>paragraphs.find(p=>p.text===text)?.line;
+ if (find('校园AI产品经理') !== undefined || find('校园数据产品经理') !== undefined) {
+  calls++;
+  if (find('校园数据产品经理') !== undefined) { res.writeHead(503);res.end();return; }
+  const raw={is_job:true,job_title:'校园AI产品经理',company_name:'腾讯',sections:{团队介绍:[],岗位职责:[{line:find('负责定义和验证产品需求。')}],任职要求:[{line:find('能够阅读技术文档并清晰沟通。')}],其他信息:[]}};
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify({model:'fixture',choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
+  return;
+ }
  if (find('1、设计平台。')===undefined) console.log('Fixture paragraphs:',JSON.stringify(paragraphs));
  const raw={is_job:true,job_title:'平台工程师',company_name:'测试公司',location:'北京',recruitment_batch:null,sections:{团队介绍:[],岗位职责:[{line:find('1、设计平台。')},{line:find('2、维护服务。')}],任职要求:[{line:find('1、本科以上学历。')}],其他信息:[]}};
  calls++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture',usage:{prompt_tokens:100,completion_tokens:50},choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
@@ -72,7 +80,8 @@ try{
  await capture.waitForFunction(()=>window.events.some(e=>e.event_type==='job_viewed'),null,{timeout:12000});
  check('model captures page with no company-specific selectors',await capture.evaluate(()=>window.events[0].payload.job_title==='平台工程师'));
  check('form input never sent to model',await capture.evaluate(()=>window.modelInputs.every(t=>!t.includes('private-secret'))));
- check('stable page invokes model once',await capture.evaluate(()=>window.modelInputs.length===1));
+ assert.equal(await capture.evaluate(()=>window.modelInputs.length),1,'stable page invokes model once');
+ check('stable page invokes model once',true);
  await capture.evaluate(()=>{history.pushState({},'','/job/2');});await capture.waitForTimeout(2000);
  check('SPA URL change with stale content does not capture wrong job',await capture.evaluate(()=>window.events.length===1&&window.modelInputs.length===1));
  for (const path of ['/profile','/resume','/account','/login','/messages','/search?q=x','/applications','/settings','/jobs','/positions']) {
@@ -93,7 +102,7 @@ try{
  check('query string search hint does not block a real detail page',await capture.evaluate(()=>window.modelInputs.length===1));
  const extDir=server.dir+'/extension';fs.cpSync('extension',extDir,{recursive:true});
  const manifest=JSON.parse(fs.readFileSync(extDir+'/manifest.json','utf8'));
- manifest.host_permissions=['http://127.0.0.1/*','https://jobs.example.test/*'];
+ manifest.host_permissions=['http://127.0.0.1/*','https://jobs.example.test/*','https://join.qq.com/*'];
  fs.writeFileSync(extDir+'/manifest.json',JSON.stringify(manifest));
  extensionContext=await chromium.launchPersistentContext(server.dir+'/browser',{executablePath:process.env.E2E_CHROME,headless:true,args:[`--disable-extensions-except=${extDir}`,`--load-extension=${extDir}`]});
  const sw=extensionContext.serviceWorkers()[0]||await extensionContext.waitForEvent('serviceworker');
@@ -108,5 +117,27 @@ try{
  check('real extension invokes model and existing queue uploads job',captured.result?.application_id && captured.result?.job?.job_title==='平台工程师');
  const capturedDetail=(await server.request(`/api/v1/applications/${captured.result.application_id}`,{cookie})).json.data;
  check('real extension saves separated JD with unchanged pending state',capturedDetail.jd_text.includes('任职要求')&&capturedDetail.status==='pending');
+ await extensionContext.route('https://join.qq.com/post_detail.html?*', route=>{
+  const title=route.request().url().endsWith('101')?'校园AI产品经理':'校园数据产品经理';
+  return route.fulfill({contentType:'text/html; charset=utf-8',body:`<title>岗位详情 | 腾讯校招</title><div class="bannerTipLeft"><div class="bannerItemText">${title}</div></div><ul class="post_detail"><li class="detail_box"><div class="subtitle">岗位描述</div><div class="text_box"><p class="detail_text">负责定义和验证产品需求。</p></div></li><li class="detail_box"><div class="subtitle">岗位要求</div><div class="text_box"><p class="detail_text">能够阅读技术文档并清晰沟通。</p></div></li></ul>`});
+ });
+ for (const id of ['1283126456553382101','1283126456553382102']) {
+  const url='https://join.qq.com/post_detail.html?postid='+id;
+  const campus=await extensionContext.newPage();
+  await campus.goto(url);await campus.bringToFront();
+  if (id.endsWith('102')) await campus.evaluate(()=>{
+    const notice=document.createElement('div');
+    document.body.append(notice);
+    setInterval(()=>{notice.textContent='更新公告 '+Date.now();},250);
+  });
+  const campusTab=await sw.evaluate(async url=>(await chrome.tabs.query({})).find(t=>t.url===url),url);
+  const campusResult=await popup.evaluate(async tab=>chrome.runtime.sendMessage({type:'capture_current_tab',tabId:tab.id,origin:'https://join.qq.com',reason:'test'}),campusTab);
+  const fromLocal=id.endsWith('102');
+  check('Tencent campus ledger ID present '+id,Boolean(campusResult.result?.application_id));
+  const saved=(await server.request('/api/v1/applications/'+campusResult.result.application_id,{cookie})).json.data;
+  check('Tencent campus keeps canonical URL and both JD blocks '+id,saved.job_url===url && saved.jd_text.includes('负责定义和验证产品需求。') && saved.jd_text.includes('能够阅读技术文档并清晰沟通。'));
+  check(fromLocal?'provider failure preserves original Tencent JD':'model organizes Tencent campus JD',Boolean(campusResult.result.model_notice)===fromLocal);
+  await campus.close();
+ }
  console.log(JSON.stringify({passed:checks.length,provider:'local fake; no paid requests'}));
 }finally{await extensionContext?.close();await browser?.close();await server?.stop();await new Promise(r=>fake.close(r));}

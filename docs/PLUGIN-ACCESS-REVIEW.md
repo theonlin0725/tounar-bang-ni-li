@@ -50,7 +50,7 @@
 
 浏览器接口依据：[Chrome permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)、[Web Accessible Resources](https://developer.chrome.com/docs/extensions/reference/manifest/web-accessible-resources)。本地包已更新为 0.2.5；升级插件并刷新网页后生效。
 
-## v0.2.7 自动连接修复与手动配对兜底（2026-11-18）
+## v0.2.8 自动连接修复与手动配对兜底（2026-11-18）
 
 ### 问题
 

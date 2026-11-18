@@ -85,6 +85,7 @@ function showCapture(status) {
   if (!el) return;
   if (!status) { el.textContent = '尚未采集'; return; }
   const title = status.job?.job_title ? `：${status.job.job_title}` : '';
+  const error = typeof status.error === 'string' ? status.error : status.error?.message;
   const map = {
     list_result: `列表发现 ${status.count || 0} 条：已入账 ${status.counts?.entered || 0}，待确认 ${status.counts?.review || 0}，待上传 ${status.counts?.queued || 0}，失败 ${status.counts?.rejected || 0}`,
     entered: `已自动入账（${status.elapsedMs}ms）${title}`,
@@ -94,12 +95,12 @@ function showCapture(status) {
     queued: `已入本地队列，等待上传（${status.elapsedMs}ms）${title}`,
     cancelled: '未上传事件已清空',
     rejected: `服务端拒绝：${status.result?.error?.message || '校验未通过'}`,
-    failed: `采集失败：${status.message || status.result?.error?.message || '未知错误'}`,
+    failed: `采集失败：${status.message || error || status.result?.error?.message || '页面未返回采集结果'}`,
     no_job: '当前页面没有识别到可靠的岗位详情或列表卡片',
     unauthorized: '该站点未授权，先点「将本站设为招聘网站并授权」',
     error: `采集失败：${status.message || '未知错误'}`
   };
-  el.textContent = (map[status.status] || `状态：${status.status}`) + (status.count ? ` · ${status.count} 条列表发现` : '') + (status.jd_status === 'too_long' ? ' · JD 超出 100000 字上限，正文未保存' : '');
+  el.textContent = (map[status.status] || `状态：${status.status}`) + (status.count ? ` · ${status.count} 条列表发现` : '') + (status.jd_status === 'too_long' ? ' · JD 超出 100000 字上限，正文未保存' : '') + (status.model_notice ? ` · ${status.model_notice}` : '');
 }
 
 async function captureCurrentTab(reason) {

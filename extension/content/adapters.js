@@ -78,7 +78,7 @@
       version: '1.0.0-verified-jobdesc',
       channel: '企业官网',
       hosts: ['join.qq.com', 'careers.tencent.com', 'hr.tencent.com'],
-      jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobdesc/i],
+      jobUrlPatterns: [/\/position\//i, /\/job\//i, /jobdesc/i, /\/post_detail\.html\?(?=[^#]*\bpostid=\d+)/i],
       listUrlPatterns: [/\/position\/?(\?|$)/i, /\/search/i],
       listCardSelector: '.recruit-list',
       listTitleSelector: '.job-recruit-title',
@@ -103,9 +103,9 @@
         }).filter(Boolean);
       },
       selectors: {
-        title: ['.job-text-wrapper > .job-recruit-title'],
+        title: ['.job-text-wrapper > .job-recruit-title', '.bannerTipLeft > .bannerItemText'],
         company: [],
-        jd: ['.duty.work-module .duty-text', '.requirement.work-module .duty-text'],
+        jd: ['.duty.work-module .duty-text', '.requirement.work-module .duty-text', '.post_detail > .detail_box .detail_text'],
         location: ['.job-text-wrapper > .job-recruit-location'],
         success: ['.apply-success', '.submit-success', '[class*="applyResult"]']
       },
@@ -122,9 +122,12 @@
       },
       site_verified: true,
       verified_at: '2026-10-23',
-      verified_paths: ['/jobdesc.html?postId={id}'],
-      verifiedUrlPatterns: [/^https:\/\/careers\.tencent\.com\/jobdesc\.html\?(?=[^#]*\bpostId=\d+)/i],
-      notes: '真实官网 jobdesc 两页的浏览字段见 tests/fixtures/sites/tencent；Workday 外跳、join.qq.com 和投递登录态未验证。'
+      verified_paths: ['/jobdesc.html?postId={id}', '/post_detail.html?postid={id}'],
+      verifiedUrlPatterns: [
+        /^https:\/\/careers\.tencent\.com\/jobdesc\.html\?(?=[^#]*\bpostId=\d+)/i,
+        /^https:\/\/join\.qq\.com\/post_detail\.html\?(?=[^#]*\bpostid=\d+)/i
+      ],
+      notes: '腾讯社招与校招公开详情的岗位字段；Workday 外跳和投递登录态未验证。'
     },
     {
       key: 'bytedance',
@@ -595,6 +598,169 @@
     return null;
   }
 
+  // Explicit recruitment entries from the 130-company source CSV. An entry is
+  // eligible for authorization; detail support is verified separately.
+  const RECRUITMENT_DIRECTORY = [
+    [1, "字节跳动", "https://jobs.bytedance.com/campus", "bytedance", "https://jobs.bytedance.com/experienced", "https://jobs.bytedance.com/campus/position/7699119731313821957/detail"],
+    [2, "腾讯", "https://join.qq.com/", "tencent", "https://careers.tencent.com/", "https://join.qq.com/post_detail.html?postid=1283126456553382912"],
+    [3, "阿里巴巴", "https://campus-talent.alibaba.com/campus/index", "alibaba", "https://talent-holding.alibaba.com/off-campus", "https://talent-holding.alibaba.com/off-campus/position-detail?lang=zh&positionId=100004023017"],
+    [4, "京东", "https://campus.jd.com/home", "jd", "https://zhaopin.jd.com/", "https://zhaopin.jd.com/web/job-info-detail?requementId=227263"],
+    [5, "百度", "https://talent.baidu.com/jobs/campus", "baidu", "https://talent.baidu.com/jobs/social"],
+    [6, "美团", "https://zhaopin.meituan.com/web/campus", "meituan", "https://zhaopin.meituan.com/web/social", "https://zhaopin.meituan.com/web/position/detail?jobUnionId=4798450784&highlightType=social"],
+    [7, "拼多多", "https://careers.pddglobalhr.com/campus", "pinduoduo", "https://careers.pddglobalhr.com/", "https://careers.pddglobalhr.com/campus/grad/detail?positionId=43b706c2-9d86-47de-a99d-fcd35405799f"],
+    [8, "小米", "https://hr.xiaomi.com/campus", "xiaomi", "https://hr.xiaomi.com/social", "https://xiaomi.jobs.f.mioffice.cn/index/position/7342833451802542188/detail"],
+    [9, "米哈游", "https://campus.mihoyo.com/", "mihoyo", "https://jobs.mihoyo.com/", "https://jobs.mihoyo.com/#/position/6352"],
+    [10, "网易", "https://campus.163.com/", null, "https://hr.163.com/"],
+    [11, "SHEIN", "https://careers.shein.cn/Students-&-Graduates", null, "https://careers.shein.cn/Professionals"],
+    [12, "华为", "https://career.huawei.com/reccampportal/", null, "https://career.huawei.com/"],
+    [13, "哔哩哔哩", "https://jobs.bilibili.com/campus", null, "https://jobs.bilibili.com/social"],
+    [14, "富途", "https://join.futunn.com/", null],
+    [15, "小红书", "https://job.xiaohongshu.com/campus", null, "https://job.xiaohongshu.com/social", "https://job.xiaohongshu.com/campus/position/22013"],
+    [16, "得物", "https://campus.dewu.com/", null, "https://careers.dewu.com/"],
+    [17, "微博", "https://app.mokahr.com/campus-recruitment/sina/43536#/jobs", null, "https://app.mokahr.com/social-recruitment/sina/43535#/jobs", "https://app.mokahr.com/campus-recruitment/sina/43536#/job/5f97c970-b3cf-4805-a3d4-33dc14404854"],
+    [18, "快手", "https://campus.kuaishou.cn/", "kuaishou", "https://zhaopin.kuaishou.cn/"],
+    [19, "携程", "https://careers.ctrip.com/", null, "https://job.ctrip.com/"],
+    [20, "滴滴", "https://talent.didiglobal.com/campus", null, "https://talent.didiglobal.com/social/"],
+    [21, "百融云创", "https://www.brgroup.com/", null],
+    [22, "网易游戏雷火", "https://leihuo.163.com/campus/", null, "https://hr.163.com/"],
+    [23, "网易游戏（互娱）", "https://campus.game.163.com/", null, "https://hr.game.163.com/", "https://hr.163.com/job-detail.html?id=67248"],
+    [24, "阿里云", "https://careers.aliyun.com/campus/home", null, "https://careers.aliyun.com/"],
+    [25, "Amazon中国", "https://www.amazon.jobs/en/", null, "https://www.amazon.jobs/en/jobs/10594132"],
+    [26, "Google中国", "https://www.google.com/about/careers/applications/jobs/results/", null, "https://www.google.com/about/careers/applications/jobs/results/123881012009542342-account-manager-retail-large-customer-sales-english-mandarin"],
+    [27, "微软中国", "https://careers.microsoft.com/v2/global/en/students", null, "https://jobs.careers.microsoft.com/global/en/search", "https://apply.careers.microsoft.com/careers/job/1970393557074390?hl=en"],
+    [28, "苹果中国", "https://jobs.apple.com/zh-cn/search", null],
+    [29, "OPPO", "https://career.oppo.com/campus", "oppo", "https://career.oppo.com/", "https://career.oppo.com/official/oppo/recruitment/post/1563444621030670338?recruitType=SOCIAL-RECRUITMENT"],
+    [30, "ZURU", "https://www.zururecruit.cn/", null],
+    [31, "vivo", "https://hr-campus.vivo.com/", null, "https://hr.vivo.com/"],
+    [32, "京东方", "https://boe.zhiye.com/campus", null, "https://boe.zhiye.com/"],
+    [33, "传音控股", "https://transsion.zhiye.com/", null],
+    [34, "商汤科技", "https://hr.sensetime.com/", null],
+    [35, "影石Insta360", "https://www.insta360.com/cn/jobs", null],
+    [36, "科大讯飞", "https://iflytek.zhiye.com/campus/jobs", null, "https://iflytek.zhiye.com/jobs"],
+    [37, "荣耀", "https://career.honor.com/", null],
+    [38, "货拉拉", "https://join.huolala.cn/", null, "https://huolala.zhiye.com/"],
+    [39, "韶音科技", "https://campus.shokz.com.cn/", null, "https://hr.shokz.com.cn/"],
+    [40, "中信银行", "https://job.citicbank.com/", null],
+    [41, "兴业银行", "https://job.cib.com.cn/portal/", null],
+    [42, "平安银行", "https://campus.pingan.com/pab/freshgraduates", null, "https://talent.pingan.com/recruit/social.html", "https://talent.pingan.com/recruit/position.html?positionId=1C7232146A0D4604B2C528ED2DA0859C"],
+    [43, "招商银行", "https://career.cmbchina.com/", null],
+    [44, "浦发银行", "https://job.spdb.com.cn/", null],
+    [45, "中国银行", "https://www.boc.cn/aboutboc/bi4/", null, "https://chrcmp.chinahr.com/pages/boc-social/"],
+    [46, "交通银行", "https://job.bankcomm.com/", null],
+    [47, "农业银行", "https://career.abchina.com.cn/", null],
+    [48, "宁波银行", "https://zhaopin.nbcb.com.cn/", null],
+    [49, "工商银行", "https://job.icbc.com.cn/", null],
+    [50, "广东华兴银行", "https://ghbank.zhiye.com/", null],
+    [51, "建设银行", "https://job.ccb.com/", null],
+    [52, "招商永隆银行（香港）", "https://www.cmbwinglungbank.com/wlb_corporate/cn/about-us/careers/index.html", null, "https://www.cmbwinglungbank.com/wlb_corporate/cn/about-us/careers/job-openings/index.html"],
+    [53, "邮储银行", "https://psbc2027.zhaopin.com/", null, "https://www.psbc.com/cn/careers/"],
+    [54, "东方证券", "https://www.dfzq.com.cn/osoa/views/main/companyinfodisclosure/companyrecruitment/index.shtml", null],
+    [55, "中信期货", "https://citicsfzp.zhiye.com/", null],
+    [56, "中信证券", "https://careers.citics.com/", null],
+    [57, "中国银河", "https://chinastock.zhiye.com/", null],
+    [58, "中金公司", "https://cicc.zhiye.com/", null],
+    [59, "兴业证券", "https://xyzq.hotjob.cn/", null],
+    [60, "华泰证券", "https://wecruit.hotjob.cn/SU6419745cbef57c635fe10142/pb/index.html", null, "https://wecruit.hotjob.cn/SU6013d14e5d83dc11e4a8ae4d/pb/index.html"],
+    [61, "国信证券", "https://guosen.zhiye.com/", null],
+    [62, "国泰海通", "https://www.gtht.com/", null],
+    [63, "国盛证券", "https://gszq.hotjob.cn/", null],
+    [64, "国金证券", "https://gjzq.zhiye.com/jobs", null],
+    [65, "天风证券", "https://www.tfzq.com/job/campus.html", null, "https://www.tfzq.com/hr/hr.html", "https://www.tfzq.com/job/7671807013751357698.html"],
+    [66, "平安证券", "https://campus.pingan.com/securities", null, "https://talent.pingan.com/recruit/social.html", "https://talent.pingan.com/recruit/position.html?positionId=AD71B2972A204F30B0CD1908D233A04D"],
+    [67, "广发证券", "https://job.gf.com.cn/", null],
+    [68, "招商证券", "https://wecruit.hotjob.cn/SU629dbc260dcad452299bc0fa/mc/index", null],
+    [69, "民生证券", "https://mszq.hotjob.cn/", null],
+    [70, "申万宏源", "https://www.swhysc.com/", null],
+    [71, "西南证券", "https://wecruit.hotjob.cn/SU61d3efeabef57c13bcba2eea/pb/social.html", null],
+    [72, "里昂证券", "https://www.clsa.com/careers/", null],
+    [73, "长城证券", "https://cgws1.zhiye.com/", null],
+    [74, "长江证券", "https://cjzq.zhiye.com/", null],
+    [75, "中国人保", "https://picc.zhiye.com/", null],
+    [76, "中国人寿", "https://chinalife.zhiye.com/", null],
+    [77, "中国太保", "https://www.cpic.com.cn/aboutUs/rlzy/ygzp/", null],
+    [78, "中国平安", "https://talent.pingan.com/recruit/index.html", null, "https://talent.pingan.com/recruit/social.html", "https://talent.pingan.com/recruit/position.html?positionId=C1F27CDDF37243ABA237C8387DA26443"],
+    [79, "众安在线", "https://www.zhongan.com/", null],
+    [80, "新华保险", "https://nci.zhiye.com/", null],
+    [81, "泰康保险", "https://jobtaikang.zhiye.com/", null],
+    [82, "华夏基金", "https://chinaamc.zhiye.com/", null],
+    [83, "南方基金", "https://southernfund.hotjob.cn/", null],
+    [84, "博时基金", "https://bosera.hotjob.cn/", null],
+    [85, "嘉实基金", "https://www.jsfund.cn/", null],
+    [86, "大成基金", "https://www.dcfund.com.cn/", null],
+    [87, "天弘基金", "https://www.thfund.com.cn/", null],
+    [88, "广发基金", "https://gffunds.jobs.feishu.cn/", null],
+    [89, "招商基金", "https://cmfchina.zhiye.com/", null],
+    [90, "易方达基金", "https://efunds.hotjob.cn/", null],
+    [91, "景顺长城基金", "https://invescogreatwall.zhiye.com/", null],
+    [92, "永赢基金", "https://maxwealthfund.hotjob.cn/", null],
+    [93, "汇添富基金", "https://htffund.zhiye.com/", null],
+    [94, "长城基金", "https://greatwallfund.zhiye.com/", null],
+    [95, "鹏华基金", "https://job.phfund.com.cn/", null],
+    [96, "蚂蚁集团", "https://talent.antgroup.com/", null],
+    [97, "京东科技", "https://zhaopin.jd.com/", null],
+    [98, "同花顺", "https://campus.10jqka.com.cn/job/list?type=school", null, "https://job.10jqka.com.cn/"],
+    [99, "奇富科技", "https://app.mokahr.com/campus_apply/360jinrong/26697#/", null, "https://app.mokahr.com/apply/360jinrong#/"],
+    [100, "平安科技", "https://talent.pingan.com/recruit/campus.html", null, "https://talent.pingan.com/recruit/social.html"],
+    [101, "度小满", "https://campus.duxiaoman.com/", null, "https://talent.duxiaoman.com/"],
+    [102, "微众银行", "https://campus.webank.com/", null, "https://hr.webank.com/"],
+    [103, "陆金所", "https://talent.pingan.com/recruit/index.html", null],
+    [104, "UBS", "https://www.ubs.com/global/en/careers.html", null],
+    [105, "摩根士丹利", "https://www.morganstanleysecurities.com.cn/", null],
+    [106, "摩根大通", "https://www.jpmorganchase.com/careers", null, "https://careers.jpmorgan.com/"],
+    [107, "汇丰", "https://www.about.hsbc.com.cn/careers", null, "https://portal.careers.hsbc.com/"],
+    [108, "花旗", "https://jobs.citi.com/", null],
+    [109, "高盛", "https://www.goldmansachs.com/careers", null],
+    [111, "国信资本", "https://www.guosen.com.cn/", null],
+    [112, "国金资管", "https://gjzq.zhiye.com/jobs", null],
+    [113, "泰康资产", "https://www.taikangasset.cn/", null, "https://jobtaikang.zhiye.com/"],
+    [114, "红杉中国", "https://www.hongshan.com/", null, "https://hongshan.jobs.feishu.cn/"],
+    [115, "财通资管", "https://www.ctzg.com/", null],
+    [117, "埃森哲", "https://www.accenture.cn/cn-zh/careers", null, "https://www.accenture.com/cn-zh/careers/jobdetails?id=R00002228_zh-cn&title=Presales%2FImplementation+Expert"],
+    [118, "安永", "https://careers.ey.com.cn/", null, "https://careers.ey.com.cn/campus-recruitment/ey/166374?locale=zh-CN/#/job/3f07f2cc-f41e-4a61-9203-7ff249953423"],
+    [119, "德勤", "https://www.deloitte.com/cn/zh/cn-careers.html", null, "https://wecruit.hotjob.cn/SU64365a780dcad43c5ae82bab/pb/index.html"],
+    [120, "欧莱雅", "https://www.lorealchina.com/", null],
+    [121, "毕马威", "https://kpmg.com/cn/zh/home/careers.html", null],
+    [122, "海天味业", "https://haitian.zhiye.com/campus", null, "https://haitian.zhiye.com/"],
+    [123, "玛氏", "https://careers.mars.com/global/en", null, "https://careers.mars.com/global/en/job/R151971/Programa-Jovem-Aprendiz"],
+    [124, "顺丰", "https://campus.sf-express.com/", null, "https://hr.sf-express.com/"],
+    [125, "迈瑞", "https://mindray.zhiye.com/campus", null, "https://mindray.zhiye.com/"],
+  ].map(([id, company, entryUrl, adapterKey, ...linkedUrls]) => ({id, company, entryUrl, adapterKey, linkedUrls}));
+
+  const directoryPagesByHost = new Map();
+  const directoryCompaniesByHost = new Map();
+  for (const row of RECRUITMENT_DIRECTORY) {
+    for (const entry of [row.entryUrl, ...row.linkedUrls]) {
+      const url = new URL(entry);
+      const pages = directoryPagesByHost.get(url.hostname) || [];
+      pages.push(url);
+      directoryPagesByHost.set(url.hostname, pages);
+      const companies = directoryCompaniesByHost.get(url.hostname) || new Set();
+      companies.add(row.company);
+      directoryCompaniesByHost.set(url.hostname, companies);
+    }
+  }
+
+  // Corporate sites often serve account or product pages on the same host.
+  // Chrome grants by host, but the tracker only inspects recruitment paths.
+  function outsideRecruitmentDirectory(rawUrl) {
+    const url = new URL(rawUrl);
+    if (resolveAdapter(url.hostname) !== GENERIC) return false;
+    const entries = directoryPagesByHost.get(url.hostname) || [];
+    if (!entries.length || entries.some(entry => entry.pathname === '/')) return false;
+    if (url.pathname === '/' && entries.some(entry => entry.hash.startsWith('#/'))) return false;
+    if (/(?:^|\/)(?:careers?|jobs?|recruits?|recruitment|campus|talent|cn-careers|jobdetails)(?:[/.\-]|$)/i.test(url.pathname)) return false;
+    return !entries.some(entry => {
+      const prefix = entry.pathname.replace(/\/$/, '');
+      return url.pathname === prefix || url.pathname.startsWith(prefix + '/');
+    });
+  }
+
+  function directoryEmployer(rawUrl) {
+    const host = new URL(rawUrl).hostname;
+    const companies = directoryCompaniesByHost.get(host);
+    return companies?.size === 1 && !outsideRecruitmentDirectory(rawUrl) ? companies.values().next().value : '';
+  }
+
   function hostMatches(hostname, adapter) {
     const host = String(hostname || '').toLowerCase();
     return adapter.hosts.some((h) => host === h || host.endsWith(`.${h}`));
@@ -621,6 +787,9 @@
   globalThis.TounarAdapters = {
     GENERIC,
     ADAPTERS,
+    RECRUITMENT_DIRECTORY,
+    outsideRecruitmentDirectory,
+    directoryEmployer,
     resolveAdapter,
     supportedHosts,
     whitelist,
