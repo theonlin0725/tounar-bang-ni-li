@@ -29,6 +29,7 @@ try {
   await page.locator('[data-test="open-settings-data"]').click();
   const card=page.locator('[data-test="site-access-card"]');
   await card.getByText('已授权 0 个网站',{exact:true}).waitFor();
+  check('manual pairing fallback remains in settings',await page.locator('[data-test="pairing-section"] [data-test="pair-code"]').count()===1);
   check('ByteDance preselected without granting permission',await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
   check('other companies hidden initially',await card.getByRole('checkbox',{name:'腾讯招聘',exact:true}).count()===0);
   await card.getByRole('button',{name:'展开更多招聘网站'}).click();
@@ -44,7 +45,7 @@ try {
   const pending=await sw.evaluate(async base=>startPairing({serverUrl:base,deviceName:'Browser test'}),server.base);
   await page.goto(server.base+'/?panel=plugin-connect');
   await page.locator('[data-test="plugin-connect-confirm"]').waitFor();
-  check('no manual pairing field',await page.locator('[data-test="pair-code"]').count()===0);
+  check('auto confirm modal does not require manual pairing field',await page.locator('[data-test="plugin-connect-modal"] [data-test="pair-code"]').count()===0);
   await page.locator('[data-test="plugin-connect-confirm"]').click();
   await page.getByText('连接成功！接下来选择允许采集的招聘网站。').waitFor();
   check('web confirmation exchanges actual device token',await sw.evaluate(async()=>!!(await TounarCommon.getSettings()).deviceToken));

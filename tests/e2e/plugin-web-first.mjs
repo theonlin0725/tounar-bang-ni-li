@@ -35,7 +35,7 @@ try {
  const before=await sw.evaluate(()=>TounarCommon.getSettings());
  check('no pairing or backend switch before consent',!before.pendingPairing && !before.deviceToken && before.serverUrl===server.base);
  check('connection dialog has no placeholder artifacts',!(await page.locator('[data-test=plugin-connect-modal]').innerText()).includes('null'));
- check('no manual pairing input',await page.locator('[data-test=pair-code]').count()===0);
+ check('auto confirm modal does not require manual pairing input',await page.locator('[data-test=plugin-connect-modal] [data-test=pair-code]').count()===0);
  await page.screenshot({path:path.join(dir,'01-auto-connect.png'),fullPage:true});
  await page.getByRole('button',{name:'暂不连接',exact:true}).click();
  await page.reload();await page.waitForTimeout(4500);
@@ -66,6 +66,14 @@ try {
  missingContext=await chromium.launchPersistentContext(path.join(dir,'no-extension'),{headless:true,...(executablePath?{executablePath}:{})});
  await login(missingContext,'demo@tounar.local');const noPlugin=await missingContext.newPage();await noPlugin.goto(server.base);
  await noPlugin.locator('[data-test=plugin-install-modal]').waitFor();check('missing plugin shows installation guidance',true);
+ check('missing plugin offers manual pairing fallback',await noPlugin.locator('[data-test=plugin-manual-fallback]').count()===1);
+ const recheckNav=noPlugin.waitForNavigation({waitUntil:'domcontentloaded'});
+ await noPlugin.getByRole('button',{name:'已安装，刷新页面重新检测',exact:true}).click();
+ await recheckNav;
+ await noPlugin.locator('[data-test=open-settings-data]').waitFor();
+ check('installed recheck reloads the page',true);
+ await noPlugin.evaluate(async()=>{const m=await import('/assets/js/views/plugin-access.js');await m.promptPluginConnection();});
+ await noPlugin.locator('[data-test=plugin-install-modal]').waitFor({timeout:15000});
  await noPlugin.getByRole('button',{name:'暂不连接',exact:true}).click();await noPlugin.reload();await noPlugin.waitForTimeout(4500);
  check('missing-plugin guidance respects dismiss',await noPlugin.locator('[data-test=plugin-install-modal]').count()===0);
  check('no page errors',errors.length===0);

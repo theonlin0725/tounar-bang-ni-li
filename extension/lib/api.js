@@ -59,7 +59,12 @@
         };
       }
       let missingPermission = false;
-      try { missingPermission = !!globalThis.chrome?.permissions && !await chrome.permissions.contains({origins:[new URL(base).origin+'/*']}); } catch { /* retain network diagnostic */ }
+      try {
+        const host = new URL(base).hostname;
+        const covered = !!globalThis.TounarSiteAccess?.staticCovered?.(host);
+        const pattern = globalThis.TounarSiteAccess?.hostPattern?.(base);
+        missingPermission = !!globalThis.chrome?.permissions && !covered && !!pattern && !await chrome.permissions.contains({origins:[pattern]});
+      } catch { /* retain network diagnostic */ }
       throw {
         code: missingPermission ? 'BACKEND_PERMISSION_REQUIRED' : 'NETWORK_UNREACHABLE',
         message: missingPermission

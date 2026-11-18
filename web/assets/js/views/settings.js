@@ -310,10 +310,47 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
 
   /* ---------- 配对 ---------- */
   function renderPairingSection(me) {
-    return h('div', {class:'tn-pref-group', 'data-test':'pairing-section'},
+    const section = h('div', {class:'tn-pref-group', 'data-test':'pairing-section'});
+    const msg = h('div', {class:'tn-small', role:'status'});
+    const input = h('input', {
+      class:'tn-input', maxlength:'8', placeholder:'8 位配对码（A–Z / 2–9）',
+      style:{maxWidth:'240px', textTransform:'uppercase'}, 'data-test':'pair-code', 'aria-label':'插件配对码'
+    });
+    const approve = h('button', {
+      class:'tn-btn', type:'button', text:'确认绑定', 'data-test':'pair-approve',
+      onclick: async () => {
+        const code = input.value.trim().toUpperCase();
+        clear(msg);
+        if (!/^[A-Z2-9]{8}$/.test(code)) {
+          msg.append(h('div', {class:'tn-inline-msg err', text:'配对码是 8 位，仅含 A–Z / 2–9（不含 0/1）。'}));
+          return;
+        }
+        approve.disabled = true; approve.textContent = '绑定中…';
+        try {
+          const res = await api.post('/api/v1/plugin-pairings/approve', {code});
+          toast('插件已绑定', 'ok');
+          msg.append(h('div', {class:'tn-inline-msg ok', text:`已绑定设备：${res.data?.device?.name || res.data?.device_name || '插件设备'}`}));
+          input.value = '';
+          await reloadMe();
+          if (onChanged) onChanged();
+        } catch (error) {
+          msg.append(h('div', {class:'tn-inline-msg err', text:errorText(error)}));
+        } finally {
+          approve.disabled = false; approve.textContent = '确认绑定';
+        }
+      }
+    });
+    section.append(
       h('h4', {text:'插件绑定'}),
-      h('p', {class:'tn-small tn-muted', text:'打开网页后会自动提示连接。无需打开插件栏或输入配对码，也可以在这里重新检测。'}),
-      h('button', {class:'tn-btn tn-btn-primary', text:'检测并连接插件', onclick:() => {modal.close(); promptPluginConnection();}}));
+      h('p', {class:'tn-small tn-muted', text:'优先自动连接：打开网页后会自动检测并提示。无需先打开插件栏，也无需输入配对码。'}),
+      h('button', {class:'tn-btn tn-btn-primary', text:'检测并连接插件', onclick:() => {modal.close(); promptPluginConnection();}}),
+      h('div', {style:{marginTop:'14px', paddingTop:'12px', borderTop:'1px solid var(--tn-border, #e5e7eb)'}},
+        h('p', {class:'tn-small', text:'自动检测失败时的兜底：打开插件栏，点「连接帮你理账号」，把显示的 8 位配对码填在这里。此方式不依赖网页自动检测。'}),
+        h('div', {class:'tn-action-row'}, input, approve),
+        msg
+      )
+    );
+    return section;
   }
 
   /* ---------- 设备列表 ---------- */

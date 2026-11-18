@@ -511,13 +511,13 @@ try {
     method: 'POST', body: { device_name: 'Web E2E 设备二' }
   });
   const pair = pairRes.json?.data;
-  // This web-only suite has no extension; real confirmation is in plugin-access.mjs.
-  const pairingApproved = await page.evaluate(async pair => {
-    const {api} = await import('/assets/js/api.js');
-    return api.post('/api/v1/plugin-pairings/approve', {pairing_id:pair.pairing_id, code:pair.code});
-  }, pair);
-  check('W-25 网页不再要求手动配对码；绑定协议保持兼容',
-    pairRes.status === 201 && pairingApproved.data.status === 'approved' && await page.locator('[data-test=pair-code]').count() === 0);
+  // The manual code is the compatibility path; it must work in this web-only
+  // suite that has no extension bridge.
+  await page.fill('[data-test=pair-code]', pair.code.toLowerCase());
+  await page.click('[data-test=pair-approve]');
+  await page.getByText('插件已绑定', { exact: true }).waitFor();
+  check('W-25 手动配对码兜底可完成绑定；自动连接仍不要求输入',
+    pairRes.status === 201 && await page.locator('[data-test=pair-code]').count() === 1);
 
   const exchangeRes = await server.request('/api/v1/plugin-pairings/exchange', {
     method: 'POST', body: { request_id: pair.request_id, request_secret: pair.request_secret }

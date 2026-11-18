@@ -373,6 +373,10 @@ async function startPairing({ serverUrl, deviceName }) {
   const base = String(serverUrl || settings.serverUrl || '');
   if (!base) throw { code: 'NO_SERVER', message: '请先填写后台地址' };
   await changeBackend(base);
+  // Do not replace a still-valid pairing created by the web auto-connect flow:
+  // the user may have both the page modal and the popup open at the same time.
+  const current = await getSettings();
+  if (current.pendingPairing && Date.parse(current.pendingPairing.expires_at) > Date.now()) return current.pendingPairing;
   const created = await Api.createPairing(base, deviceName || `Chrome 扩展 ${new Date().toLocaleDateString('zh-CN')}`);
   const pair = created.data || created;
   const pending = {
@@ -463,7 +467,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!sender.tab || sender.frameId !== 0 || !settings.deviceToken || settings.capturePaused) throw new Error('请先连接账号并开启采集');
           const url = new URL(sender.url);
           if (!/^https?:$/.test(url.protocol) || selfOrigins(settings.serverUrl).has(url.origin)) throw new Error('此页面不能采集');
-          if (!await chrome.permissions.contains({origins:[url.origin+'/*']})) throw new Error('请先授权当前招聘网站');
+          if (!await chrome.permissions.contains({origins:[TounarSiteAccess.hostPattern(url.href)]})) throw new Error('请先授权当前招聘网站');
           const extract = message.type === 'jd_model_extract';
           const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
             method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
@@ -500,7 +504,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         if (sender.tab) {
           const origin = new URL(sender.url || sender.tab.url).origin;
-          if (!await chrome.permissions.contains({ origins:[origin+'/*'] })) { sendResponse({ok:false,error:'PERMISSION_REVOKED'}); return; }
+          if (!await chrome.permissions.contains({ origins:[TounarSiteAccess.hostPattern(origin)] })) { sendResponse({ok:false,error:'PERMISSION_REVOKED'}); return; }
         }
         const result = await Queue.add(message.event);
         if (!result.duplicate && sender.tab?.id && message.event?.client_event_id) {
@@ -623,7 +627,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'read_visible_kuaishou_cards': {
         const url = new URL(sender.url || 'https://invalid.local');
         if (!sender.tab?.id || url.hostname !== 'zhaopin.kuaishou.cn' || (await getSettings()).capturePaused ||
-            !await chrome.permissions.contains({origins:[url.origin+'/*']})) { sendResponse([]); return; }
+            !await chrome.permissions.contains({origins:[TounarSiteAccess.hostPattern(url.href)]})) { sendResponse([]); return; }
         // Only the public identity bound to each rendered row is returned. Never
         // copy the component's full record (which may contain unrelated fields),
         // invoke site handlers, or replay the site's signed network requests.
@@ -696,6 +700,15 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(FLUSH_ALARM, { periodInMinutes: 1 });
   chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 5 });
   updateBadge();
+  // The static app bridge covers normal page loads, but a page that was already
+  // open during install needs an explicit injection. Host permissions can land
+  // a moment after onInstalled, so retry briefly instead of giving up once.
+  (async () => {
+    for (const delay of [0, 400, 1200]) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      await syncContentScripts().catch(() => {});
+    }
+  })();
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -717,7 +730,7 @@ flushQueue().catch(() => {});
 let registration = Promise.resolve();
 function syncContentScripts() {
   registration = registration.catch(() => {}).then(async () => {
-    await syncAppBridge();
+    await syncAppBridge().catch(() => {});
     const settings = await getSettings();
     const all = await chrome.permissions.getAll();
     const matches = settings.capturePaused ? [] : TounarSiteAccess.captureOrigins(all.origins || [], settings.serverUrl);
@@ -752,15 +765,22 @@ chrome.permissions.onAdded.addListener(permissions => {
 });
 chrome.permissions.onRemoved.addListener(() => syncContentScripts().catch(() => {}));
 chrome.runtime.onStartup.addListener(() => syncContentScripts().catch(() => {}));
+// If the user installs/updates the extension while the app tab is already open,
+// inject the page bridge as soon as that tab finishes loading. The static
+// content script normally handles this; this is the recovery path.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !tab?.url) return;
+  injectAppBridgeForTab(tabId, tab.url).catch(() => {});
+});
 syncContentScripts().catch(() => {});
 
 async function injectAuthorizedTabs() {
   const settings = await getSettings();
   for (const tab of await chrome.tabs.query({})) {
     if(!/^https?:/.test(tab.url || '')) continue;
-    const origin = new URL(tab.url).origin;
-    if (!TounarSiteAccess.captureOrigins([origin+'/*'], settings.serverUrl).length) continue;
-    if(await chrome.permissions.contains({origins:[origin+'/*']})) {
+    const pattern = TounarSiteAccess.hostPattern(tab.url);
+    if (!TounarSiteAccess.captureOrigins([pattern], settings.serverUrl).length) continue;
+    if(await chrome.permissions.contains({origins:[pattern]})) {
       await chrome.scripting.executeScript({target:{tabId:tab.id},files:['lib/learned.js','content/adapters.js','content/tracker.js']}).catch(()=>{});
     }
   }
@@ -772,7 +792,7 @@ async function captureTab(message) {
         const startedAt = Date.now();
         try {
           if (!tabId) throw Object.assign(new Error('缺少 tabId'), { code: 'NO_TAB' });
-          const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+          const hasPermission = await chrome.permissions.contains({ origins: [TounarSiteAccess.hostPattern(origin)] });
           if (!hasPermission) throw Object.assign(new Error('该站点未授权'), { code: 'NO_PERMISSION' });
           if ((await getSettings()).capturePaused) throw Object.assign(new Error('采集已暂停，请先恢复'), {code:'CAPTURE_PAUSED'});
           await syncContentScripts();

@@ -6,7 +6,7 @@ import { App } from '../app.js?v=20261102-1';
 export function extensionRequest(action, payload = {}) {
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
-    const timeout = setTimeout(() => { window.removeEventListener('message', receive); reject(new Error('尚未检测到可用插件。请在 Chrome 中安装或更新插件后刷新此页，无需先打开插件栏。')); }, 4000);
+    const timeout = setTimeout(() => { window.removeEventListener('message', receive); reject(new Error('尚未检测到可用插件。请在 Chrome 中安装或更新插件后刷新此页，无需先打开插件栏。')); }, 6000);
     function receive(event) {
       if (event.source !== window || event.origin !== location.origin || event.data?.channel !== 'tounar-access-response' || event.data.id !== id) return;
       clearTimeout(timeout); window.removeEventListener('message', receive);
@@ -15,6 +15,39 @@ export function extensionRequest(action, payload = {}) {
     window.addEventListener('message', receive);
     window.postMessage({channel:'tounar-access-request', id, action, payload}, location.origin);
   });
+}
+
+/**
+ * Manual pairing is the compatibility path for older plugins, restricted host
+ * access, or a tab that was open before the extension was installed. It only
+ * uses the logged-in web session and the 8-character code shown in the popup;
+ * it never depends on the page bridge.
+ */
+function manualPairingFallback({testid = 'plugin-manual-fallback'} = {}) {
+  const wrap = h('details', {class:'tn-small', style:{marginTop:'12px'}, 'data-test':testid});
+  const input = h('input', {class:'tn-input', maxlength:'8', placeholder:'8 位配对码（A–Z / 2–9）',
+    style:{maxWidth:'220px', textTransform:'uppercase'}, 'data-test':'pair-code', 'aria-label':'插件配对码'});
+  const msg = h('p', {class:'tn-small', role:'status'});
+  const button = h('button', {class:'tn-btn', type:'button', text:'确认绑定', 'data-test':'pair-approve', onclick:async()=>{
+    const code = input.value.trim().toUpperCase();
+    clear(msg);
+    if (!/^[A-Z2-9]{8}$/.test(code)) { msg.append(h('span',{class:'tn-small', text:'配对码是 8 位，仅含 A–Z / 2–9（不含 0/1）。'})); return; }
+    button.disabled = true; button.textContent = '绑定中…';
+    try {
+      const res = await api.post('/api/v1/plugin-pairings/approve', {code});
+      msg.append(h('span',{class:'tn-small', text:`已绑定设备：${res.data?.device?.name || res.data?.device_name || '插件设备'}。回到插件检查状态即可。`}));
+      input.value = '';
+    } catch (error) {
+      msg.append(h('span',{class:'tn-small', text:errorText(error)}));
+    } finally {button.disabled = false; button.textContent = '确认绑定';}
+  }});
+  wrap.append(
+    h('summary', {style:{cursor:'pointer'}, text:'自动检测不到？用手动配对码连接'}),
+    h('p', {class:'tn-small tn-muted', text:'打开插件栏，点「连接帮你理账号」，把显示的 8 位配对码填在这里。这条路径不依赖网页自动检测。'}),
+    h('div', {class:'tn-action-row'}, input, button),
+    msg
+  );
+  return wrap;
 }
 
 function dismissKey() { return 'tounar.plugin.onboarding.' + (App.user?.email || ''); }
@@ -36,13 +69,17 @@ export async function promptPluginConnection({automatic = false} = {}) {
   } catch (error) {
     if (gen !== App.gen || !App.loggedIn || automatic && (dismissal() || document.querySelector('[role="dialog"]'))) return;
     const body = h('div', {},
-      h('p', {text:'尚未检测到可用插件。安装或更新后，回到此页即可连接，不用打开插件栏。'}),
+      h('p', {text:'尚未检测到可用插件。先确认 Chrome 里已启用插件，再刷新本页；如果仍检测不到，可以用配对码手动连接。'}),
       h('p', {class:'tn-small tn-muted', text:'请使用安装了插件的 Chrome 窗口；浏览器尚未允许插件访问此页时，也可能暂时检测不到。'}));
     let modal;
     body.append(h('div', {class:'tn-action-row'},
-      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:'下载新版插件（0.2.6）'}),
-      h('button', {class:'tn-btn', text:'已安装，重新检测', onclick:() => {modal.close(); promptPluginConnection();}}),
+      pluginDownloadLink({class:'tn-btn tn-btn-primary', label:'下载新版插件（0.2.7）'}),
+      h('button', {class:'tn-btn', text:'已安装，刷新页面重新检测', onclick:() => {
+        try {sessionStorage.removeItem(dismissKey());} catch {}
+        location.reload();
+      }}),
       h('button', {class:'tn-btn', text:'暂不连接', onclick:() => modal.close()})));
+    body.append(manualPairingFallback());
     modal = openModal({title:'连接帮你理插件', body, testid:'plugin-install-modal', onClose:() => dismissForVisit('missing')});
     return;
   }

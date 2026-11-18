@@ -50,7 +50,8 @@ async function refresh() {
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   } else if (pending) {
     show($('pairing-box'), true);
-    $('pairing-expire').textContent = `有效期至 ${new Date(pending.expires_at).toLocaleTimeString('zh-CN')}；在网页确认后自动完成`;
+    $('pairing-code').textContent = pending.code || '--------';
+    $('pairing-expire').textContent = `有效期至 ${new Date(pending.expires_at).toLocaleTimeString('zh-CN')}；在网页输入上面的配对码并确认，确认后自动完成`;
     if (!pollTimer) {
       pollTimer = setInterval(async () => {
         const result = await send({ type: 'poll_pairing_now' });
@@ -159,6 +160,26 @@ async function ensureContentScript() {
   if(!result.ok) throw new Error(result.error?.message || '脚本注册失败');
 }
 
+/**
+ * Opening the popup grants activeTab for the current tab. Use it to inject the
+ * page bridge into an app tab that was already open before the extension was
+ * installed; no recruitment-site host permission is involved.
+ */
+async function injectBridgeIntoActiveTab() {
+  try {
+    let [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+    if (!/^https?:/.test(tab?.url || '')) {
+      const tabs = await chrome.tabs.query({currentWindow:true});
+      tab = tabs.filter(t => /^https?:/.test(t.url || '')).sort((a,b) => (b.lastAccessed||b.id)-(a.lastAccessed||a.id))[0];
+    }
+    if (!tab?.id || !tab.url) return false;
+    const settings = await TounarCommon.getSettings();
+    if (new URL(tab.url).origin !== new URL(settings.serverUrl).origin) return false;
+    await chrome.scripting.executeScript({target:{tabId:tab.id}, files:['content/app-bridge.js']});
+    return true;
+  } catch { return false; }
+}
+
 /* 本机服务探测：4311 是验收默认端口，4310 是历史默认端口。 */
 const LOCAL_CANDIDATES = [4311, 4310];
 
@@ -166,9 +187,15 @@ async function authorizeBackend(raw) {
   try {
     const url = new URL(raw);
     if (!/^https?:$/.test(url.protocol)) throw new Error('后台地址必须以 http:// 或 https:// 开头');
-    // Called directly from a click handler, before any asynchronous work, so
-    // Chrome retains the user gesture required for optional permissions.
-    const granted = await chrome.permissions.request({origins:[url.origin+'/*']});
+    // Chrome match patterns cannot include a port. Ask for the host-level
+    // permission (`http://127.0.0.1/*`), not `http://127.0.0.1:4310/*`.
+    const pattern = TounarSiteAccess.hostPattern(url.href);
+    if (!pattern) throw new Error('后台地址格式不正确');
+    // The packaged app bridge is a static content script; it does not show up
+    // in permissions.contains(), so do not ask for a redundant grant.
+    if (TounarSiteAccess.staticCovered(url.hostname)) return true;
+    if (await chrome.permissions.contains({origins:[pattern]})) return true;
+    const granted = await chrome.permissions.request({origins:[pattern]});
     if (!granted) throw new Error('未获得后台连接权限，请再次点击并允许；后台地址未更改。');
     return true;
   } catch (error) {
@@ -240,11 +267,24 @@ $('start-pairing').addEventListener('click', async () => {
     return;
   }
   show($('pair-error'), false);
-  await send({ type: 'open_access_page', panel: 'plugin-connect' });
   await refresh();
 });
 
-$('poll-pairing').addEventListener('click', () => send({ type: 'open_access_page', panel: 'plugin-connect' }));
+$('poll-pairing').addEventListener('click', async () => {
+  const result = await send({ type: 'poll_pairing_now' });
+  if (result?.result?.waiting) $('pairing-expire').textContent = '尚未确认；请先在网页输入配对码并点「确认绑定」';
+  await refresh();
+});
+
+$('copy-pairing').addEventListener('click', async () => {
+  const code = ($('pairing-code').textContent || '').trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    $('pairing-expire').textContent = `配对码 ${code} 已复制`;
+  } catch {
+    $('pairing-expire').textContent = '复制失败，请手动选择上面的配对码';
+  }
+});
 
 $('cancel-pairing').addEventListener('click', async () => {
   await send({ type: 'cancel_pairing' });
@@ -309,6 +349,11 @@ $('revoke-all').addEventListener('click', () => send({ type: 'open_access_page',
 
 $('toggle-pause').addEventListener('click', async () => { await send({type:'set_capture_paused',paused:$('toggle-pause').dataset.paused !== '1'}); await refresh(); });
 $('clear-queue').addEventListener('click', async () => { if(confirm('清空未上传事件？已入账记录和模板不受影响。')) { await send({type:'clear_queue'}); await refresh(); } });
+// Opening the popup is also a recovery action: re-register the page bridge and
+// inject it into the app tab (activeTab) so a page opened before install can
+// detect the plugin without a full reload.
+injectBridgeIntoActiveTab().catch(()=>{});
+send({type:'sync_permissions'}).catch(()=>{});
 refresh();
 loadPageFeedback();
 renderLearned();

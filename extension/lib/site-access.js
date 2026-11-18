@@ -9,6 +9,23 @@
   function isBackend(pattern, base) {
     try { return covers(pattern, new URL(base).hostname); } catch { return false; }
   }
+  // Chrome match patterns cannot contain a port. Convert any URL/origin to the
+  // host-level pattern used by permissions.contains/request and content scripts.
+  function hostPattern(raw) {
+    try {
+      const url = new URL(raw);
+      return `${url.protocol}//${url.hostname}/*`;
+    } catch { return ''; }
+  }
+  // Static manifest content scripts (the app bridge) are injected without a
+  // host_permissions entry, so permissions.contains() reports false for them.
+  // Check the manifest matches before asking the user for a redundant grant.
+  function staticCovered(host) {
+    try {
+      const scripts = globalThis.chrome?.runtime?.getManifest?.().content_scripts || [];
+      return scripts.some(script => (script.matches || []).some(pattern => covers(pattern, host)));
+    } catch { return false; }
+  }
   function captureOrigins(origins, base) {
     const appHosts = ['127.0.0.1', 'localhost', 'bangnili.app.workbuddy.host'];
     return origins.filter(p => !isBackend(p, base) && !appHosts.some(host => covers(p, host)));
@@ -28,5 +45,5 @@
     }
     return list.sort((a,b) => (b.id === 'bytedance') - (a.id === 'bytedance'));
   }
-  globalThis.TounarSiteAccess = { covers, isBackend, groups, captureOrigins };
+  globalThis.TounarSiteAccess = { covers, isBackend, hostPattern, staticCovered, groups, captureOrigins };
 })();

@@ -9,14 +9,34 @@ async function registerAppBridge() {
   const registered = await chrome.scripting.getRegisteredContentScripts();
   if (registered.some(s => s.id === 'tounar-app-bridge')) await chrome.scripting.unregisterContentScripts({ ids:['tounar-app-bridge'] });
   const origin = new URL(serverUrl).origin;
-  if (!await chrome.permissions.contains({ origins:[origin+'/*'] })) return;
-  // Chrome match patterns do not isolate ports; webAccess checks the full origin.
-  await chrome.scripting.registerContentScripts([{id:'tounar-app-bridge', matches:[new URL(serverUrl).protocol+'//'+new URL(serverUrl).hostname+'/*'], js:['content/app-bridge.js'], runAt:'document_start', persistAcrossSessions:true}]);
+  const matchPattern = TounarSiteAccess.hostPattern(serverUrl);
+  // The manifest's static content script covers the app backend without a
+  // host_permissions grant, so permissions.contains() is not a reliable gate
+  // here. Try to register and inject; failures are non-fatal because the
+  // static script still covers normal page loads.
+  if (matchPattern) {
+    try {
+      await chrome.scripting.registerContentScripts([{id:'tounar-app-bridge', matches:[matchPattern], js:['content/app-bridge.js'], runAt:'document_start', persistAcrossSessions:true}]);
+    } catch { /* static bridge remains available on the next page load */ }
+  }
   for (const tab of await chrome.tabs.query({})) {
     if (tab.url && new URL(tab.url).origin === origin) {
       await chrome.scripting.executeScript({target:{tabId:tab.id}, files:['content/app-bridge.js']}).catch(() => {});
     }
   }
+}
+/**
+ * Inject the page bridge into one already-open backend tab. This covers the
+ * common "install the extension while the app tab is already open" case and
+ * is idempotent because app-bridge.js checks a global guard.
+ */
+async function injectAppBridgeForTab(tabId, url) {
+  try {
+    const { serverUrl } = await getSettings();
+    if (new URL(url).origin !== new URL(serverUrl).origin) return false;
+    await chrome.scripting.executeScript({ target:{tabId}, files:['content/app-bridge.js'] });
+    return true;
+  } catch { return false; }
 }
 async function openAccessPage(panel) {
   await syncAppBridge();

@@ -31,13 +31,18 @@
   <section id="pair-section">
     <h2>2. 设备配对</h2>
     <div id="unpaired">
-      <p>连接你的帮你理账号，在网页弹窗中确认即可。</p>
+      <p>连接你的帮你理账号。优先在网页弹窗确认；如果网页没有弹出，也可以复制下面的配对码手动连接。</p>
       <div id="pairing-box" class="hidden">
+        <p class="hint">把配对码填到网页「设置 → 数据与授权 → 插件绑定」：</p>
+        <div id="pairing-code" class="code" data-testid="pairing-code">--------</div>
         <p id="pairing-expire" class="hint"></p>
-        <button id="poll-pairing" class="secondary">打开确认窗口</button>
+        <div class="row">
+          <button id="poll-pairing" class="secondary">我已输入，检查绑定</button>
+          <button id="copy-pairing" class="link">复制配对码</button>
+        </div>
         <button id="cancel-pairing" class="link">取消连接</button>
       </div>
-      <button id="start-pairing" data-testid="start-pairing">连接帮你理账号</button>
+      <button id="start-pairing" data-testid="start-pairing">连接帮你理账号（显示配对码）</button>
     </div>
     <div id="paired" class="hidden">
       <p>已绑定：<strong id="owner-hint">—</strong></p>
