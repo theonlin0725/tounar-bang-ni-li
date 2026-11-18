@@ -214,6 +214,10 @@
   }
 
   function batchFromText(text) {
+    const campusYear = String(text || '').match(/(?:^|[^\d])(?:20)?(\d{2})\s*届[^\n]{0,12}(?:校招|校园招聘)/);
+    if (campusYear) return `20${campusYear[1]} 校招`;
+    const englishCampus = String(text || '').match(/\b(20\d{2}(?:[-–](?:20)?\d{2})?)\s+Campus\b/i);
+    if (englishCampus) return englishCampus[1] + ' Campus';
     const match = String(text || '').match(/(20\d{2})\s*(届|年)?\s*(秋招|春招|暑期实习|实习|校招|校园招聘)?/);
     if (!match) return '';
     if (/秋招/.test(text)) return `${match[1]} 秋招`;
@@ -288,7 +292,7 @@
   }
   function validTitle(value) {
     const t=String(value||'').trim();
-    return t.length>=2&&t.length<=200&&!/^(?:.*(?:校园招聘|社会招聘|招聘官网)|招聘|官网|首页|加载中[.…]*|loading[.…]*|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job description|requirements)$/i.test(t);
+    return t.length>=2&&t.length<=200&&!/^(?:.*(?:校园招聘|社会招聘|招聘官网)|招聘|官网|首页|加载中[.…]*|loading[.…]*|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job details|jobs search results|single position|job description|requirements)$/i.test(t);
   }
   let detectionScope = document;
   function nodesFor(selectors) {
@@ -352,7 +356,36 @@
     if (isSelfPage() || Adapters.outsideRecruitmentDirectory(location.href)) return true;
     if (/\/(?:chat|im|message|login|signin|captcha)(?:[/?#]|$)/i.test(location.pathname + location.hash)) return true;
     const text = String(document.querySelector('main')?.innerText || document.body?.innerText || '').trim();
+    if (location.hostname === 'www.google.com' && /\bJob not found\b/i.test(text)) return true;
     return text.length < 4000 && /职位已过期|岗位已下线|职位不存在|岗位不存在|职位已关闭|职位已停止招聘|验证后继续访问|完成安全验证|安全验证|访问异常|job (?:is )?(?:expired|no longer available)/i.test(text);
+  }
+
+  function scopedRecruitmentDetail() {
+    const url = new URL(location.href);
+    let titleSelector, sourceSelector, companyName, locationName;
+    if (['app.mokahr.com','careers.ey.com.cn'].includes(url.hostname) && Adapters.isPublicRecruitmentDetail(url)) {
+      titleSelector = '[class*="left-panel-"] [class*="sd-foundation-heading-40-"][class*="title-"]';
+      sourceSelector = '[class*="job-description-"]';
+      companyName = Adapters.directoryEmployer(url.href);
+    } else if (url.hostname === 'talent.pingan.com' && url.pathname === '/recruit/position.html' && /^[a-f\d]{32}$/i.test(url.searchParams.get('positionId') || '')) {
+      titleSelector = '.position-content .title h4';
+      sourceSelector = '.position-content .content-left';
+      companyName = textOf(document.querySelector('.position-content .title-tips')).split(/[-－—]/)[0];
+      locationName = textOf(document.querySelector('.position-content .title-options')).match(/城市\s*[:：]\s*(.+?)(?=\s*(?:经验要求|招聘人数)|$)/)?.[1];
+    } else if ((url.hostname.endsWith('.jobs.feishu.cn') || url.hostname === 'campus.dewu.com') && /\/position\/\d+\/detail\/?$/.test(url.pathname)) {
+      titleSelector = '.jobDetail .job-title';
+      sourceSelector = '.jobDetail';
+      companyName = Adapters.directoryEmployer(url.href);
+    } else return null;
+
+    const titles = [...new Set([...document.querySelectorAll(titleSelector)].filter(visible).map(textOf).filter(Boolean))];
+    const body = [...document.querySelectorAll(sourceSelector)].find(visible);
+    if (!body || body.querySelector('form,textarea,[contenteditable]')) return null;
+    const description = body?.innerText?.trim() || '';
+    if (titles.length !== 1 || !titles[0] || description.length < 40 || !(JD_DUTY_SIGNAL.test(description) || JD_REQUIREMENT_SIGNAL.test(description))) return null;
+    // Dedicated detail sections may use styled divs instead of h1/h2 headings.
+    // Any repeated title or breadcrumb inside the panel is left for the model to discard.
+    return {title:titles[0], description, companyName, locationName};
   }
   // Model mode reads visible paragraphs without per-company field selectors.
   let jdModelMode = null;
@@ -388,7 +421,9 @@
     // Keep this list narrow: a false block is recoverable by opening the original
     // detail page, while a false send cannot be undone.
     const path = location.pathname + location.hash;
-    if (/(?:^|[\/#])(?:login|signin|register|profile|resume|account|message|chat|search|list|applications?|apply|settings|preferences|notifications|inbox|saved|favorites|dashboard|interviews?|offers?|users?|personal|members?)(?:[\/#?]|$)/i.test(path)) return '';
+    if (/(?:^|[\/#])(?:login|signin|register|profile|resume|account|message|chat|search|list|settings|preferences|notifications|inbox|saved|favorites|dashboard|interviews?|offers?|users?|personal|members?)(?:[\/#?]|$)/i.test(path)) return '';
+    if (/(?:^|[\/#])(?:applications?|apply)(?:[\/#?]|$)/i.test(path)
+      && !Adapters.isPublicRecruitmentDetail(new URL(location.href))) return '';
     // Exact list landing pages such as /jobs or /positions are not a single job.
     // /jobs/123 and /job/123 still pass this check.
     if (/(?:^|\/)(?:jobs?|positions?|job-search|recruitment)(?:\/)?(?:[?#]|$)/i.test(path)) return '';
@@ -397,7 +432,7 @@
     const redact = text => text.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
     const fields = [legacy?.job_title, legacy?.company_name, legacy?.location, legacy?.recruitment_batch];
     const localInput = () => legacy?.jd_text ? redact([...fields,legacy.jd_text].filter(Boolean).join('\n')) : '';
-    if (legacy?.field_sources.jd_text === 'verified_site_selector' || legacy?.field_sources.jd_text === 'json_ld') return localInput();
+    if (['verified_site_selector','json_ld','recruitment_detail_panel'].includes(legacy?.field_sources.jd_text)) return localInput();
 
     const root = [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
       .find(node => visible(node) && (JD_DUTY_SIGNAL.test(node.innerText) || JD_REQUIREMENT_SIGNAL.test(node.innerText)));
@@ -476,6 +511,8 @@
             };
             for (const field of ['job_title','company_name','location','recruitment_batch','site_job_id']) {
               if (!legacy?.[field]) continue;
+              if (field === 'recruitment_batch' && legacy.field_sources[field] === 'campus_route'
+                && /\d{2}(?:届|年)|20\d{2}/.test(extracted[field] || '')) continue;
               modelJob[field] = legacy[field];
               modelJob.field_confidence[field] = legacy.field_confidence[field];
               modelJob.field_sources[field] = legacy.field_sources[field];
@@ -498,6 +535,7 @@
     detectionScope = [...document.querySelectorAll('[role="dialog"],[class*="drawer"],[class*="Drawer"]')]
       .find(n => visible(n) && /岗位职责|职位描述|任职要求|Responsibilities|Requirements/i.test(n.innerText || '')) || document;
     const hook=document.querySelector('[data-tounar-job-id]');
+    const scoped = scopedRecruitmentDetail();
     const ld=readJobPostingJsonLd();
     const posting=ld&&!ld.multiple?ld:null;
     if (ld?.multiple && !hook) return null;
@@ -506,7 +544,7 @@
     const scopeText = detectionScope.body?.innerText || detectionScope.innerText || '';
     const semanticDetail = !!idFromUrl(location.href) && (JD_DUTY_SIGNAL.test(scopeText) || JD_REQUIREMENT_SIGNAL.test(scopeText)) && nodesFor(['h1']).length === 1;
     const adapterDetail = verifiedAdapter && !!idFromUrl(location.href) && nodesFor(adapter.selectors.title).length === 1;
-    if(!hook&&!posting&&((list && detectionScope === document)||(!findApplySignal()&&!semanticDetail&&!adapterDetail&&detectionScope===document)))return null;
+    if(!hook&&!posting&&!scoped&&((list && detectionScope === document)||(!findApplySignal()&&!semanticDetail&&!adapterDetail&&detectionScope===document)))return null;
     const candidates={};
     const add=(field,value,score,source,rawValue)=>{
       if(field==='jd_summary'){
@@ -532,6 +570,12 @@
     if(hook)for(const [f,attr] of Object.entries({company_name:'company',job_title:'job-title',site_job_id:'job-id',jd_summary:'jd',location:'location',recruitment_batch:'batch'}))add(f,hook.getAttribute('data-tounar-'+attr),100,'explicit_hook');
     const aggregator=['boss','nowcoder','shixiseng'].includes(adapter.key);
     const fixed=Adapters.companyForHost(location.hostname);
+    if (scoped) {
+      add('job_title',scoped.title,96,'recruitment_detail_panel');
+      add('company_name',scoped.companyName,96,'recruitment_detail_panel');
+      add('location',scoped.locationName,90,'recruitment_detail_panel');
+      add('jd_summary',scoped.description,96,'recruitment_detail_panel',scoped.description);
+    }
     if(adapter.company_name&&!aggregator)add('company_name',adapter.company_name,98,'adapter_company');
     if(fixed&&!aggregator)add('company_name',fixed,91,'known_company_host');
     if (!fixed && !aggregator && (posting || semanticDetail || adapterDetail)) {
@@ -623,6 +667,8 @@
     }
     for(const value of labelled(/(?:工作地点|工作城市|城市|Location)\s*[:：]\s*([^，,;；\n]{1,40})/i))add('location',value,84,'label');
     for(const value of labelled(/(?:招聘类型|招聘批次|批次)\s*[:：]\s*(.{1,50})/i))add('recruitment_batch',batchFromText(value)||value,84,'label');
+    if (scoped) add('recruitment_batch', batchFromText(scoped.title), 85, 'job_title');
+    if (Adapters.recruitmentTrack(location.href) === 'campus') add('recruitment_batch','校招',75,'campus_route');
     for(const value of labelled(/(?:职位\s*ID|岗位编号|职位编号|Job\s*ID|Position\s*ID)\s*[:：]\s*([A-Za-z0-9_-]+)/i))add('site_job_id',value,84,'label');
     if(!aggregator)for(const value of labelled(/(?:公司名称|公司名|雇主|Company)\s*[:：]\s*(.{2,50})/i))add('company_name',value,80,'label');
     // Refinement is useful only for the adapter with recorded real-page evidence.
@@ -645,6 +691,12 @@
     }
     // Ambiguous generic list-like pages must not manufacture a single job.
     if(!job.job_title)return null;
+    const batchInTitle = batchFromText(job.job_title);
+    if (batchInTitle && (!job.recruitment_batch || job.field_sources.recruitment_batch === 'campus_route')) {
+      job.recruitment_batch = batchInTitle;
+      job.field_confidence.recruitment_batch = 'medium';
+      job.field_sources.recruitment_batch = 'job_title';
+    }
     if (useTemplate && learnedTemplate && picked) {
       const audit = globalThis.TounarLearned?.validateHit(learnedTemplate, picked, job);
       job.template_version = learnedTemplate.version || 1;
@@ -707,9 +759,10 @@
         if (!id || discoveredJobs.has(url)) continue;
         if (!validTitle(title)) continue;
         const companyNode = card.querySelector('[class*="company-name"],[class*="companyName"],[class*="employer"]');
-        const company = textOf(companyNode) || Adapters.companyForHost(location.hostname) || '';
+        const company = textOf(companyNode) || Adapters.companyForHost(location.hostname) || Adapters.directoryEmployer(url);
 
-        const job = { job_title: title, company_name: company, job_url: url, site_job_id: id, location: place, recruitment_batch: batch,
+        const job = { job_title: title, company_name: company, job_url: url, site_job_id: id, location: place,
+          recruitment_batch: batch || (Adapters.recruitmentTrack(url) === 'campus' ? '校招' : ''),
           jd_summary: clipJd(textOf(card.querySelector('.recruit-text'))), jd_status: 'missing', field_confidence: { job_title:'high', company_name: company?'high':'low', job_url:'high', site_job_id:'high', location: place?'medium':'low' },
           field_sources: { job_title:'list_card', company_name:companyNode?'list_card':'known_company_host', job_url:links.length?'list_link':identity?'list_dom_identifier':adapter.listIdentitySource||'visible_card_public_api', site_job_id:'url_identifier', location:'list_card' } };
         const event = buildEvent(job, 'job_discovered', { evidenceLevel:'strong', evidenceCode:'loaded-list-card' });

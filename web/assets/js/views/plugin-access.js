@@ -232,7 +232,10 @@ export function createSiteAccessCard({manager = false} = {}) {
         row.append(h('label', {class:'tn-check', style:{margin:'0'}}, check, h('strong', {text:group.label}), h('span', {class:'tn-small tn-muted', text:state})));
         const details=h('details', {style:{marginLeft:'24px', marginTop:'6px'}}, h('summary', {class:'tn-small tn-muted', style:{cursor:'pointer'}, text:'查看域名'}));
         if (group.entryUrl) {
-          details.append(h('p', {class:'tn-small'}, h('a', {href:group.entryUrl, target:'_blank', rel:'noopener noreferrer', text:'打开招聘入口'})));
+          details.append(h('p', {class:'tn-small'}, h('a', {href:group.entryUrl, target:'_blank', rel:'noopener noreferrer', text:group.campusFirst ? '打开校招入口' : '打开招聘入口'})));
+        }
+        if (group.socialUrl && group.socialUrl !== group.entryUrl) {
+          details.append(h('p', {class:'tn-small'}, h('a', {href:group.socialUrl, target:'_blank', rel:'noopener noreferrer', text:'打开社招入口'})));
         }
         for (const domain of group.domains) {
           const origin='https://'+domain.host+'/*';

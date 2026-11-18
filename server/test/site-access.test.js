@@ -59,3 +59,25 @@ test('a company domain added for recruitment ignores corporate pages outside the
   assert.equal(outside('https://www.accenture.com/cn-zh/careers/jobdetails?id=R00002228'),false);
   assert.equal(outside('https://zhaopin.meituan.com/web/social'),false);
 });
+
+test('shared ATS identifies the configured employer by tenant',()=>{
+  const {outsideRecruitmentDirectory, directoryEmployer}=context.TounarAdapters;
+  const sina='https://app.mokahr.com/campus-recruitment/sina/43536#/job/5f97c970-b3cf-4805-a3d4-33dc14404854';
+  assert.equal(directoryEmployer(sina),'微博');
+  assert.equal(outsideRecruitmentDirectory(sina),false);
+  assert.equal(outsideRecruitmentDirectory(sina.replace('/sina/','/different-employer/')),true);
+  assert.equal(directoryEmployer(sina.replace('/sina/','/different-employer/')),'');
+});
+
+test('campus link precedes social and shared entries remain unlabelled',()=>{
+  const {recruitmentTrack}=context.TounarAdapters;
+  const list=groups([],base);
+  const tencent=list.find(g=>g.id==='tencent');
+  assert.equal(tencent.campusFirst,true);
+  assert.equal(tencent.entryUrl,'https://join.qq.com/');
+  assert.equal(tencent.socialUrl,'https://careers.tencent.com/');
+  assert.equal(list.find(g=>g.id==='directory-14').campusFirst,false);
+  assert.equal(recruitmentTrack('https://join.qq.com/post_detail.html?postid=1283126456553382912'),'campus');
+  assert.equal(recruitmentTrack('https://zhaopin.meituan.com/web/position/detail?jobUnionId=4798450784&highlightType=social'),'social');
+  assert.equal(recruitmentTrack('https://talent-holding.alibaba.com/off-campus/position-detail?positionId=100004023017'),'social');
+});

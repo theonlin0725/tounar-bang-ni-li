@@ -35,10 +35,12 @@
     const registry = new Map(TounarAdapters.ADAPTERS.filter(adapter => adapter.hosts.length).map(adapter => [
       adapter.key, {id: adapter.key, label: adapter.label, hosts: [...adapter.hosts]}
     ]));
-    for (const {id, company, entryUrl, adapterKey, linkedUrls} of TounarAdapters.RECRUITMENT_DIRECTORY) {
+    for (const {id, company, entryUrl, socialUrl, adapterKey, linkedUrls} of TounarAdapters.RECRUITMENT_DIRECTORY) {
       const key = adapterKey || 'directory-' + id;
       const group = registry.get(key) || {id:key, label:company + '招聘', hosts:[]};
       group.entryUrl = entryUrl;
+      group.socialUrl = socialUrl;
+      group.campusFirst = entryUrl !== socialUrl || TounarAdapters.recruitmentTrack(entryUrl) === 'campus';
       const hosts = [entryUrl, ...linkedUrls].map(url => new URL(url).hostname);
       group.hosts = [...new Set([...group.hosts, ...hosts])];
       registry.set(key, group);

@@ -35,6 +35,9 @@ try {
   await card.getByRole('button',{name:'展开更多招聘网站'}).click();
   await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('join.qq.com');
   check('search finds company by domain',await card.getByRole('checkbox',{name:'腾讯招聘',exact:true}).count()===1);
+  await card.getByText('查看域名',{exact:true}).click();
+  check('campus entry appears first and preserves separate experienced-hire link',
+    await card.getByRole('link').allTextContents().then(labels=>labels.join('|')==='打开校招入口|打开社招入口'));
   await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('汇添富基金');
   check('directory company is discoverable before granting permissions',await card.getByRole('checkbox',{name:'汇添富基金招聘',exact:true}).count()===1);
   await card.getByText('查看域名',{exact:true}).click();
