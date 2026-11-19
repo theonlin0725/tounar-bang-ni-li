@@ -31,6 +31,21 @@
 - 终态、同日/重复、旧信和人工保护继续走原有校验。
 - 复核 `closed` 动作与状态枚举对齐：`resolve` 接受 `closed` 并按关闭处理；`assignReview` 允许已确认记录使用 `closed`。
 
+## 真实链路实测（隔离 4321）
+
+2026-11-19 用本地验收副本 `20261119-mailtest2` 完成一次真实 QQ IMAP + SMTP + Flash 链路：
+
+- 读取模式从 `headers_only` 切到 `recruitment_body`；
+- 用绑定邮箱给自己发送一封「回归测试科技 · 产品经理测评邀请」；
+- 手动触发同步，Flash 直判成功；
+- 已有台账申请 ID 不变，状态从 `applied` 推进到 `assessment`；
+- 历史记录来源为 `mail`，原因为「由 2026-11-19 收到的邮件《…》自动更新」；
+- `ai_ingest_runs.judge_mode=flash`、`llm_model=deepseek-flash`、`attempts=1`；
+- 再同步一次：`fetched=0`，申请数仍为 1，历史条数不增加，没有重复建账；
+- 邮件统计：首批 `fetched=50`、`new=50`、`processed=50`、`remaining=48`；续扫后 `remaining=0`。
+
+这验证了真实收信和写账路径，但不能代表 4310/4311 原实例已切换；原实例仍是 `headers_only`。
+
 ## 测试结果
 
 | 套件 | 结果 |
@@ -68,7 +83,7 @@ AUTO_INTAKE_MAX_ATTEMPTS=5
 
 ## 仍未完成 / 验收边界
 
-1. 4310/4311 仍是 `headers_only`，本轮没有真实 IMAP 新邮件端到端跑通“收信 → Flash → 台账 → 历史”。
+1. 4310/4311 原实例仍是 `headers_only`；真实链路是在隔离 4321 副本上跑通的，尚未改原实例。
 2. 生产外部 cron/任务身份未配置；本轮只验证本地 scheduler 配置与代码路径。
 3. 现有 pending 邮件（4311 中 14 封已确认、4 封已忽略仍 pending）尚未做只读对账/修正清单，避免旧数据被重跑模型改写。
 4. “已投递 → 测评”已有自动/人工测试；后续“测评 → 面试”跨阶段策略仍按规划单独验收。
