@@ -53,7 +53,7 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
 
   function render() {
     const app = current;
-    const field = (key) => app.field_confidence?.[key] === 'low' ? '待补充' : app[key] || '待补充';
+    const field = (key) => app.field_confidence?.[key] === 'low' ? (key === 'job_title' ? '岗位名称待核对' : '待补充') : app[key] || (key === 'job_title' ? '岗位名称待核对' : '待补充');
     clear(headEl);
     headEl.append(
       h('div', {},

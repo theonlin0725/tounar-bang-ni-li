@@ -7,18 +7,19 @@ const checks=[];const check=(name,value)=>{assert.ok(value,name);checks.push(nam
 let calls=0;
 const fake=http.createServer(async(req,res)=>{
  let body='';for await(const c of req)body+=c;
- const paragraphs=JSON.parse(JSON.parse(body).messages[1].content).paragraphs;
+ const user=JSON.parse(JSON.parse(body).messages[1].content);const paragraphs=user.paragraphs;const candidates=user.title_candidates||[];
  const find=text=>paragraphs.find(p=>p.text===text)?.line;
+ const evidence=text=>candidates.find(c=>c.text===text)?.id||null;
  if (find('校园AI产品经理') !== undefined || find('校园数据产品经理') !== undefined) {
   calls++;
   if (find('校园数据产品经理') !== undefined) { res.writeHead(503);res.end();return; }
-  const raw={is_job:true,job_title:'校园AI产品经理',company_name:'腾讯',sections:{团队介绍:[],岗位职责:[{line:find('负责定义和验证产品需求。')}],任职要求:[{line:find('能够阅读技术文档并清晰沟通。')}],其他信息:[]}};
+  const raw={is_job:true,job_title:'校园AI产品经理',job_title_evidence:evidence('校园AI产品经理'),company_name:'腾讯',sections:{团队介绍:[],岗位职责:[{line:find('负责定义和验证产品需求。')}],任职要求:[{line:find('能够阅读技术文档并清晰沟通。')}],其他信息:[]}};
   res.setHeader('Content-Type','application/json');
   res.end(JSON.stringify({model:'fixture',choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
   return;
  }
  if (find('1、设计平台。')===undefined) console.log('Fixture paragraphs:',JSON.stringify(paragraphs));
- const raw={is_job:true,job_title:'平台工程师',company_name:'测试公司',location:'北京',recruitment_batch:null,sections:{团队介绍:[],岗位职责:[{line:find('1、设计平台。')},{line:find('2、维护服务。')}],任职要求:[{line:find('1、本科以上学历。')}],其他信息:[]}};
+ const raw={is_job:true,job_title:'平台工程师',job_title_evidence:evidence('平台工程师'),company_name:'测试公司',location:'北京',recruitment_batch:null,sections:{团队介绍:[],岗位职责:[{line:find('1、设计平台。')},{line:find('2、维护服务。')}],任职要求:[{line:find('1、本科以上学历。')}],其他信息:[]}};
  calls++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture',usage:{prompt_tokens:100,completion_tokens:50},choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
 });
 await new Promise(r=>fake.listen(0,'127.0.0.1',r));

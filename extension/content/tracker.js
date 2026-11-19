@@ -292,7 +292,28 @@
   }
   function validTitle(value) {
     const t=String(value||'').trim();
-    return t.length>=2&&t.length<=200&&!/^(?:.*(?:校园招聘|社会招聘|招聘官网)|招聘|官网|首页|加载中[.…]*|loading[.…]*|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job details|jobs search results|single position|job description|requirements)$/i.test(t);
+    return t.length>=2&&t.length<=200&&!/^(?:.*(?:校园招聘|社会招聘|招聘官网)|招聘|官网|首页|加载中[.…]*|loading[.…]*|skeleton|职位推荐|热门岗位|职位列表|职位详情|岗位详情|岗位职责|工作职责|职位描述|岗位描述|任职要求|岗位要求|工作内容|job details|jobs search results|single position|job description|requirements|工作地点|工作城市|公司名称|招聘人数|经验要求|学历要求|薪资范围|薪资|发布时间)$/i.test(t);
+  }
+  function trustedTitleSource(source) {
+    return ['verified_site_selector','json_ld','recruitment_detail_panel','scoped_panel','visible_title_node','label','heading_near_apply','site_selector','title_near_apply','large_visible_text','page_title','model_source_quote'].includes(String(source || ''));
+  }
+  function sanitizeJobTitle(job) {
+    if (!job) return job;
+    const title = String(job.job_title || '').trim();
+    const unsafe = !title || !validTitle(title)
+      || (job.location && title === job.location)
+      || (job.company_name && title === job.company_name)
+      || (job.recruitment_batch && title === job.recruitment_batch)
+      || !trustedTitleSource(job.field_sources?.job_title);
+    if (unsafe) {
+      job.job_title = '';
+      job.job_title_status = 'pending';
+      job.field_confidence = {...(job.field_confidence || {}), job_title:'low'};
+      job.field_sources = {...(job.field_sources || {}), job_title:'unavailable'};
+    } else {
+      job.job_title_status = 'confirmed';
+    }
+    return job;
   }
   let detectionScope = document;
   function nodesFor(selectors) {
@@ -515,6 +536,49 @@
     return root;
   }
 
+  function collectTitleCandidates(legacy = null) {
+    const panel = findJobPanel() || (detectionScope !== document ? detectionScope : null);
+    const scope = panel || document;
+    const out = [];
+    const seen = new Set();
+    const add = (value, source, node = null) => {
+      const text = textOf(node) || String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text || text.length < 2 || text.length > 200 || !validTitle(text)) return;
+      if (/^(工作地点|工作城市|公司名称|招聘人数|经验要求|学历要求|薪资|薪资范围|发布时间|职位ID|岗位编号|职位编号|岗位职责|任职要求)$/i.test(text)) return;
+      if (legacy?.location && text === legacy.location) return;
+      if (legacy?.company_name && text === legacy.company_name) return;
+      if (legacy?.recruitment_batch && text === legacy.recruitment_batch) return;
+      if (seen.has(text)) return;
+      seen.add(text);
+      const id = `t${out.length + 1}`;
+      out.push({
+        id, text, source,
+        site_job_id: legacy?.site_job_id || idFromUrl(location.href) || '',
+        job_url: legacy?.job_url || canonicalUrl(location.href) || ''
+      });
+    };
+    const scoped = scopedRecruitmentDetail();
+    if (scoped?.title) add(scoped.title, 'scoped_panel');
+    const posting = readJobPostingJsonLd();
+    if (posting && !posting.multiple && posting.title) add(posting.title, 'json_ld');
+    const titleSelectors = ['h1', '[itemprop="title"]', '[data-job-title]', '[data-position-title]', '[class*="job-title"]', '[class*="jobTitle"]', '[class*="position-title"]', '[class*="positionTitle"]', '[class*="post-title"]', '[class*="postTitle"]'];
+    for (const selector of titleSelectors) {
+      let nodes = [];
+      try { nodes = [...scope.querySelectorAll(selector)]; } catch { continue; }
+      for (const node of nodes) {
+        if (!visible(node) || node.closest('nav,header,footer,aside,[class*="recommend"],[class*="related"],[class*="similar"],[class*="list"]')) continue;
+        add('', 'visible_title_node', node);
+      }
+    }
+    // Explicit "岗位名称/职位名称" labels inside the current panel.
+    for (const node of [...scope.querySelectorAll('p,li,div,span,dt,dd,strong')]) {
+      if (!visible(node) || node.children.length > 3 || node.innerText.length > 160) continue;
+      const match = String(node.innerText || '').match(/(?:岗位名称|职位名称|职位|岗位)\s*[:：]\s*(.{2,100})/i);
+      if (match) add(match[1].trim(), 'label');
+    }
+    return out.slice(0, 12);
+  }
+
   function modelInput(legacy) {
     // Decide locally before sending anything to the JD provider. A list, account,
     // application or login page must never be classified by uploading its text.
@@ -562,7 +626,7 @@
     if (!force && candidateSnapshot?.href === location.href && now - candidateSnapshot.at < MODEL_POLL_MS) return candidateSnapshot;
     const legacy = detectJobLegacy();
     const text = modelInput(legacy);
-    candidateSnapshot = {href:location.href, at:now, legacy, text};
+    candidateSnapshot = {href:location.href, at:now, legacy, text, titleCandidates:collectTitleCandidates(legacy)};
     return candidateSnapshot;
   }
   function panelSnapshotFor(text, legacy) {
@@ -613,7 +677,7 @@
     }
     const href=location.href;
     modelInFlight = new Promise(resolve=>{
-      chrome.runtime.sendMessage({type:'jd_model_extract',text},response=>{
+      chrome.runtime.sendMessage({type:'jd_model_extract',text,title_candidates:candidate.titleCandidates},response=>{
         const runtimeError = chrome.runtime.lastError?.message;
         const current = location.href===href ? modelCandidate(true) : null;
         const currentStable = current ? panelSnapshotFor(current.text, current.legacy) : null;
@@ -629,14 +693,24 @@
               field_confidence: {...extracted.field_confidence},
               field_sources: {...extracted.field_sources}
             };
-            for (const field of ['job_title','company_name','location','recruitment_batch','site_job_id']) {
+            // The server owns the title evidence decision. A local title guess
+            // must never overwrite a model-confirmed title. Only non-title fields
+            // keep the existing local refinement when they are present.
+            const rank = {low:0, medium:1, high:2};
+            for (const field of ['company_name','location','recruitment_batch','site_job_id']) {
               if (!legacy?.[field]) continue;
               if (field === 'recruitment_batch' && legacy.field_sources[field] === 'campus_route'
                 && /\d{2}(?:届|年)|20\d{2}/.test(extracted[field] || '')) continue;
+              // Model-quoted non-title fields remain authoritative when they are
+              // at least as confident as the local guess. A local label such as
+              // "工作地点" must not overwrite a valid model location/batch.
+              if (field !== 'site_job_id' && modelJob[field]
+                && rank[modelJob.field_confidence?.[field] || 'medium'] >= rank[legacy.field_confidence?.[field] || 'medium']) continue;
               modelJob[field] = legacy[field];
               modelJob.field_confidence[field] = legacy.field_confidence[field];
               modelJob.field_sources[field] = legacy.field_sources[field];
             }
+            sanitizeJobTitle(modelJob);
             modelSource='model';
           } else {
             modelJob=legacy;modelSource='legacy';
@@ -823,6 +897,8 @@
       if(field==='jd_summary'){const rawJd=(candidates.jd_summary||[]).sort((a,b)=>b.score-a.score)[0]?.raw||'';job.jd_text=rawJd&&rawJd.length>=10&&rawJd.length<=MAX_JD_TEXT?rawJd:'';job.jd_status=rawJd.length>MAX_JD_TEXT?'too_long':job.jd_text?'complete':'missing';job.jd_text_truncated=false;job.field_confidence.jd_text=job.field_confidence.jd_summary;job.field_sources.jd_text=job.jd_text?job.field_sources.jd_summary:'unavailable';}
     }
     // Ambiguous generic list-like pages must not manufacture a single job.
+    if(!job.job_title)return null;
+    sanitizeJobTitle(job);
     if(!job.job_title)return null;
     const batchInTitle = batchFromText(job.job_title);
     if (batchInTitle && (!job.recruitment_batch || job.field_sources.recruitment_batch === 'campus_route')) {

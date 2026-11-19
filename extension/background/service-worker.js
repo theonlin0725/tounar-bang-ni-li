@@ -471,7 +471,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const extract = message.type === 'jd_model_extract';
           const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
             method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
-            ...(extract?{body:{url:url.href,text:message.text}}:{})
+            ...(extract?{body:{url:url.href,text:message.text,title_candidates:Array.isArray(message.title_candidates)?message.title_candidates:[]}}:{})
           });
           sendResponse({ok:true,data:result.data});
         } catch(err) {sendResponse({ok:false,error:err.message || '岗位识别暂不可用'});}

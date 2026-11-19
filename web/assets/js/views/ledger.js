@@ -260,7 +260,8 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
     const fieldNode = (field, className = '') => {
       const missing = !item[field] || item.field_confidence?.[field] === 'low';
-      return h('div', { class: className + (missing ? ' tn-muted' : ''), text: missing ? '待补充' : item[field], title: missing ? '插件没把握，点开可补' : item[field] });
+      const placeholder = field === 'job_title' ? '岗位名称待核对' : '待补充';
+      return h('div', { class: className + (missing ? ' tn-muted' : ''), text: missing ? placeholder : item[field], title: missing ? '插件没把握，点开可补' : item[field] });
     };
     tr.append(
       h('td', {}, fieldNode('company_name', 'tn-company'),

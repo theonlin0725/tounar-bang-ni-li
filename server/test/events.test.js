@@ -109,6 +109,33 @@ describe('事件链路：浏览 / 填写 / 提交 / 状态 / 幂等（C1 3.4、D
     assert.equal(detail2.json.data.last_status_changed_at, statusChangedAt1);
   });
 
+
+  it('同岗重开可安全纠正旧的自动错名，不重复建账；人工标题不被覆盖', async () => {
+    const base = { company_name: '纠正公司', site_job_id: 'correct-001', job_url: 'https://jobs.example.com/job/correct-001', jd_summary: '负责平台开发', jd_text: '岗位职责\n负责平台开发。\n\n任职要求\n本科。', location: '杭州', field_confidence: { job_title: 'high' } };
+    const first = await server.eventBatch(token, [evt('job_viewed', 'evt_correct_001a', { ...base, job_title: '工作地点' }, { occurred_at: '2026-10-20T03:00:00.000Z' })]);
+    const id = first.json.results[0].application_id;
+    const second = await server.eventBatch(token, [evt('job_viewed', 'evt_correct_001b', { ...base, job_title: '平台工程师', job_title_status: 'confirmed', field_sources: { job_title: 'model_source_quote' } }, { occurred_at: '2026-10-21T03:00:00.000Z' })]);
+    assert.equal(second.json.results[0].application_id, id, JSON.stringify(second.json.results[0]));
+    const corrected = await server.request(`/api/v1/applications/${id}`, { cookie });
+    assert.equal(corrected.json.data.job_title, '平台工程师');
+    assert.equal(corrected.json.data.location, '杭州');
+
+    const manual = await server.request('/api/v1/applications/manual', { method: 'POST', cookie, headers: { 'Idempotency-Key': 'evt-manual-title-001' }, body: { company_name: '人工公司', job_title: '人工岗位', jd_summary: '人工摘要', job_url: 'https://jobs.example.com/job/manual-001', site_job_id: 'manual-001', status: 'pending' } });
+    const manualId = manual.json.data.id;
+    await server.eventBatch(token, [evt('job_viewed', 'evt_manual_title_002', { company_name: '人工公司', job_title: '模型岗位', site_job_id: 'manual-001', job_url: 'https://jobs.example.com/job/manual-001', jd_summary: '模型摘要', job_title_status: 'confirmed', field_sources: { job_title: 'model_source_quote' } }, { occurred_at: '2026-10-21T04:00:00.000Z' })]);
+    const afterManual = await server.request(`/api/v1/applications/${manualId}`, { cookie });
+    assert.equal(afterManual.json.data.job_title, '人工岗位');
+  });
+
+
+  it('已确认单岗但缺标题：保留 JD 建浏览记录，岗位名待核对', async () => {
+    const res = await server.eventBatch(token, [evt('job_viewed', 'evt_missing_title_001', { company_name: '缺标题公司', site_job_id: 'missing-title-1', job_url: 'https://jobs.example.com/job/missing-title-1', jd_summary: '负责平台开发', jd_text: '岗位职责\n负责平台开发。\n\n任职要求\n本科。', location: '杭州', job_title_status: 'pending' }, { occurred_at: '2026-10-22T03:00:00.000Z' })]);
+    assert.equal(res.json.results[0].processing_state, 'applied');
+    const detail = await server.request(`/api/v1/applications/${res.json.results[0].application_id}`, { cookie });
+    assert.equal(detail.json.data.job_title, '');
+    assert.equal(detail.json.data.jd_text.includes('任职要求'), true);
+  });
+
   it('弱浏览（证据不足）：进入复核，不创建主表记录', async () => {
     const res = await server.eventBatch(token, [evt('job_viewed', 'evt_view_weak_1', { company_name: '弱证据公司', job_title: '岗位', site_job_id: 'weak-001', job_url: 'https://jobs.example.com/job/weak-001' }, { evidence_level: 'weak' })]);
     assert.equal(res.json.results[0].processing_state, 'pending');

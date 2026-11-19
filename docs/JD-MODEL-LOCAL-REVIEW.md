@@ -91,7 +91,7 @@
 本次已构建本地插件包并启动独立验收服务：
 
 - 网页：`http://127.0.0.1:4310`
-- 插件包：`web/downloads/bangnili-extension-0.2.10.zip`（SHA-256 `c6f5608c1d734a913a7b108b3e784e8584e467588816413b972ff683789ddeea`；解压后加载 `bangnili-extension` 目录）
+- 插件包：`web/downloads/bangnili-extension-0.2.10.zip`（SHA-256 `ea22d16bc030dcd079cf20994c86349da88e704f44b3d20708357de5e023cc01`；解压后加载 `bangnili-extension` 目录）
 - 0.2.10 新增校招入口优先、Moka/安永/平安/飞书/得物详情容器、校招批次识别；逐站结果见 `docs/CAMPUS-GENERALIZATION-AUDIT-20261119.md`
 - 数据：从本机真实库复制到 `~/tounar-acceptance/20261117-164630/`，不读写原库；发信为 `outbox`，不会真发邮件。
 - 模型：`JD_AI_ENABLED=true`、`JD_AI_MODEL=deepseek-flash`，密钥只在启动进程中，不写入仓库、插件包或验收清单。

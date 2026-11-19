@@ -64,7 +64,7 @@ if (ONLY_IDS.length) selected = selected.filter(r => ONLY_IDS.includes(String(r[
 if (LIMIT) selected = selected.slice(0, LIMIT);
 if (!selected.length) throw new Error('没有选中的公司');
 
-const origins = new Set();
+const origins = new Set(['http://127.0.0.1/*']);
 for (const row of selected) {
   for (const value of [row['校招入口'], row['社招入口'], row['岗位详情样本']]) {
     try { origins.add(new URL(value).origin + '/*'); } catch {}

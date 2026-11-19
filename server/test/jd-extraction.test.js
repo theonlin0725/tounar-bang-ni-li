@@ -9,16 +9,51 @@ test('model references preserve original wording and separate sections',()=>{
  assert.equal(job.field_confidence.job_title,'high');assert.equal(job.recruitment_batch,'');
 });
 test('reject invented field, invalid paragraph, changed quotation and duplicate classification',()=>{
- assert.throws(()=>validateExtraction({...raw,job_title:'不存在的岗位'},lines,''));
+ assert.equal(validateExtraction({...raw,job_title:'不存在的岗位'},lines,'').job_title,'');
+ assert.throws(()=>validateExtraction({...raw,company_name:'不存在的公司'},lines,''));
  for(const bad of [[{line:99}],[{line:4,quote:'编造内容'}],[{line:4},{line:4}]]){
   assert.throws(()=>validateExtraction({...raw,sections:{...raw.sections,岗位职责:bad}},lines,''));
  }
  assert.equal(validateExtraction({is_job:false},lines,''),null);
 });
+
+test('title must come from an explicit current-job candidate, never a label or location',()=>{
+ const candidates=[{id:'t1',text:'杭州',source:'page_title'},{id:'t2',text:'平台工程师',source:'visible_title_node'}];
+ const ok=validateExtraction({...raw,job_title_evidence:'t2'},lines,'https://example.com/job/1',candidates);
+ assert.equal(ok.job_title,'平台工程师');assert.equal(ok.field_sources.job_title,'model_source_quote');
+ const label=validateExtraction({...raw,job_title_evidence:'t1'},lines,'https://example.com/job/1',candidates);
+ assert.equal(label.job_title,'');assert.equal(label.job_title_status,'pending');assert.match(label.jd_text,/岗位职责/);
+ const flat=validateExtraction({...raw,job_title:'工作地点'},lines,'https://example.com/job/1');
+ assert.equal(flat.job_title,'');
+ const noTitle=validateExtraction({...raw,job_title:null,job_title_evidence:null},lines,'https://example.com/job/1');
+ assert.equal(noTitle.job_title,'');assert.match(noTitle.jd_text,/任职要求/);
+});
+test('title evidence from another job is rejected when the same source conflicts',()=>{
+ const candidates=[{id:'t1',text:'平台工程师',source:'visible_title_node'},{id:'t2',text:'数据产品经理',source:'visible_title_node'}];
+ const job=validateExtraction({...raw,job_title_evidence:'t1'},lines.concat('数据产品经理'),'https://example.com/job/1',candidates);
+ assert.equal(job.job_title,'');
+});
 test('cost estimate accounts for cached input',()=>{
  const cost=estimateUsd({prompt_tokens:3000,prompt_cache_hit_tokens:1000,completion_tokens:300});
  assert.equal(cost.peak,0.000966);assert.equal(cost.off_peak,0.000483);
 });
+
+test('model request carries title candidates and uses the selected original line',async()=>{
+ process.env.JD_AI_ENABLED='true';process.env.JD_AI_API_KEY='fixture-only';
+ let body=null,calls=0;
+ const fetchImpl=async(_url,opts)=>{calls++;body=JSON.parse(opts.body);return new Response(JSON.stringify({model:'fixture',usage:{},choices:[{finish_reason:'stop',message:{content:JSON.stringify({...raw,job_title_evidence:'t2',job_title:undefined})}}]}));};
+ const candidates=[{id:'t1',text:'杭州',source:'page_title'},{id:'t2',text:'平台工程师',source:'visible_title_node'}];
+ const titleLines=[...lines,'杭州'];
+ const result=await extractJd('title-owner',{url:'https://example.com/job/title',text:titleLines.join('\n'),title_candidates:candidates},{fetchImpl});
+ assert.equal(result.job.job_title,'平台工程师');
+ assert.equal(result.job.field_sources.job_title,'model_source_quote');
+ const payload=JSON.parse(body.messages[1].content);
+ assert.deepEqual(payload.title_candidates.map(x=>x.id),['t1','t2']);
+ const before=calls;
+ await extractJd('title-owner',{url:'https://example.com/job/title',text:titleLines.join('\n'),title_candidates:[{id:'t9',text:'平台工程师',source:'visible_title_node'}]},{fetchImpl});
+ assert.equal(calls,before+1);
+});
+
 test('concurrent requests deduplicate, cache is owner scoped, failures do not cache',async()=>{
  process.env.JD_AI_ENABLED='true';process.env.JD_AI_API_KEY='fixture-only';
  let calls=0;

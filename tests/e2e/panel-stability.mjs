@@ -16,12 +16,12 @@ async function pageFor(url,html,{delayA=0}={}){
  await context.route('**/*',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:html}));
  const page=await context.newPage();
  await page.addInitScript(({delayA})=>{
-  window.__captured=[];window.__modelInputs=[];
-  const mk=(title)=>({job_title:title,company_name:'测试公司',location:'北京',recruitment_batch:'2027 校招',jd_text:'岗位职责\n负责'+title+'的研发。\n\n任职要求\n本科以上。',jd_summary:'负责'+title+'的研发。',jd_status:'complete',field_sources:{jd_text:'model_source_quote'},field_confidence:{job_title:'high',company_name:'high',jd_text:'high'}});
+  window.__captured=[];window.__modelInputs=[];window.__titleCandidates=[];
+  const mk=(title)=>({job_title:title,job_title_status:'confirmed',company_name:'测试公司',location:'北京',recruitment_batch:'2027 校招',jd_text:'岗位职责\n负责'+title+'的研发。\n\n任职要求\n本科以上。',jd_summary:'负责'+title+'的研发。',jd_status:'complete',field_sources:{job_title:'model_source_quote',jd_text:'model_source_quote'},field_confidence:{job_title:'high',company_name:'high',jd_text:'high'}});
   window.chrome={storage:{local:{get:async()=>({}),set:async()=>{},remove:async()=>{}}},runtime:{lastError:null,sendMessage(m,cb){
    if(m.type==='jd_model_config')return cb?.({ok:true,data:{enabled:true}});
    if(m.type==='jd_model_extract'){
-    window.__modelInputs.push({href:location.href,text:m.text});
+    window.__modelInputs.push({href:location.href,text:m.text});window.__titleCandidates.push(m.title_candidates||[]);
     const title=/岗位B|职位B|角色B/.test(m.text)?'岗位B':/岗位A|职位A|角色A/.test(m.text)?'岗位A':'平台工程师';
     const reply=()=>cb?.({ok:true,data:{job:mk(title)}});
     if(delayA&&title==='岗位A')setTimeout(reply,delayA);else reply();
@@ -43,7 +43,9 @@ try{
   const {page,context}=await pageFor('https://example.com/job/clock',html);
   await waitFor(()=>page.evaluate(()=>window.__captured.some(e=>e.event_type==='job_viewed')),{timeout:12000,label:'时钟页面自动入账'});
   const state=await page.evaluate(()=>({models:window.__modelInputs.length,events:window.__captured.map(e=>({t:e.event_type,title:e.payload?.job_title}))}));
+  const candidates=await page.evaluate(()=>window.__titleCandidates[0]||[]);
   check('全页时钟持续更新仍按岗位面板自动入账',state.models===1&&state.events.filter(e=>e.t==='job_viewed').length===1&&state.events.find(e=>e.t==='job_viewed')?.title==='平台工程师',JSON.stringify(state));
+  check('模型输入带独立标题候选且不含工作地点标签',candidates.some(c=>c.text==='平台工程师')&&!candidates.some(c=>/工作地点/.test(c.text)),JSON.stringify(candidates));
   await context.close();
  }
  // A list rail and a recommendation rail beside the detail must not enter model input.

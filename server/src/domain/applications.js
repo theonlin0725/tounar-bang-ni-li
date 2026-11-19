@@ -519,13 +519,31 @@ function processView(event, { explicit = false, discovered = false } = {}) {
     const existingTitle = normalizeWhitespace(found.application.job_title, 200);
     const incomingTitle = normalizeWhitespace(p.job_title, 200);
     const titleConflict = Boolean(existingTitle) && Boolean(incomingTitle) && existingTitle !== incomingTitle;
-    if ((found.reason === 'canonical_job_url' || p.field_sources?.site_job_id === 'url_identifier') && titleConflict
+    let before = strong[0].application;
+    const incomingTitleStrong = p.field_sources?.job_title === 'model_source_quote'
+      && p.field_confidence?.job_title === 'high'
+      && p.job_title_status !== 'pending'
+      && Boolean(p.site_job_id)
+      && before.site_job_id === p.site_job_id;
+    // A reopened original detail may safely correct an old automatic title only
+    // when the site job ID is unique and the incoming title is model-quoted.
+    // Manual titles are never overwritten; ambiguous URL-only matches stay in
+    // review instead of silently changing the record.
+    let correctedTitle = false;
+    if (titleConflict && incomingTitleStrong && titleSource?.source_method !== 'manual'
+      && found.reason === 'site_job_id') {
+      markApplicationChanged(before.owner_id, before.id, event.id, 'plugin',
+        { job_title: incomingTitle },
+        { reason: '同岗原名纠正', fieldConfidence: { job_title: 'high' } });
+      before = getApplication(before.owner_id, before.id);
+      correctedTitle = true;
+    }
+    if (!correctedTitle && (found.reason === 'canonical_job_url' || p.field_sources?.site_job_id === 'url_identifier') && titleConflict
       && titleSource?.source_method !== 'manual' && (ranks[p.field_confidence?.job_title || 'medium'] <= ranks[titleSource?.confidence || 'medium'])) {
       return { state: 'pending', review: reviewForEvent(event, { kind: 'ambiguous_match', reasonCode: 'PAGE_CONTENT_IDENTITY_UNCERTAIN',
         summary: '同一链接出现不同岗位，请明确选择关联原记录，或按新岗位新建', fields,
         suggested: { ...p, status: 'pending' } }) };
     }
-    const before = strong[0].application;
     let app = fillMissingFields(before, fields, event.id, 'plugin');
     // 只有实质字段变化才算 updated；仅刷新浏览时间不能冒称“信息已更新”
     const meaningfulFields = ['company_name', 'job_title', 'jd_summary', 'jd_text', 'location', 'recruitment_batch', 'job_url'];
