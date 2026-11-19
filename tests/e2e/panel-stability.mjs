@@ -78,6 +78,24 @@ try{
   check('A模型未返回即切B：A不写B且B不漏记',!titles.includes('岗位A')&&titles.includes('岗位B'),JSON.stringify(titles));
   await context.close();
  }
+
+ // A list URL with a drawer: closed => zero model/zero events; open => only
+ // the current drawer; close => stop.
+ {
+  const html=`<main><section id="list"><a href="/job/2">列表岗位B</a><a href="/job/3">列表岗位C</a></section><div class="job-detail" id="drawer" style="display:none"><h1>岗位A</h1><p>测试公司</p><h2>岗位职责</h2><p>负责岗位A的研发。</p><h2>任职要求</h2><p>本科以上学历。</p><button>立即申请</button><aside class="recommend"><p>推荐岗位B</p></aside></div><button id="open">打开详情</button><script>document.getElementById('open').onclick=()=>{document.getElementById('drawer').style.display='block';}</script></main>`;
+  const {page,context}=await pageFor('https://example.com/jobs',html);
+  await page.waitForTimeout(3500);
+  const closed=await page.evaluate(()=>({models:window.__modelInputs.length,events:window.__captured.length}));
+  await page.click('#open');
+  await waitFor(()=>page.evaluate(()=>window.__captured.some(e=>e.event_type==='job_viewed'&&e.payload?.job_title==='岗位A')),{timeout:14000,label:'列表URL打开抽屉'});
+  const opened=await page.evaluate(()=>({models:window.__modelInputs.length,events:window.__captured.length,text:window.__modelInputs[0]?.text||''}));
+  check('列表URL关闭时零请求，打开抽屉后只采当前岗位',closed.models===0&&closed.events===0&&opened.models===1&&opened.events===1&&opened.text.includes('岗位A')&&!opened.text.includes('推荐岗位B'),JSON.stringify({closed,models:opened.models,events:opened.events}));
+  await page.evaluate(()=>{document.getElementById('drawer').style.display='none'});
+  await page.waitForTimeout(1500);
+  check('关闭抽屉后停止新增浏览入账',(await page.evaluate(()=>window.__captured.filter(e=>e.event_type==='job_viewed').length))===1);
+  await context.close();
+ }
+
  // A list page is not a job and must never reach the model.
  {
   const html=`<main><a href="/job/1">岗位一</a><a href="/job/2">岗位二</a></main>`;

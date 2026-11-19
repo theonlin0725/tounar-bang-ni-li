@@ -492,6 +492,29 @@
       resolve();
     }); } catch { resolve(); }
   });
+  // A list URL may legitimately host an opened single-job drawer or a
+  // side-by-side detail. Only this strict shape may override a list-route block.
+  function strictSingleJobPanel() {
+    const root = findJobPanel();
+    if (!root) return null;
+    if (root.closest('nav,header,footer,aside,[class*="recommend"],[class*="related"],[class*="similar"]')) return null;
+    const explicit = root.matches('[role="dialog"],[class*="drawer"],[class*="Drawer"],[class*="modal"],[class*="Modal"],[class*="job-detail"],[class*="jobDetail"],[class*="position-detail"],[class*="positionDetail"],[data-tounar-job-id],[itemtype$="/JobPosting"]')
+      || !!root.querySelector('[data-tounar-job-id],[itemtype$="/JobPosting"],[class*="job-detail"],[class*="jobDetail"],[class*="position-detail"],[class*="positionDetail"]');
+    if (!explicit) return null;
+    const text = String(root.innerText || '');
+    if (!(JD_DUTY_SIGNAL.test(text) || JD_REQUIREMENT_SIGNAL.test(text))) return null;
+    const titles = [...root.querySelectorAll('h1,h2,h3,[class*="job-title"],[class*="jobTitle"],[class*="position-title"],[class*="post-title"]')]
+      .filter(visible).map(textOf).filter(validTitle);
+    if (titles.length !== 1) return null;
+    const apply = [...root.querySelectorAll('button,a,[role="button"],input[type="submit"]')]
+      .some(el => visible(el) && APPLY_SIGNAL.test(((el.tagName === 'INPUT' ? el.value : textOf(el)) || '').replace(/\s+/g, '')));
+    const structured = !!root.querySelector('[itemtype$="/JobPosting"],[data-tounar-job-id]');
+    if (!apply && !structured) return null;
+    const detailLinks = [...root.querySelectorAll('a[href]')].filter(a => /\/job|\/position|jobId|positionId|jobUnionId|#\/job/i.test(a.href));
+    if (detailLinks.length > 1 && !root.matches('[role="dialog"],[class*="modal"],[class*="Modal"],[class*="drawer"],[class*="Drawer"]')) return null;
+    return root;
+  }
+
   function modelInput(legacy) {
     // Decide locally before sending anything to the JD provider. A list, account,
     // application or login page must never be classified by uploading its text.
@@ -502,8 +525,12 @@
     if (/(?:^|[\/#])(?:applications?|apply)(?:[\/#?]|$)/i.test(path)
       && !Adapters.isPublicRecruitmentDetail(new URL(location.href))) return '';
     // Exact list landing pages such as /jobs or /positions are not a single job.
-    // /jobs/123 and /job/123 still pass this check.
-    if (/(?:^|\/)(?:jobs?|positions?|job-search|recruitment)(?:\/)?(?:[?#]|$)/i.test(path)) return '';
+    // The exception is a strictly verified single-job panel opened over that
+    // same list URL (drawer/side-by-side detail). The panel proof is checked
+    // below, so a closed list still sends nothing.
+    const listLanding = /(?:^|\/)(?:jobs?|positions?|job-search|recruitment)(?:\/)?(?:[?#]|$)/i.test(path);
+    const strictPanel = listLanding ? strictSingleJobPanel() : null;
+    if (listLanding && !strictPanel) return '';
     const posting = readJobPostingJsonLd();
     if (posting?.multiple) return '';
     const redact = text => text.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');

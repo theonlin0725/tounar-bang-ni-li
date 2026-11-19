@@ -253,13 +253,33 @@ function directCandidates(row) {
   for (const c of s?.candidates || []) if (c.reason !== '表内详情') out.push({ url: c.url, source: 'survey-candidate' });
   return out;
 }
-function findApp(row, detailUrl, clickedTitle) {
+function detailIdentity(url) {
+  try {
+    const u = new URL(url);
+    const hash = u.hash.replace(/^#/, '');
+    const ids = [
+      ...u.pathname.split('/').filter(Boolean).filter(x => /^\d{4,}$/.test(x) || /^[0-9a-f-]{8,}$/i.test(x)),
+      ...[...u.searchParams.entries()].filter(([k]) => /^(?:job_?id|positionId|postId|postid|jobUnionId|requementId|requisitionId|id)$/i.test(k)).map(([,v]) => v),
+      ...(hash.match(/[0-9a-f-]{8,}|\d{4,}/gi) || [])
+    ];
+    return { url: u.href, siteId: ids.sort((a,b)=>b.length-a.length)[0] || '' };
+  } catch { return { url, siteId: '' }; }
+}
+function findApplication(db, url, startedAt, clickedTitle = '') {
   const dbx = db();
   try {
-    const apps = dbx.prepare("SELECT a.id,a.job_title,a.company_name,a.job_url,a.jd_text,a.created_at,a.status FROM applications a ORDER BY a.created_at DESC").all();
-    const host = (() => { try { return new URL(detailUrl).hostname; } catch { return ''; } })();
-    return apps.find(a => (a.job_url && host && a.job_url.includes(host)) || (clickedTitle && a.job_title && (clickedTitle.includes(a.job_title) || a.job_title.includes(clickedTitle)))) || null;
-  } finally { dbx.close(); }
+    const { url: exact, siteId } = detailIdentity(url);
+    const base = "SELECT DISTINCT a.id,a.job_title,a.company_name,a.job_url,a.site_job_id,a.jd_text,a.created_at,a.status FROM applications a JOIN events e ON e.application_id=a.id WHERE e.event_type='job_viewed' AND e.occurred_at>=?";
+    const expected = String(clickedTitle || '').split(/\n/)[0].trim();
+    const byUrl = dbx.prepare(base + " AND (a.job_url=? OR a.canonical_job_url=?) ORDER BY a.created_at DESC LIMIT 1").get(startedAt, exact, exact);
+    if (byUrl && expected && !expected.startsWith('(直链定位)') && !byUrl.job_title.includes(expected.slice(0, 20)) && !expected.includes(byUrl.job_title)) return dbx.prepare(base + " AND (a.job_url=? OR a.canonical_job_url=?) AND a.job_title LIKE ? ORDER BY a.created_at DESC LIMIT 1").get(startedAt, exact, exact, `%${expected.slice(0, 24)}%`) || null;
+    if (byUrl) return byUrl;
+    if (siteId) {
+      const byId = dbx.prepare(base + " AND a.site_job_id=? ORDER BY a.created_at DESC LIMIT 1").get(startedAt, siteId);
+      if (byId) return byId;
+    }
+    return null;
+  } catch { return null; } finally { dbx.close(); }
 }
 function evidence(appId) {
   const dbx = db();
@@ -290,6 +310,7 @@ for (const row of selected) {
     const resp = await page.goto(entry, { waitUntil: 'domcontentloaded', timeout: 20000 });
     result.http = resp?.status() || 0;
     await page.waitForTimeout(3000);
+    const startedAt = new Date().toISOString();
     let clicked = await clickJob(page);
     if (!clicked) {
       const fallback = directCandidates(row)[0];
@@ -305,8 +326,8 @@ for (const row of selected) {
     result.详情URL = clicked.url;
     await clicked.page.bringToFront();
     await clicked.page.waitForTimeout(8000);
-    let app = findApp(row, clicked.url, clicked.title);
-    for (let i = 0; i < 8 && !app; i++) { await clicked.page.waitForTimeout(1200); app = findApp(row, clicked.url, clicked.title); }
+    let app = findApplication(db, clicked.url, startedAt, clicked.title);
+    for (let i = 0; i < 8 && !app; i++) { await clicked.page.waitForTimeout(1200); app = findApplication(db, clicked.url, startedAt, clicked.title); }
     if (!app) { result.结果 = '插件未自动入账'; continue; }
     result.入账ID = app.id;
     const ev = evidence(app.id);
@@ -315,7 +336,7 @@ for (const row of selected) {
     result.job_viewed = ev.events.filter(e => e.event_type === 'job_viewed').length;
     const fe = await frontEnd(app.id);
     result.前端 = fe.ok ? '通过' : '未通过';
-    result.结果 = result.job_viewed > 0 && result.前端 === '通过' ? '自动整理成功' : '已入账但证据不完整';
+    result.结果 = result.job_viewed > 0 && result.前端 === '通过' && result.模型来源 === 'model_source_quote' ? '自动整理成功' : '已入账但证据不完整';
     result.前端JD = fe.jd.slice(0, 160);
   } catch (error) {
     result.结果 = '异常';

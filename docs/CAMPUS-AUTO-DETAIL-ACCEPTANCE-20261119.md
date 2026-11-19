@@ -73,6 +73,7 @@ npm run test:campus-live -- --company=字节跳动
 - `detectJob()` 改为 `MODEL_STABLE_MS=1200` 的面板稳定窗口；`modelCandidate()` 350ms 节流，避免高频扫整页。
 - `detectAndTrackRoute()` 去掉 `lastDomChange < 800` 的全页门槛，改为新路由首帧 300ms + 面板稳定。
 - `tickDwell()` 使用 `panelReadyAt`，岗位面板稳定后正常累计可见停留，全局动画不再阻止 3 秒入账。
+- `modelInput()` 对 `/jobs`、`/positions` 等列表路由增加例外：只有 `strictSingleJobPanel()` 同时确认唯一标题、职责/要求、投递按钮或 JobPosting，且不是多岗位列表卡片时才允许送模型；抽屉关闭时仍为零请求。
 
 ### 3.2 快速切岗与重复结果
 
@@ -105,7 +106,7 @@ npm run test:campus-live -- --company=字节跳动
 | 网页 E2E | 57/57 |
 | JD 模型浏览器用例 | 35/35 |
 | 授权引导/站点授权 | 21/21 |
-| 面板稳定性新用例 | 5/5 |
+| 面板稳定性新用例 | 7/7 |
 | 网站授权/权限提示 | 21/21（含最终域名 host 提示） |
 | 纯自动校园实站 | 得物/微博点击通过；字节点击失败、直链通过 |
 
@@ -139,7 +140,7 @@ npm run test:campus-live -- --company=字节跳动
 
 - 网页：<http://127.0.0.1:4310>
 - 插件包：`web/downloads/bangnili-extension-0.2.10.zip`
-- SHA-256：`53c791def065c6c18c9ab6e8662b070505bc772fca2952cd0573cbf764735b74`
+- SHA-256：`c6f5608c1d734a913a7b108b3e784e8584e467588816413b972ff683789ddeea`
 - 安装：停用旧插件 → 开发者模式加载解压后的 `bangnili-extension` → 打开 4310 登录/连接 → “数据与授权”授权校招入口及最终详情域名。
 - 自测：点开得物/微博校招岗位，正常阅读 3 秒以上，不点“采集当前页”，看台账“看过没投”和前端 JD。
 
@@ -151,3 +152,4 @@ npm run test:campus-live -- --company=字节跳动
 2. 字节入口的“2027届校园招聘”项目筛选没有稳定自动点击；产品端不影响用户手动点。
 3. 跨域补授权的 Chrome 原生弹窗需要真实用户手势/有头浏览器验收。
 4. 安永、玛氏是项目/公告类页面，模型拒绝时保留规则原文，不应强行按单岗位整理。
+5. 验收工具已改为按详情 URL/site_job_id + 本次点击后的 `job_viewed` 严格关联，不再按域名把同域其他岗位算作成功；旧矩阵需以本轮严格重跑结果为准。
