@@ -467,7 +467,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!sender.tab || sender.frameId !== 0 || !settings.deviceToken || settings.capturePaused) throw new Error('请先连接账号并开启采集');
           const url = new URL(sender.url);
           if (!/^https?:$/.test(url.protocol) || selfOrigins(settings.serverUrl).has(url.origin)) throw new Error('此页面不能采集');
-          if (!await chrome.permissions.contains({origins:[TounarSiteAccess.hostPattern(url.href)]})) throw new Error('请先授权当前招聘网站');
+          if (!await chrome.permissions.contains({origins:[TounarSiteAccess.hostPattern(url.href)]})) throw new Error(`请先在“数据与授权”中授权当前招聘网站（${url.host}）`);
           const extract = message.type === 'jd_model_extract';
           const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
             method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
@@ -793,7 +793,11 @@ async function captureTab(message) {
         try {
           if (!tabId) throw Object.assign(new Error('缺少 tabId'), { code: 'NO_TAB' });
           const hasPermission = await chrome.permissions.contains({ origins: [TounarSiteAccess.hostPattern(origin)] });
-          if (!hasPermission) throw Object.assign(new Error('该站点未授权'), { code: 'NO_PERMISSION' });
+          if (!hasPermission) {
+            let host = '';
+            try { host = new URL(origin).host; } catch { /* keep generic message */ }
+            throw Object.assign(new Error(`该站点未授权${host ? `（${host}）` : ''}。请在“数据与授权”中授权最终详情域名后重试`), { code: 'NO_PERMISSION' });
+          }
           if ((await getSettings()).capturePaused) throw Object.assign(new Error('采集已暂停，请先恢复'), {code:'CAPTURE_PAUSED'});
           await syncContentScripts();
           await chrome.scripting.executeScript({

@@ -385,8 +385,77 @@
     if (titles.length !== 1 || !titles[0] || description.length < 40 || !(JD_DUTY_SIGNAL.test(description) || JD_REQUIREMENT_SIGNAL.test(description))) return null;
     // Dedicated detail sections may use styled divs instead of h1/h2 headings.
     // Any repeated title or breadcrumb inside the panel is left for the model to discard.
-    return {title:titles[0], description, companyName, locationName};
+    return {title:titles[0], description, companyName, locationName, root:body};
   }
+  // The current job panel is the smallest visible container that has a unique
+  // title plus real duty/requirement text.  Using the panel instead of the whole
+  // document keeps a ticking clock, carousel or unrelated recommendation rail
+  // from making a finished JD look permanently "unstable".
+  function panelScore(node) {
+    if (!node || !visible(node)) return -1;
+    const text = String(node.innerText || '');
+    if (text.length < 40) return -1;
+    const duty = JD_DUTY_SIGNAL.test(text);
+    const requirements = JD_REQUIREMENT_SIGNAL.test(text);
+    if (!duty && !requirements) return -1;
+    const titles = [...node.querySelectorAll('h1,h2,h3,[class*="job-title"],[class*="jobTitle"],[class*="position-title"],[class*="post-title"]')]
+      .filter(visible).map(textOf).filter(validTitle);
+    const apply = [...node.querySelectorAll('button,a,[role="button"],input[type="submit"]')]
+      .some(el => visible(el) && APPLY_SIGNAL.test(((el.tagName === 'INPUT' ? el.value : textOf(el)) || '').replace(/\s+/g, '')));
+    const recommendation = /推荐职位|相关职位|相似职位|热门职位|其他职位|你可能还喜欢|jobs you may/i.test(text);
+    let score = (duty ? 3 : 0) + (requirements ? 3 : 0) + (titles.length === 1 ? 2 : 0) + (apply ? 1 : 0);
+    if (recommendation) score -= 3;
+    if (text.length > 24000) score -= 2;
+    return score;
+  }
+  function findJobPanel() {
+    const scoped = scopedRecruitmentDetail();
+    if (scoped?.root) return scoped.root;
+    const selectors = [
+      '[data-tounar-job-id]',
+      '[itemtype$="/JobPosting"]',
+      '[class*="job-detail"]', '[class*="jobDetail"]', '[class*="position-detail"]',
+      '[class*="positionDetail"]', '[class*="post-detail"]', '[class*="postDetail"]',
+      '[role="dialog"]', '[class*="drawer"]', '[class*="Drawer"]',
+      'main', '[role="main"]', 'article'
+    ];
+    const candidates = [];
+    for (const selector of selectors) {
+      let nodes;
+      try { nodes = document.querySelectorAll(selector); } catch { continue; }
+      for (const node of nodes) {
+        const score = panelScore(node);
+        if (score >= 5) candidates.push({node, score, length: String(node.innerText || '').length});
+      }
+    }
+    candidates.sort((a, b) => b.score - a.score || a.length - b.length);
+    return candidates[0]?.node || null;
+  }
+
+  function panelText(root) {
+    if (!root) return '';
+    const lines = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const parent = node.parentElement;
+      if (!parent) continue;
+      if (parent.closest('script,style,noscript,nav,header,footer,aside,form,input,textarea,select,[contenteditable],button,[data-tounar-toast]')) continue;
+      if (parent.closest('[class*="recommend"],[class*="Recommend"],[class*="similar"],[class*="related"],[class*="hot-job"],[class*="hotJob"],[class*="other-job"],[class*="otherJob"]')) continue;
+      if (!visible(parent)) continue;
+      const text = String(node.textContent || '').trim();
+      if (text) lines.push(text);
+    }
+    return lines.join('\n');
+  }
+
+  function stabilityText(text) {
+    return String(text || '')
+      .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '[time]')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   // Model mode reads visible paragraphs without per-company field selectors.
   let jdModelMode = null;
   let modelJob = null;
@@ -395,6 +464,14 @@
   let modelError = '';
   let modelRoute = location.href;
   let priorModelText = '';
+  let panelStability = {signature:'', since:0, text:'', identity:'', at:0};
+  let panelSnapshot = null;
+  let modelSource = '';
+  let modelAttempts = 0;
+  let modelRetryAt = 0;
+  let modelRequestSignature = '';
+  const MODEL_STABLE_MS = 1200;
+  const MODEL_POLL_MS = 350;
   const modelReady = new Promise(resolve => {
     try { chrome.runtime.sendMessage({type:'jd_model_config'}, response => {
       if (response?.ok) {
@@ -434,7 +511,7 @@
     const localInput = () => legacy?.jd_text ? redact([...fields,legacy.jd_text].filter(Boolean).join('\n')) : '';
     if (['verified_site_selector','json_ld','recruitment_detail_panel'].includes(legacy?.field_sources.jd_text)) return localInput();
 
-    const root = [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
+    const root = findJobPanel() || [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
       .find(node => visible(node) && (JD_DUTY_SIGNAL.test(node.innerText) || JD_REQUIREMENT_SIGNAL.test(node.innerText)));
     if (!root) return localInput();
     const headings = [...new Set([...root.querySelectorAll('h1,[class*="job-title"],[class*="jobTitle"],[class*="position-title"]')]
@@ -449,55 +526,71 @@
       visible(node) && /^(?:立即申请|立即投递|申请职位|投递简历|Apply(?: now)?)$/i.test(textOf(node))
     );
     if (headings.length !== 1 || !validTitle(title) || (!detailUrl && !structuredJob && !(duty && requirements && apply)) || !(duty || requirements)) return localInput();
-    const lines = [...fields, title, document.title].filter(Boolean);
-    const walker = document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node=walker.nextNode())) {
-      const parent=node.parentElement;
-      if (!parent || parent.closest('script,style,noscript,nav,header,footer,aside,form,input,textarea,select,[contenteditable],button,[data-tounar-toast]')) continue;
-      if (!visible(parent)) continue;
-      const text = String(node.textContent || '').trim();
-      if (text) lines.push(text);
-    }
-    return redact(lines.join('\n'));
+    return redact([...fields, title, document.title, panelText(root)].filter(Boolean).join('\n'));
   }
 
   let candidateSnapshot;
-  function modelCandidate() {
-    if (candidateSnapshot?.href === location.href && candidateSnapshot.changedAt === lastDomChange) return candidateSnapshot;
+  function modelCandidate(force = false) {
+    const now = Date.now();
+    if (!force && candidateSnapshot?.href === location.href && now - candidateSnapshot.at < MODEL_POLL_MS) return candidateSnapshot;
     const legacy = detectJobLegacy();
-    candidateSnapshot = {href:location.href,changedAt:lastDomChange,legacy,text:modelInput(legacy)};
+    const text = modelInput(legacy);
+    candidateSnapshot = {href:location.href, at:now, legacy, text};
     return candidateSnapshot;
+  }
+  function panelSnapshotFor(text, legacy) {
+    const identity = legacy
+      ? JSON.stringify([legacy.job_title || '', legacy.company_name || '', legacy.site_job_id || '', legacy.job_url || ''])
+      : '';
+    const signature = location.href + '\n' + identity + '\n' + stabilityText(text);
+    const now = Date.now();
+    if (signature !== panelStability.signature) {
+      panelStability = {signature, since:now, text, identity, at:now};
+      modelAttempts = 0;
+      modelRetryAt = 0;
+    } else {
+      panelStability = {...panelStability, text, identity, at:now};
+    }
+    return {...panelStability, ready:Boolean(text && text.length >= 30 && now - panelStability.since >= MODEL_STABLE_MS)};
   }
   function detectJob({stableInput} = {}) {
     if (capturePaused || isSelfPage()) return null;
     if (jdModelMode !== true) return detectJobLegacy();
     if (blockedPage() || document.visibilityState !== 'visible') return null;
     if (modelRoute !== location.href) {
-      priorModelText = modelSignature.slice(modelSignature.indexOf('\n')+1);
-      modelRoute=location.href;modelJob=null;modelSignature='';modelError='';
+      priorModelText = panelStability.text || '';
+      modelRoute=location.href;modelJob=null;modelSignature='';modelError='';modelSource='';modelRequestSignature='';
     }
-    if (stableInput === undefined && Date.now()-lastDomChange<1500) return null;
-    const {legacy,text} = modelCandidate();
+    const candidate = modelCandidate(stableInput !== undefined);
+    const {legacy,text} = candidate;
     if (stableInput !== undefined && text !== stableInput) return null;
     if (priorModelText && text===priorModelText) return null;
     if (text!==priorModelText) priorModelText='';
-    const signature = location.href+'\n'+text;
-    if (signature === modelSignature) return modelJob;
+    const stable = panelSnapshotFor(text, legacy);
+    if (stableInput === undefined && !stable.ready) return null;
+    const signature = stable.signature;
+    if (signature === modelSignature) {
+      // A transient provider failure may recover on its own. Retry once after a
+      // short backoff, but keep the same idempotency key and content version.
+      if (modelSource === 'legacy' && modelAttempts < 2 && modelRetryAt && Date.now() >= modelRetryAt && !modelInFlight) {
+        modelSignature = '';
+      } else return modelJob;
+    }
     if (modelInFlight) return null;
     if (text.length<30) return legacy;
-    modelSignature=signature;modelJob=null;
+    modelSignature=signature;modelRequestSignature=signature;modelJob=null;modelSource='';modelError='';modelAttempts+=1;
     if (text.length>30000) {
       modelError='岗位正文超过智能整理长度上限';
-      modelJob=legacy;
+      modelJob=legacy;modelSource='legacy';
       return modelJob;
     }
     const href=location.href;
-    modelError='';
     modelInFlight = new Promise(resolve=>{
       chrome.runtime.sendMessage({type:'jd_model_extract',text},response=>{
         const runtimeError = chrome.runtime.lastError?.message;
-        if (location.href===href && modelCandidate().text===text) {
+        const current = location.href===href ? modelCandidate(true) : null;
+        const currentStable = current ? panelSnapshotFor(current.text, current.legacy) : null;
+        if (location.href===href && currentStable?.signature===signature) {
           const extracted = response?.ok ? response.data?.job : null;
           if (extracted) {
             const jobUrl = legacy?.job_url || canonicalUrl(href);
@@ -517,21 +610,34 @@
               modelJob.field_confidence[field] = legacy.field_confidence[field];
               modelJob.field_sources[field] = legacy.field_sources[field];
             }
-          } else modelJob=legacy;
-          modelError=extracted ? '' : response?.error || runtimeError || '模型未确认岗位详情';
-        } else modelSignature='';
+            modelSource='model';
+          } else {
+            modelJob=legacy;modelSource='legacy';
+            modelError=response?.error || runtimeError || '模型未确认岗位详情';
+            modelRetryAt=Date.now()+3000;
+          }
+        } else {
+          // The page moved to another job or its panel changed before this
+          // response arrived. Never apply A's result to B.
+          modelSignature='';modelRequestSignature='';modelJob=null;modelSource='';
+        }
         resolve();
       });
     }).catch(error => {
-      if (location.href === href && modelCandidate().text === text) {
-        modelJob = legacy;
+      const current = location.href===href ? modelCandidate(true) : null;
+      if (current && panelSnapshotFor(current.text, current.legacy).signature === signature) {
+        modelJob = legacy;modelSource='legacy';
         modelError = error.message || '暂时无法连接岗位模型';
-      } else modelSignature = '';
+        modelRetryAt=Date.now()+3000;
+      } else {modelSignature='';modelRequestSignature='';modelJob=null;modelSource='';}
     }).finally(()=>{modelInFlight=null;});
     return null;
   }
   function detectJobLegacy({ useTemplate = true } = {}) {
     if (blockedPage()) return null;
+    // Keep the historical document/drawer scope for rule extraction. The model
+    // path uses findJobPanel() separately, so legacy adapters cannot oscillate
+    // between a narrow JD node and the whole page.
     detectionScope = [...document.querySelectorAll('[role="dialog"],[class*="drawer"],[class*="Drawer"]')]
       .find(n => visible(n) && /岗位职责|职位描述|任职要求|Responsibilities|Requirements/i.test(n.innerText || '')) || document;
     const hook=document.querySelector('[data-tounar-job-id]');
@@ -779,7 +885,7 @@
     if (isSelfPage()) return Promise.resolve({ ok: false, skipped: 'self_page' });
     if (['job_viewed','form_started','application_submitted'].includes(event.event_type)) {
       const current=detectJob();
-      if ((current && (current.job_title !== event.payload.job_title || (current.site_job_id || '') !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url)) || (!current && event.event_type !== 'application_submitted') || Date.now()-lastDomChange<800) {
+      if ((current && (current.job_title !== event.payload.job_title || (current.site_job_id || '') !== (event.payload.site_job_id || '') || current.job_url !== event.payload.job_url || (current.jd_text || '') !== (event.payload.jd_text || ''))) || (!current && event.event_type !== 'application_submitted') || Date.now()-panelReadyAt<800) {
         detectAndTrackRoute(); return Promise.resolve({ok:false,skipped:'job_changed'});
       }
     }
@@ -856,28 +962,36 @@
   // ---------- view dwell ----------
 
   let lastDomChange = Date.now();
+  let routeChangedAt = Date.now();
+  let panelReadyAt = Date.now();
   let previousRouteContent = null;
-  const contentIdentity = job => job ? JSON.stringify([job.job_title, job.company_name, job.jd_text, job.location, job.field_sources?.site_job_id !== 'url_identifier' ? job.site_job_id : null]) : null;
+  const contentFingerprint = job => job ? JSON.stringify([job.job_title, job.company_name, job.jd_text, job.location]) : null;
+  const contentIdentity = job => job ? JSON.stringify([job.job_title, job.company_name, job.jd_text, job.location, job.site_job_id, job.job_url]) : null;
   function resetJob(job = null) {
     pageState.job=job;pageState.detectedAt=job?Date.now():null;pageState.viewStartedAt=job?nowIso():null;
     pageState.visibleMs=0;pageState.viewSent=false;pageState.formSent=false;pageState.submitSent=false;pageState.statusSent=new Set();pageState.lastTickAt=Date.now();
+    panelReadyAt=Date.now();
     if(job){try{pageState.submitSent=!!sessionStorage.getItem('tounar:submitted:'+job.job_url);}catch{}rememberLastJob(job);}
   }
   function detectAndTrackRoute() {
     if (isSelfPage()) { if (pageState.job) resetJob(); return null; }
     if(location.href!==pageState.href){
-      previousRouteContent=contentIdentity(pageState.job);
-      loadTemplate();pageState.href=location.href;pageState.routeKey=routeKey();lastDomChange=Date.now();
+      previousRouteContent=contentFingerprint(pageState.job);
+      loadTemplate();pageState.href=location.href;pageState.routeKey=routeKey();lastDomChange=Date.now();routeChangedAt=Date.now();
       resetJob();
       if(!/success|submitted|complete|finish/i.test(location.pathname))pageState.submitScanUntil=0;
     }
-    if(Date.now()-lastDomChange<800)return null;
+    // Wait for the new route's first paint, but never gate job detection on
+    // unrelated page-wide animations (clock, carousel, counters).
+    if(Date.now()-routeChangedAt<300)return null;
     const job=detectJob();
     // A route can change before the SPA replaces the previous job's content.
-    if(previousRouteContent&&contentIdentity(job)===previousRouteContent)return null;
+    if(previousRouteContent&&contentFingerprint(job)===previousRouteContent)return null;
     if(job)previousRouteContent=null;
     if(!job){if(pageState.job)resetJob();return null;}
-    if(!pageState.job||pageState.job.job_title!==job.job_title||pageState.job.site_job_id!==job.site_job_id){resetJob(job);probe();}
+    // Same URL drawers and same-title different jobs must be treated as a new
+    // content version; otherwise the dwell timer would carry A's seconds into B.
+    if(!pageState.job||contentIdentity(pageState.job)!==contentIdentity(job)){resetJob(job);probe();}
     else pageState.job=job;
     return pageState.job;
   }
@@ -898,7 +1012,7 @@
   function tickDwell() {
     const now = Date.now();
     const wasVisible = pageState.lastVisible !== false;
-    if (document.visibilityState === 'visible' && Date.now()-lastDomChange>=800 && !previousRouteContent && pageState.job && !pageState.viewSent) {
+    if (document.visibilityState === 'visible' && Date.now()-panelReadyAt>=800 && !previousRouteContent && pageState.job && !pageState.viewSent) {
       if (wasVisible) {
         const delta = now - pageState.lastTickAt;
         if (delta > 0 && delta < 30000) pageState.visibleMs += delta;
@@ -1273,7 +1387,7 @@
       let stableInput;
       let stableSince;
       while (location.href === requestedUrl && Date.now() < waitUntil) {
-        const candidate = modelCandidate();
+        const candidate = modelCandidate(true);
         if (candidate.text !== stableInput) {
           stableInput = candidate.text;
           stableSince = Date.now();

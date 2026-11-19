@@ -79,6 +79,13 @@ try {
   await page.screenshot({path:path.join(dir,'permission-confirm.png')});
   await prompt.getByRole('button',{name:'取消',exact:true}).click();
   await page.locator('[data-test=permission-confirm-modal]').waitFor({state:'detached'});
+  const unauthorized=await context.newPage();
+  await context.route('https://unauthorized.example/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:'<title>工程师</title><main><h1>工程师</h1><h2>岗位职责</h2><p>负责开发。</p><h2>任职要求</h2><p>本科。</p><button>立即申请</button></main>'}));
+  await unauthorized.goto('https://unauthorized.example/job/1');
+  await unauthorized.bringToFront();
+  const unauthorizedTab=await sw.evaluate(async()=> (await chrome.tabs.query({})).find(t=>t.url?.startsWith('https://unauthorized.example/')));
+  const denied=await sw.evaluate(async tab=>captureTab({tabId:tab.id,origin:'https://unauthorized.example',reason:'test'}),unauthorizedTab);
+  check('missing final-domain permission names the exact host',String(denied?.error?.message||'').includes('unauthorized.example'),String(denied?.error?.message||''));
   check('cancelled permission request does not grant access',(await request('status')).groups.every(g=>!g.granted.length));
   check('no browser script errors',errors.length===0);
   fs.writeFileSync(path.join(dir,'report.json'),JSON.stringify({checks,errors,note:'Native Chrome permission allow/deny requires manual verification; fixture pregrants backend only.'},null,2));
