@@ -4,7 +4,11 @@ import {
   AppError, clipText, newId, normalizeWhitespace, nowIso, safeJsonParse
 } from '../../util.js';
 import { extractResumeText, MAX_RESUME_TEXT } from './resume-parser.js';
-import { aiAvailable, analyzeResumeProfile, compareJobs, recommendJobs } from './llm.js';
+import { aiAvailable, analyzeResumeProfile, compareJobs, generateInterviewQuestions, matchJob, recommendJobs } from './llm.js';
+
+const MATCH_DIMENSIONS = ['hard_gate', 'skills', 'experience', 'industry', 'preference', 'achievements'];
+const CORRECTION_FIELDS = ['skill', 'experience', 'industry', 'achievement', 'preference', 'other'];
+const CORRECTION_SCOPES = ['application', 'all'];
 
 function profileOf(row) {
   return row?.profile_json ? safeJsonParse(row.profile_json, null) : null;
@@ -108,15 +112,18 @@ function requireReadyResume(ownerId) {
   return { row, profile: profileOf(row) };
 }
 
-function reportProjection(row) {
+function reportProjection(row, { includeContext = true } = {}) {
   if (!row) return null;
   return {
     id: row.id,
     kind: row.kind,
     resume_id: row.resume_id,
     application_ids: safeJsonParse(row.application_ids_json, []),
+    parent_report_id: row.parent_report_id || null,
+    report_version: row.report_version || null,
     status: row.status,
     result: safeJsonParse(row.result_json, null),
+    ...(includeContext ? { context: safeJsonParse(row.context_json, null) } : {}),
     error_code: row.error_code,
     error_message: row.error_message,
     created_at: row.created_at,
@@ -124,11 +131,13 @@ function reportProjection(row) {
   };
 }
 
-function startReport({ ownerId, kind, resumeId, applicationIds }) {
+function startReport({ ownerId, kind, resumeId, applicationIds, parentReportId = null, reportVersion = null, context = null }) {
   const id = newId('aireport');
-  run(`INSERT INTO ai_reports (id, owner_id, kind, resume_id, application_ids_json, status, created_at)
-       VALUES (?, ?, ?, ?, ?, 'running', ?)`,
-  [id, ownerId, kind, resumeId || null, JSON.stringify(applicationIds || []), nowIso()]);
+  run(`INSERT INTO ai_reports
+    (id, owner_id, kind, resume_id, application_ids_json, parent_report_id, report_version, context_json, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+  [id, ownerId, kind, resumeId || null, JSON.stringify(applicationIds || []), parentReportId || null,
+    reportVersion || null, context ? JSON.stringify(context) : null, nowIso()]);
   return id;
 }
 function finishReport(id, ownerId, result) {
@@ -171,6 +180,176 @@ export async function compareApplications({ ownerId, applicationIds }) {
     failReport(reportId, ownerId, err);
     throw err;
   }
+}
+
+function matchCorrections(ownerId, applicationId) {
+  const rows = all(`SELECT * FROM ai_match_corrections
+    WHERE owner_id = ? AND (application_id = ? OR scope = 'all')
+    ORDER BY created_at ASC`, [ownerId, applicationId]);
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = `${row.dimension}\u0000${row.user_text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function correctionProjection(row) {
+  return {
+    id: row.id,
+    report_id: row.report_id,
+    application_id: row.application_id,
+    dimension: row.dimension,
+    original_judgment: row.original_judgment,
+    user_text: row.user_text,
+    proposed_field: row.proposed_field,
+    scope: row.scope,
+    created_at: row.created_at
+  };
+}
+
+export async function matchApplication({ ownerId, applicationId, parentReportId = null }) {
+  const id = String(applicationId || '');
+  if (!id) throw new AppError(400, 'VALIDATION_ERROR', '请选择一个台账岗位');
+  const app = getApplication(ownerId, id);
+  if (!app) throw new AppError(404, 'NOT_FOUND', '所选岗位不存在或不属于当前账号');
+  const { row: resume, profile } = requireReadyResume(ownerId);
+  const jdText = String(app.jd_text || app.jd_summary || '').trim();
+  if (!jdText) throw new AppError(409, 'JD_REQUIRED', '这个岗位还没有 JD，无法做单岗位匹配；请先在详情里补充岗位 JD。', { retryable: false });
+  if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法进行岗位匹配', { retryable: false });
+  const parent = parentReportId
+    ? one("SELECT * FROM ai_reports WHERE id = ? AND owner_id = ? AND kind = 'match'", [String(parentReportId), ownerId])
+    : null;
+  if (parentReportId && !parent) throw new AppError(404, 'NOT_FOUND', '上次匹配报告不存在或不属于当前账号');
+  if (parent && !safeJsonParse(parent.application_ids_json, []).includes(id)) {
+    throw new AppError(400, 'VALIDATION_ERROR', '上次匹配报告不是这个岗位的，不能作为重跑依据');
+  }
+  const corrections = matchCorrections(ownerId, id);
+  const job = {
+    id: app.id, company_name: app.company_name, job_title: app.job_title, status: app.status,
+    has_applied: !!app.has_applied, location: app.location, recruitment_batch: app.recruitment_batch,
+    job_url: app.job_url || null, jd_text: app.jd_text || '', jd_summary: app.jd_summary || '',
+    information_sufficient: jdText.length >= 80
+  };
+  const context = {
+    schema_version: 'match-context-v1',
+    application: job,
+    resume: {
+      id: resume.id, filename: resume.filename, updated_at: resume.updated_at,
+      text_chars: resume.text_chars, profile, text: String(resume.text || '').slice(0, 16000)
+    },
+    corrections: corrections.map(correctionProjection),
+    confirmed_preferences: corrections.filter((c) => c.dimension === 'preference').map(correctionProjection)
+  };
+  const reportId = startReport({
+    ownerId, kind: 'match', resumeId: resume.id, applicationIds: [id],
+    parentReportId: parent?.id || null, reportVersion: 'match-v1', context
+  });
+  try {
+    const result = await matchJob({
+      profile, resumeText: String(resume.text || ''), job,
+      corrections: corrections.map(correctionProjection)
+    });
+    result.job = {
+      application_id: app.id, company_name: app.company_name, job_title: app.job_title,
+      status: app.status, has_applied: !!app.has_applied, location: app.location,
+      recruitment_batch: app.recruitment_batch, job_url: job.job_url,
+      information_sufficient: job.information_sufficient,
+      jd_chars: jdText.length
+    };
+    result.resume = {
+      id: resume.id, filename: resume.filename, updated_at: resume.updated_at,
+      text_chars: resume.text_chars, profile_version: resume.updated_at
+    };
+    result.corrections_used = corrections.map(correctionProjection);
+    result.parent_report_id = parent?.id || null;
+    const finished = finishReport(reportId, ownerId, result);
+    finished.corrections = matchCorrections(ownerId, id).map(correctionProjection);
+    return finished;
+  } catch (err) {
+    failReport(reportId, ownerId, err);
+    throw err;
+  }
+}
+
+export function listMatchReports(ownerId, applicationId) {
+  const rows = all("SELECT * FROM ai_reports WHERE owner_id = ? AND kind = 'match' ORDER BY created_at DESC LIMIT 20", [ownerId]);
+  return rows.filter((row) => {
+    const ids = safeJsonParse(row.application_ids_json, []);
+    return !applicationId || ids.includes(applicationId);
+  }).slice(0, 10).map((row) => {
+    const report = reportProjection(row, { includeContext: false });
+    return {
+      id: report.id, status: report.status, created_at: report.created_at,
+      completed_at: report.completed_at, parent_report_id: report.parent_report_id,
+      report_version: report.report_version,
+      application_ids: report.application_ids,
+      ability: report.result?.ability || null,
+      priority: report.result?.priority || null,
+      job: report.result?.job || null,
+      error_code: report.error_code, error_message: report.error_message
+    };
+  });
+}
+
+export function addMatchCorrection({
+  ownerId, reportId, dimension, originalJudgment, userText, proposedField = 'other', scope = 'application'
+}) {
+  const report = one("SELECT * FROM ai_reports WHERE id = ? AND owner_id = ? AND kind = 'match'", [String(reportId), ownerId]);
+  if (!report) throw new AppError(404, 'NOT_FOUND', '匹配报告不存在或不属于当前账号');
+  if (report.status !== 'ready') throw new AppError(409, 'REPORT_NOT_READY', '报告尚未完成，暂时不能补充或纠错');
+  const dim = String(dimension || '');
+  if (!MATCH_DIMENSIONS.includes(dim)) throw new AppError(400, 'VALIDATION_ERROR', '请选择要纠正的匹配维度');
+  const field = String(proposedField || 'other');
+  if (!CORRECTION_FIELDS.includes(field)) throw new AppError(400, 'VALIDATION_ERROR', '补充字段类型无效');
+  const useScope = String(scope || 'application');
+  if (!CORRECTION_SCOPES.includes(useScope)) throw new AppError(400, 'VALIDATION_ERROR', '补充证据的适用范围无效');
+  const clean = String(userText || '').replace(/\u0000/g, '').replace(/\r\n?/g, '\n').trim();
+  if (clean.length < 5) throw new AppError(422, 'VALIDATION_ERROR', '请至少写 5 个字，说明你实际做过什么');
+  if (clean.length > 1200) throw new AppError(422, 'VALIDATION_ERROR', '补充内容不能超过 1200 字');
+  const applicationId = safeJsonParse(report.application_ids_json, [])[0];
+  if (!applicationId || !getApplication(ownerId, applicationId)) {
+    throw new AppError(404, 'NOT_FOUND', '报告关联的岗位不存在或不属于当前账号');
+  }
+  const original = String(originalJudgment || '').trim().slice(0, 1200);
+  const existing = one(`SELECT * FROM ai_match_corrections
+    WHERE owner_id = ? AND report_id = ? AND dimension = ? AND user_text = ?`,
+  [ownerId, report.id, dim, clean]);
+  if (existing) return { correction: correctionProjection(existing), already_saved: true };
+  const correctionId = newId('aimatchfix');
+  run(`INSERT INTO ai_match_corrections
+    (id, owner_id, report_id, application_id, dimension, original_judgment, user_text, proposed_field, scope, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [correctionId, ownerId, report.id, applicationId, dim, original, clean, field, useScope, nowIso()]);
+  return {
+    correction: correctionProjection(one('SELECT * FROM ai_match_corrections WHERE id = ? AND owner_id = ?', [correctionId, ownerId])),
+    already_saved: false
+  };
+}
+
+export function listMatchCorrections(ownerId, reportId) {
+  const report = one("SELECT * FROM ai_reports WHERE id = ? AND owner_id = ? AND kind = 'match'", [String(reportId), ownerId]);
+  if (!report) throw new AppError(404, 'NOT_FOUND', '匹配报告不存在或不属于当前账号');
+  return all('SELECT * FROM ai_match_corrections WHERE owner_id = ? AND report_id = ? ORDER BY created_at ASC', [ownerId, report.id])
+    .map(correctionProjection);
+}
+
+export async function interviewQuestionsForReport(ownerId, reportId) {
+  const report = one("SELECT * FROM ai_reports WHERE id = ? AND owner_id = ? AND kind = 'match'", [String(reportId), ownerId]);
+  if (!report) throw new AppError(404, 'NOT_FOUND', '匹配报告不存在或不属于当前账号');
+  if (report.status !== 'ready') throw new AppError(409, 'REPORT_NOT_READY', '匹配报告尚未完成，暂时不能生成面试问题');
+  if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法生成面试问题', { retryable: false });
+  const context = safeJsonParse(report.context_json, null);
+  const result = safeJsonParse(report.result_json, null);
+  if (!context?.resume?.profile || !context?.application) {
+    throw new AppError(409, 'REPORT_CONTEXT_MISSING', '这份报告缺少岗位或简历快照，请重新运行匹配分析后再生成问题');
+  }
+  return generateInterviewQuestions({
+    profile: context.resume.profile,
+    job: context.application,
+    report: result
+  });
 }
 
 function resumeKeywords(profile) {
@@ -249,7 +428,14 @@ export async function recommendForOwner(ownerId) {
 export function getReport(ownerId, reportId) {
   const row = one('SELECT * FROM ai_reports WHERE id = ? AND owner_id = ?', [reportId, ownerId]);
   if (!row) throw new AppError(404, 'NOT_FOUND', '报告不存在');
-  return reportProjection(row);
+  const report = reportProjection(row);
+  if (report.kind === 'match') {
+    const applicationId = report.application_ids[0] || null;
+    report.corrections = applicationId
+      ? matchCorrections(ownerId, applicationId).map(correctionProjection)
+      : [];
+  }
+  return report;
 }
 
 export function aiStatus(ownerId) {

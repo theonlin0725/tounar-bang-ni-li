@@ -3,13 +3,13 @@
    所有天数按后台 Asia/Shanghai 口径；请求乱序用 reqSeq 丢弃旧响应。 */
 
 import { api, errorText } from '../api.js';
-import { App, isStale } from '../app.js?v=20261102-1';
+import { App, isStale } from '../app.js?v=20261120-1';
 import {
   h, clear, fmtDateTime, daysText, debounce, extLink, idemKey,
   STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
-import { openDetail } from './detail.js?v=20261102-1';
-import { renderReviews } from './reviews.js?v=20261102-1';
+import { openDetail } from './detail.js?v=20261120-1';
+import { renderReviews } from './reviews.js?v=20261120-1';
 import { openManual } from './manual.js';
 import { openSettings } from './settings.js';
 
@@ -25,10 +25,11 @@ function ensureCompareOwner() {
   compareState.meta.clear();
 }
 
-export async function renderLedger(main, { gen, panel = null, applicationId = null } = {}) {
+export async function renderLedger(main, { gen, panel = null, applicationId = null, initialView = null } = {}) {
   ensureCompareOwner();
+  const initial = ['applied', 'viewed', 'archived', 'reviews'].includes(initialView) ? initialView : 'applied';
   const state = {
-    view: 'applied',
+    view: initial,
     q: '', status: '', source: '', due: false,
     cursor: null, cursorStack: [],
     items: [], stats: null, counts: null, filtered_total: null,
@@ -472,6 +473,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
       for (const item of state.items) if (compareState.ids.has(item.id)) rememberSelection(item);
       state.stats = data.stats;
       state.counts = data.counts;
+      window.dispatchEvent(new CustomEvent('tounar:counts', { detail: data.counts || {} }));
       state.filtered_total = data.filtered_total;
       state.page = data.page;
       state.freshness = data.freshness;
@@ -622,7 +624,16 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   renderStats();
   buildTabs();
   await doLoad();
-  if (panel === 'reviews' && !isStale(gen)) switchView('reviews');
+  if ((state.view === 'reviews' || panel === 'reviews') && !isStale(gen)) {
+    state.view = 'reviews';
+    buildTabs();
+    renderBanner();
+    clear(contentEl);
+    renderReviews(contentEl, {
+      gen,
+      onChanged: () => { state.items = []; doLoad({ silent: true }); }
+    });
+  }
   if (applicationId && !isStale(gen)) openDetailFor(applicationId);
   if (panel === 'settings' && mounted) openSettingsTab('reminder');
 }

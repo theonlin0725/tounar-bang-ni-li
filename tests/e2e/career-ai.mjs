@@ -63,6 +63,26 @@ try {
         ranking: input.jobs.map((j, i) => ({ application_id: j.application_id, rank: i + 1, reason: '相对匹配' })),
         limitations: ['仅基于现有 JD']
       };
+    } else if (system.includes('单岗位求职匹配分析助手')) {
+      answer = {
+        ability: { conclusion: '部分匹配', summary: '用户研究有证据，Tableau 尚未体现在简历里。', basis: '简历有用户研究，JD 要求数据分析。' },
+        priority: { conclusion: '适合投', summary: '能力可迁移，但城市偏好未确认。', basis: '岗位地点上海，简历未写偏好。' },
+        overall_advice: '先补充 Tableau 项目证据，再确认地点偏好。',
+        hard_gates: [
+          { requirement: '本科及以上学历', jd_evidence: '本科及以上学历', user_info: '简历未写学历', resume_evidence: '', result: '信息不足', basis: '简历没有学历信息。', blocking: false }
+        ],
+        dimensions: [
+          { key: 'hard_gate', requirement: '学历', user_evidence: '未写', conclusion: '无法判断', strengths: [], gaps: ['学历信息不足'], evidence: [], next_step: '补充学历信息' },
+          { key: 'skills', requirement: '数据分析与用户研究', user_evidence: '熟悉 SQL 与用户研究', conclusion: '部分匹配', strengths: ['用户研究有原文证据'], gaps: ['未发现 Tableau 的实际使用案例'], evidence: [{ source: 'resume', quote: '熟悉 SQL' }, { source: 'jd', quote: '数据分析' }], next_step: '补充 Tableau 项目' },
+          { key: 'experience', requirement: '数据产品项目', user_evidence: '数据产品实习', conclusion: '部分匹配', strengths: ['有实习经历'], gaps: [], evidence: [{ source: 'resume', quote: '数据产品实习生' }], next_step: '补充项目范围' },
+          { key: 'industry', requirement: '用户研究', user_evidence: '用户研究', conclusion: '匹配', strengths: ['用户研究可迁移'], gaps: [], evidence: [{ source: 'resume', quote: '用户研究' }], next_step: '补充行业背景' },
+          { key: 'preference', requirement: '上海', user_evidence: '未写城市偏好', conclusion: '无法判断', strengths: [], gaps: ['地点偏好待确认'], evidence: [], next_step: '确认地点' },
+          { key: 'achievements', requirement: '核心指标', user_evidence: '推动留存提升', conclusion: '部分匹配', strengths: ['有留存结果'], gaps: [], evidence: [{ source: 'resume', quote: '推动留存提升' }, { source: 'jd', quote: '核心指标' }], next_step: '补充指标口径' }
+        ],
+        limitations: ['简历没有学历信息']
+      };
+    } else if (system.includes('面试准备助手')) {
+      answer = { questions: [{ question: '你如何用用户研究推动留存？', basis: '简历：推动留存提升', dimension: 'skills' }] };
     } else {
       const input = JSON.parse(user);
       answer = {
@@ -102,7 +122,7 @@ try {
     payload: {
       company_name: '青禾网络', job_title: '用户研究实习生', site_job_id: 'career-web-pending',
       job_url: 'https://jobs.example.com/career-web/pending', location: '上海',
-      jd_text: '岗位职责\n负责用户访谈、问卷设计、数据分析与研究报告撰写，持续跟踪核心指标并输出洞察，与产品、设计和研发协作。\n任职要求\n熟悉 SQL 与用户研究方法，具备跨团队沟通能力。',
+      jd_text: '岗位职责\n负责用户访谈、问卷设计、数据分析与研究报告撰写，持续跟踪核心指标并输出洞察，与产品、设计和研发协作。\n任职要求\n本科及以上学历；上海线下办公。熟悉 SQL 与用户研究方法，具备跨团队沟通能力。',
       jd_summary: '用户访谈、问卷设计、数据分析'
     }
   })]);
@@ -168,6 +188,88 @@ try {
   const recommendText = await page.locator('[data-test=recommend-report]').innerText();
   check('推荐只出现未投递岗位，并单独标记无 JD 候选', recommendText.includes('青禾网络')
     && recommendText.includes('列表公司') && recommendText.includes('未纳入确定推荐'));
+
+  /* 侧栏与单岗位匹配：真实按钮 -> 真实 API -> 本地假模型 */
+  await page.goto(`/?panel=career&app=${encodeURIComponent(pending.application_id)}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=match-section]');
+  check('侧栏一级入口和账号邮箱可见，匹配分析为当前页', (await page.locator('[data-test=nav-ledger]').count()) === 1
+    && (await page.locator('[data-test=nav-reviews]').count()) === 1
+    && (await page.locator('[data-test=nav-match].active').count()) === 1
+    && (await page.textContent('[data-test=header-email]')).trim() === 'demo@tounar.local');
+  check('岗位详情带入的单岗位默认选中', (await page.inputValue('[data-test=match-application]')) === pending.application_id);
+  check('打开匹配页不自动触发模型请求', fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === 0);
+
+  await page.click('[data-test=match-run]');
+  await page.waitForSelector('[data-test=match-report]', { timeout: 20000 });
+  const matchText = await page.locator('[data-test=match-report]').innerText();
+  check('单岗位报告显示能力匹配度、投递优先级和总体建议',
+    matchText.includes('能力匹配度') && matchText.includes('投递优先级') && matchText.includes('总体建议'));
+  check('单岗位报告包含门槛表与六维卡片', (await page.locator('[data-test=match-gates]').count()) === 1
+    && (await page.locator('[data-test^=match-dimension-]').count()) === 6);
+  check('单岗位报告展示证据来源与下一步行动', matchText.includes('证据来源') && matchText.includes('优化当前岗位简历') && matchText.includes('生成面试问题'));
+  const firstReportId = await page.locator('[data-test=match-report]').getAttribute('data-report-id');
+  const modelCallsBeforeReload = fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length;
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=match-report]');
+  check('刷新匹配页读取历史报告，不重复触发模型',
+    fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === modelCallsBeforeReload
+      && (await page.locator('[data-test=match-report]').getAttribute('data-report-id')) === firstReportId);
+  await page.screenshot({ path: path.join(out, 'match-desktop-1280.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: path.join(out, 'match-desktop-1440.png'), fullPage: true });
+  await page.setViewportSize({ width: 1024, height: 1000 });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: path.join(out, 'match-tablet-1024.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.waitForTimeout(250);
+
+  await page.locator('[data-dimension=skills] [data-test=match-correct]').click();
+  await page.waitForSelector('[data-test=match-correction-modal]');
+  const correctionText = await page.locator('[data-test=match-correction-modal]').innerText();
+  check('纠错弹窗先展示原判断、补充、写入字段和适用范围',
+    correctionText.includes('原判断') && correctionText.includes('用户确认补充') && correctionText.includes('适用范围'));
+  await page.fill('[data-test=match-correction-text]', '我使用 Tableau 完成过一个商业分析 Dashboard');
+  await page.click('[data-test=match-correction-save]');
+  await page.waitForSelector('[data-test=match-correction-modal]', { state: 'detached' });
+  await page.waitForSelector('[data-test=match-corrections]');
+  check('确认后保存为用户确认补充并显示适用范围', (await page.locator('[data-test=match-corrections]').innerText()).includes('Tableau'));
+  const correctionsApi = await server.request(`/api/v1/ai/reports/${encodeURIComponent(firstReportId)}/corrections`, { cookie: login.cookie });
+  check('纠错真实落库且只保存一次', correctionsApi.status === 200 && correctionsApi.json.data.length === 1);
+
+  await page.click('[data-test=match-rerun-action]');
+  await page.waitForFunction((oldId) => document.querySelector('[data-test=match-report]')?.getAttribute('data-report-id') !== oldId, firstReportId, { timeout: 20000 });
+  const secondReportId = await page.locator('[data-test=match-report]').getAttribute('data-report-id');
+  check('重跑生成新报告，旧报告仍可查看', secondReportId && secondReportId !== firstReportId
+    && (await page.locator('[data-test=match-history] option').count()) >= 2);
+
+  await page.click('[data-test=match-interview]');
+  await page.waitForSelector('[data-test=match-interview-questions]', { timeout: 20000 });
+  check('面试问题在当前报告内生成并显示依据', (await page.locator('[data-test=match-interview-questions]').innerText()).includes('依据：'));
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.click('[data-test=sidebar-open]');
+  await page.waitForTimeout(300);
+  check('移动端菜单按钮打开可关闭侧栏', await page.locator('.tn-shell.nav-open').count() === 1);
+  await page.screenshot({ path: path.join(out, 'match-mobile-390-nav.png'), fullPage: false });
+  await page.keyboard.press('Escape');
+  check('Esc 关闭侧栏并把焦点还给菜单按钮', await page.locator('.tn-shell.nav-open').count() === 0
+    && await page.evaluate(() => document.activeElement?.getAttribute('data-test')) === 'sidebar-open');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(out, 'match-mobile-390-report.png'), fullPage: true });
+  const mobileOverflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth,
+    coreColumns: getComputedStyle(document.querySelector('.tn-match-core')).gridTemplateColumns.split(' ').length
+  }));
+  check('移动端无页面级横向溢出，能力/优先级与六维卡片单列',
+    mobileOverflow.scrollWidth <= mobileOverflow.innerWidth + 1 && mobileOverflow.coreColumns === 1, JSON.stringify(mobileOverflow));
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto('/?panel=career&section=resume', { waitUntil: 'networkidle' });
+  check('简历库侧栏入口复用原简历上传与画像视图', (await page.locator('[data-test=nav-resume].active').count()) === 1
+    && (await page.locator('[data-test=page-title]').innerText()).includes('简历库')
+    && (await page.locator('[data-test=resume-section]').count()) === 1);
   check('AI 分析没有改变岗位状态', (await server.request(`/api/v1/applications/${pending.application_id}`, { cookie: login.cookie })).json.data.status === 'pending');
   check('页面无未捕获异常', errors.length === 0, errors.join('; '));
   await page.screenshot({ path: path.join(out, 'career-ai.png'), fullPage: true });

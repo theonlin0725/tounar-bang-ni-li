@@ -2,7 +2,7 @@
    allowed_actions 以服务端为准；纠错必须带原因与 expected_version；409/D05/D12 如实解释。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261102-1';
+import { isStale } from '../app.js?v=20261120-1';
 import {
   h, clear, toast, confirmDialog, statusChip, fmtDateTime, fmtDate, daysText,
   idemKey, extLink, STATUS_LABELS, STATUS_ORDER
@@ -211,6 +211,11 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     clear(footEl);
     const actions = new Set(app.allowed_actions || []);
     const row = h('div', { class: 'tn-action-row', style: { width: '100%' } });
+    row.append(h('a', {
+      class: 'tn-btn', 'data-test': 'detail-match', text: '匹配分析',
+      href: `/?panel=career&app=${encodeURIComponent(id)}`,
+      title: '用当前简历针对这个岗位做单岗位匹配'
+    }));
     row.append(h('button', {
       class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'detail-review-confirm',
       text: '已确认，状态无变化',

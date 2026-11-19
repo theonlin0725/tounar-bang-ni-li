@@ -10,7 +10,7 @@ const RESUME = `张明
 优势：跨团队沟通与需求分析。`;
 
 let fake, fakePort, server, cookie, peerCookie, deviceToken, failAnalyze = false;
-let appliedAId = null, appliedBId = null;
+let appliedAId = null, appliedBId = null, matchAppId = null, matchReportId = null, matchCorrectionId = null;
 const calls = [];
 before(async () => {
   fake = http.createServer(async (req, res) => {
@@ -45,6 +45,48 @@ before(async () => {
         differences: ['岗位职责侧重不同'],
         ranking: input.jobs.map((j, i) => ({ application_id: j.application_id, rank: i + 1, reason: '相对匹配' })),
         limitations: ['仅基于现有 JD']
+      };
+    } else if (system.includes('单岗位求职匹配分析助手')) {
+      const input = JSON.parse(user);
+      if (input.job?.company_name === '证据测试公司') {
+        answer = {
+          ability: { conclusion: '匹配', summary: '模型声称匹配。', basis: '无。' },
+          priority: { conclusion: '优先投', summary: '模型声称优先。', basis: '无。' },
+          overall_advice: '模型声称优先投。',
+          hard_gates: [{ requirement: '五年经验', jd_evidence: 'JD 中不存在的五年经验', user_info: '未知', result: '满足', basis: '无。' }],
+          dimensions: [
+            { key: 'skills', requirement: 'SQL', user_evidence: '精通', conclusion: '匹配', strengths: ['模型声称精通'], gaps: [], evidence: [{ source: 'resume', quote: '简历中不存在的精通证据' }], next_step: '无' }
+          ],
+          limitations: []
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+        return;
+      }
+      answer = {
+        ability: { conclusion: '部分匹配', summary: 'SQL 与用户研究可迁移，但缺少正式数据产品任职年限。', basis: '简历有数据产品实习和 SQL 证据，岗位要求 3 年以上。' },
+        priority: { conclusion: '适合投', summary: '能力有迁移空间，但硬门槛和地点偏好待确认。', basis: '当前是实习背景，尚未确认上海线下办公。' },
+        overall_advice: '先确认工作年限门槛和上海线下办公要求，再决定是否投递。',
+        hard_gates: [
+          { requirement: '本科及以上学历', jd_evidence: '本科及以上学历', user_info: '简历未写学历', resume_evidence: '', result: '信息不足', basis: '简历没有学历信息，不能推断。', blocking: false },
+          { requirement: '3 年以上数据产品经验', jd_evidence: '3 年以上数据产品经验', user_info: '当前是数据产品实习经历', resume_evidence: '数据产品实习生', result: '不满足', basis: '实习经历不等同于 3 年以上正式经验。', blocking: true },
+          { requirement: '上海线下办公', jd_evidence: '上海线下办公', user_info: '简历未写地点偏好', resume_evidence: '', result: '需要用户确认', basis: '需要本人确认能否在上海线下办公。', blocking: false }
+        ],
+        dimensions: [
+          { key: 'hard_gate', requirement: '见硬性门槛', user_evidence: '见门槛表', conclusion: '不匹配', strengths: [], gaps: ['年限门槛不满足'], evidence: [{ source: 'jd', quote: '3 年以上数据产品经验' }], next_step: '确认是否接受实习转正或放宽年限' },
+          { key: 'skills', requirement: 'SQL、数据分析、用户研究', user_evidence: '熟悉 SQL 与用户研究，做过指标体系', conclusion: '匹配', strengths: ['SQL 和用户研究可直接迁移'], gaps: [], evidence: [{ source: 'resume', quote: '熟悉 SQL' }, { source: 'jd', quote: '数据分析' }], next_step: '在简历中把 SQL 产出写成具体分析项目' },
+          { key: 'experience', requirement: '负责数据产品需求与指标体系', user_evidence: '2026 年在星河科技担任数据产品实习生', conclusion: '部分匹配', strengths: ['有数据产品实习经历'], gaps: ['缺少正式岗位年限'], evidence: [{ source: 'resume', quote: '2026 年在星河科技担任数据产品实习生' }], next_step: '补充承担范围和交付物' },
+          { key: 'industry', requirement: '数据产品行业经验', user_evidence: '数据产品实习经历', conclusion: '部分匹配', strengths: ['有数据产品场景经验'], gaps: [], evidence: [{ source: 'resume', quote: '数据产品实习生' }, { source: 'jd', quote: '数据产品' }], next_step: '补充行业业务背景' },
+          { key: 'preference', requirement: '上海线下办公', user_evidence: '简历未写城市或办公偏好', conclusion: '无法判断', strengths: [], gaps: ['需要本人确认上海线下办公'], evidence: [], next_step: '确认城市和办公方式偏好' },
+          { key: 'achievements', requirement: '可量化的业务结果', user_evidence: '推动留存提升', conclusion: '部分匹配', strengths: ['有留存提升结果'], gaps: [], evidence: [{ source: 'resume', quote: '推动留存提升' }, { source: 'jd', quote: '核心指标' }], next_step: '补充指标口径和变化幅度' }
+        ],
+        limitations: ['简历没有学历信息', '未确认地点偏好']
+      };
+    } else if (system.includes('面试准备助手')) {
+      answer = {
+        questions: [
+          { question: '你如何用 SQL 和用户研究推动留存提升？', basis: '简历：推动留存提升；JD：数据分析', dimension: 'skills' },
+          { question: '你目前只有实习经历，如何弥补 3 年经验门槛？', basis: 'JD：3 年以上数据产品经验', dimension: 'hard_gate' }
+        ]
       };
     } else {
       const input = JSON.parse(user);
@@ -133,6 +175,141 @@ it('岗位对比使用当前账号的真实岗位、标记已投递并返回相�
   assert.ok(report.result.jobs.every((j) => j.has_applied === true));
   assert.ok(report.result.ranking.length === 2);
   assert.ok(report.result.overview);
+});
+
+const MATCH_JD = `岗位职责
+负责数据产品需求分析、指标体系建设与用户研究，推动核心指标提升。
+任职要求
+本科及以上学历；3 年以上数据产品经验；上海线下办公。`;
+
+it('单岗位匹配生成五段报告，硬门槛阻断优先投，且不改岗位状态', async () => {
+  const created = await createApp({
+    company_name: '远山数据', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-10-03', jd_summary: MATCH_JD,
+    job_url: 'https://jobs.example.com/career/match-a', location: '上海'
+  }, 'career-match-a');
+  assert.equal(created.status, 201, created.text);
+  matchAppId = created.json.data.id;
+  const res = await post('/api/v1/ai/match', { application_id: matchAppId });
+  assert.equal(res.status, 200, res.text);
+  const report = res.json.data;
+  matchReportId = report.id;
+  assert.equal(report.kind, 'match');
+  assert.equal(report.status, 'ready');
+  assert.equal(report.report_version, 'match-v1');
+  assert.equal(report.result.dimensions.length, 6);
+  assert.deepEqual(report.result.dimensions.map((d) => d.key),
+    ['hard_gate', 'skills', 'experience', 'industry', 'preference', 'achievements']);
+  assert.ok(report.result.hard_gates.some((g) => g.result === '不满足'));
+  assert.equal(report.result.priority.conclusion, '暂缓');
+  assert.ok(report.result.overall_advice);
+  assert.ok(report.result.strengths.length >= 1);
+  assert.ok(report.result.gaps.some((g) => g.kind === '资料不足'));
+  assert.ok(report.context.resume.id);
+  assert.match(report.context.application.jd_summary, /上海线下办公/);
+  assert.ok(calls.some((c) => c.system.includes('单岗位求职匹配分析助手')));
+  const detail = await get(`/api/v1/applications/${matchAppId}`);
+  assert.equal(detail.json.data.status, 'applied');
+  assert.equal(detail.json.data.has_applied, 1);
+  const reports = await get(`/api/v1/ai/match-reports?application_id=${matchAppId}`);
+  assert.equal(reports.status, 200, reports.text);
+  assert.equal(reports.json.data[0].id, matchReportId);
+  const noJdBatch = await server.eventBatch(deviceToken, [strongViewEvent({
+    event_type: 'job_discovered',
+    payload: {
+      company_name: '无 JD 公司', job_title: '无 JD 岗位', site_job_id: 'career-match-no-jd',
+      job_url: 'https://jobs.example.com/career/match-no-jd', jd_status: 'missing'
+    }
+  })]);
+  const noJdId = noJdBatch.json.results[0].application_id;
+  assert.ok(noJdId, noJdBatch.text);
+  const noJdMatch = await post('/api/v1/ai/match', { application_id: noJdId });
+  assert.equal(noJdMatch.status, 409);
+  assert.equal(noJdMatch.json.error.code, 'JD_REQUIRED');
+});
+
+it('失实引文和不存在的 JD 门槛被拒绝，肯定结论降为无法判断', async () => {
+  const created = await createApp({
+    company_name: '证据测试公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-10-05', jd_summary: '岗位职责\n负责数据产品需求分析与指标体系建设，推动核心指标提升。\n任职要求\n本科及以上学历，熟悉 SQL 与用户研究。',
+    job_url: 'https://jobs.example.com/career/match-evidence'
+  }, 'career-match-evidence');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  assert.equal(res.json.data.result.ability.conclusion, '无法判断');
+  assert.equal(res.json.data.result.priority.conclusion, '待确认');
+  assert.ok(!res.json.data.result.hard_gates.some((g) => g.requirement.includes('五年经验')));
+  assert.ok(res.json.data.result.dimensions.every((d) => d.conclusion === '无法判断'));
+  assert.ok(res.json.data.result.limitations.some((x) => x.includes('没有找到可逐字核验')));
+});
+
+it('匹配纠错只追加用户确认证据，可重跑并保留旧报告；跨账号拒绝', async () => {
+  assert.ok(matchReportId);
+  const path = `/api/v1/ai/reports/${matchReportId}/corrections`;
+  const body = {
+    dimension: 'skills',
+    original_judgment: '未发现 Tableau 的实际使用案例',
+    user_text: '我使用 Tableau 完成过一个商业分析 Dashboard',
+    proposed_field: 'skill',
+    scope: 'application'
+  };
+  const saved = await server.request(path, {
+    method: 'POST', cookie, body,
+    headers: { 'Idempotency-Key': 'match-correction-a' }
+  });
+  assert.equal(saved.status, 201, saved.text);
+  assert.equal(saved.json.data.already_saved, false);
+  matchCorrectionId = saved.json.data.correction.id;
+  const replay = await server.request(path, {
+    method: 'POST', cookie, body,
+    headers: { 'Idempotency-Key': 'match-correction-a' }
+  });
+  assert.equal(replay.status, 201);
+  assert.equal(replay.json.data.correction.id, matchCorrectionId);
+  const duplicate = await server.request(path, {
+    method: 'POST', cookie, body,
+    headers: { 'Idempotency-Key': 'match-correction-b' }
+  });
+  assert.equal(duplicate.status, 201);
+  assert.equal(duplicate.json.data.already_saved, true);
+  const corrections = await get(path);
+  assert.equal(corrections.json.data.length, 1);
+  assert.equal(corrections.json.data[0].user_text, body.user_text);
+
+  const rerun = await post('/api/v1/ai/match', { application_id: matchAppId, parent_report_id: matchReportId });
+  assert.equal(rerun.status, 200, rerun.text);
+  const newer = rerun.json.data;
+  assert.notEqual(newer.id, matchReportId);
+  assert.equal(newer.parent_report_id, matchReportId);
+  assert.equal(newer.result.corrections_used.length, 1);
+  assert.equal(newer.result.corrections_used[0].user_text, body.user_text);
+  const old = await get(`/api/v1/ai/reports/${matchReportId}`);
+  assert.equal(old.json.data.result.priority.conclusion, '暂缓');
+  assert.equal(old.json.data.result.corrections_used.length, 0);
+  assert.equal(old.json.data.corrections.length, 1);
+  const history = await get(`/api/v1/ai/match-reports?application_id=${matchAppId}`);
+  assert.equal(history.json.data.length, 2);
+  const afterCorrection = await get(`/api/v1/applications/${matchAppId}`);
+  assert.equal(afterCorrection.json.data.status, 'applied');
+  assert.equal(afterCorrection.json.data.applied_at_precision, 'date');
+
+  const questions = await post(`/api/v1/ai/reports/${newer.id}/interview-questions`, {});
+  assert.equal(questions.status, 200, questions.text);
+  assert.ok(questions.json.data.questions.length >= 1);
+  assert.ok(questions.json.data.questions[0].basis);
+
+  const peerRead = await server.request(`/api/v1/ai/reports/${matchReportId}`, { cookie: peerCookie });
+  assert.equal(peerRead.status, 404);
+  const peerFix = await server.request(path, {
+    method: 'POST', cookie: peerCookie, body,
+    headers: { 'Idempotency-Key': 'match-correction-peer' }
+  });
+  assert.equal(peerFix.status, 404);
+  const peerMatch = await server.request('/api/v1/ai/match', {
+    method: 'POST', cookie: peerCookie, body: { application_id: matchAppId }
+  });
+  assert.equal(peerMatch.status, 404);
 });
 
 it('自动推荐只读取未投递岗位，JD 不足单独列出，不改变岗位状态', async () => {

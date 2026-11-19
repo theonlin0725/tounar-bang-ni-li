@@ -46,7 +46,7 @@ AI_PROVIDER=openai_compatible
 
 ## 数据与接口
 
-新增表：`resumes`（文本、画像、当前版本）、`ai_reports`（对比/推荐报告）。删除用户数据时会清理这两张表。
+新增表：`resumes`（文本、画像、当前版本）、`ai_reports`（对比/推荐/单岗位匹配报告及证据快照）、`ai_match_corrections`（用户确认补充）。删除用户数据时会随 `ai_reports` 级联清理补充证据。
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
@@ -56,10 +56,14 @@ AI_PROVIDER=openai_compatible
 | POST | `/api/v1/resumes/:id/analyze` | 生成结构化画像；失败保留 failed 可重试 |
 | PUT | `/api/v1/resumes/:id/text` | 修正文本并重新分析 |
 | POST | `/api/v1/ai/compare` | 2–6 个本人岗位对比 |
+| POST | `/api/v1/ai/match` | 单岗位五段匹配；可带 `parent_report_id` 重跑 |
+| GET | `/api/v1/ai/match-reports?application_id=` | 单岗位历史报告（本人） |
+| POST/GET | `/api/v1/ai/reports/:id/corrections` | 用户确认补充；只追加、不改简历画像 |
+| POST | `/api/v1/ai/reports/:id/interview-questions` | 针对报告生成面试问题 |
 | POST | `/api/v1/ai/recommend` | 当前账号全部未投递岗位推荐 |
-| GET | `/api/v1/ai/reports/:id` | 读取本人报告 |
+| GET | `/api/v1/ai/reports/:id` | 读取本人报告（单岗位报告附当次与后续补充） |
 
-所有查询按 `owner_id` 隔离；对比只接受本人的 application_id。推荐服务端过滤 `has_applied=1` 或已归档的岗位，AI 不修改岗位状态。
+所有查询按 `owner_id` 隔离；对比和单岗位匹配只接受本人的 application_id。单岗位报告保存 `match-context-v1` 快照（岗位 JD、简历画像/文本、当时使用的补充证据），旧报告不会被新证据改写；重跑生成新报告并记录 `parent_report_id`。推荐服务端过滤 `has_applied=1` 或已归档的岗位，AI 不修改岗位状态。
 
 ## 画像与报告约束
 
@@ -67,6 +71,8 @@ AI_PROVIDER=openai_compatible
 - 对比/推荐提示词要求相对匹配，不输出录用概率。JD 少于 80 字的岗位标记 `information_sufficient=false`，不能作为确定推荐。
 - 推荐只分析 JD 充分的候选（默认最多 12 个），其余岗位进入“信息不足/未纳入排序”，并说明原因；不做外部招聘网站搜索。
 - 前端状态：上传/解析 → 分析中 → 完成/失败 → 重试；失败不会影响台账。
+- 单岗位匹配只允许枚举结论（能力：匹配/部分匹配/不匹配/无法判断；优先投/适合投/暂缓/待确认），不输出百分比、评分或录用概率。服务端会逐条核验引文；证据不成立时把肯定结论降为“无法判断”。硬门槛 `不满足` 会强制优先级为“暂缓”，不能被技能优势抵消。
+- 旧库若 `ai_reports.kind` 的 CHECK 不含 `match`，启动时自动重建该表并保留旧报告；新列 `context_json`、`parent_report_id`、`report_version` 增量补齐。
 
 ## 验证
 

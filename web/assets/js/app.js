@@ -5,7 +5,7 @@ import { confirmPluginConnection, openSiteManager, promptPluginConnection } from
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
 import { renderLogin } from './views/login.js';
-import { renderLedger, openSettings } from './views/ledger.js?v=20261102-1';
+import { renderLedger, openSettings } from './views/ledger.js?v=20261120-1';
 import { renderLanding } from './views/landing.js';
 import { renderMailAdmin } from './views/mail-admin.js';
 import { renderCareer } from './views/career.js';
@@ -24,7 +24,10 @@ function route() {
   const match = location.pathname.match(/^\/r\/([^/]+)$/);
   if (match) return { name: 'landing', token: decodeURIComponent(match[1]) };
   const params = new URLSearchParams(location.search);
-  return { name: 'app', panel: params.get('panel'), applicationId: params.get('app'), apps: params.get('apps') };
+  return {
+    name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
+    apps: params.get('apps'), view: params.get('view'), section: params.get('section')
+  };
 }
 
 function rootEl() { return document.getElementById('tn-root'); }
@@ -61,64 +64,195 @@ export async function enterApp(panel = null) {
   const root = rootEl();
   clear(root);
   try { const me = await api.get('/api/v1/me'); if (isStale(gen)) return; App.user = me.data.user; } catch (err) { if (isStale(gen)) return; if (err.status === 401) return; root.append(h('p', { text: errorText(err) })); return; }
-  root.append(buildHeader());
-  const main = h('div', { class: 'tn-main', id: 'tn-main' });
-  root.append(main);
   const currentRoute = route();
-  if ((panel || currentRoute.panel) === 'mail-admin') {
+  const activePanel = panel || currentRoute.panel;
+  const shell = buildShell({ panel: activePanel, view: currentRoute.view, section: currentRoute.section, gen });
+  root.append(shell);
+  const main = shell.querySelector('#tn-main');
+  if (activePanel === 'mail-admin') {
     await renderMailAdmin(main, { isCurrent: () => !isStale(gen) });
     if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
   }
-  if ((panel || currentRoute.panel) === 'career') {
-    await renderCareer(main, { gen, apps: currentRoute.apps });
+  if (activePanel === 'career') {
+    await renderCareer(main, {
+      gen, apps: currentRoute.apps, applicationId: currentRoute.applicationId,
+      section: currentRoute.section
+    });
     if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
   }
-  await renderLedger(main, { gen, panel: panel || currentRoute.panel, applicationId: currentRoute.applicationId });
+  await renderLedger(main, {
+    gen, panel: activePanel, applicationId: currentRoute.applicationId, initialView: currentRoute.view
+  });
   if (isStale(gen)) return;
-  if ((panel || currentRoute.panel) === 'plugin-connect') confirmPluginConnection();
-  else if ((panel || currentRoute.panel) === 'plugin-sites') openSiteManager();
+  if (activePanel === 'plugin-connect') confirmPluginConnection();
+  else if (activePanel === 'plugin-sites') openSiteManager();
   else promptPluginConnection({automatic:true});
 }
 
-function buildHeader() {
-  const wrap = h('div', { class: 'tn-header' });
-  const inner = h('div', { class: 'tn-header-inner' },
-    h('div', { class: 'tn-header-brand', text: 'Tounar · 帮你理' }),
-    h('div', { class: 'tn-header-user' },
-      h('span', { class: 'tn-header-email', 'data-test': 'header-email', text: App.user?.email || '' }),
-      pluginDownloadLink({ label: '下载插件', test: 'download-plugin' }),
-      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '安装指引', 'data-test': 'plugin-help', onclick: openPluginHelp }),
-      h('a', { class: 'tn-btn tn-btn-sm', href: '/?panel=career', text: '简历与 AI', 'data-test': 'open-career' }),
-      h('button', {
-        class: 'tn-btn tn-btn-sm', type: 'button', text: '提醒设置', 'data-test': 'open-settings-reminder',
-        onclick: () => openSettings({ tab: 'reminder' })
-      }),
-      h('button', {
-        class: 'tn-btn tn-btn-sm', type: 'button', text: '数据与授权', 'data-test': 'open-settings-data',
-        onclick: () => openSettings({ tab: 'data' })
-      }),
-      App.user?.is_admin ? h('a', { class: 'tn-btn tn-btn-sm', href: '/?panel=mail-admin', text: '邮件测试与模板', 'data-test': 'open-mail-admin' }) : null,
-      h('button', {
-        class: 'tn-btn tn-btn-sm', type: 'button', text: '退出登录', 'data-test': 'logout',
-        onclick: async () => {
-          const ok = await confirmDialog({
-            title: '退出登录？',
-            message: '退出后本页会清除台账缓存与在途请求。已绑定的插件设备与历史台账不受影响。',
-            detail: '如需停止采集或删除数据，请到「数据与授权」面板操作。',
-            confirmLabel: '退出登录'
-          });
-          if (!ok) return;
-          try { await api.post('/api/v1/auth/logout'); } catch { /* 退出失败也回登录页 */ }
-          App.user = null;
-          showLogin('已退出登录');
-        }
-      })
-    )
+const NAV_ICONS = {
+  ledger: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h12v13H4zM7 7h6M7 10h6M7 13h4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  reviews: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h12v9H9l-4 3v-3H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 8h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  match: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="13" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.2 10h1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+  resume: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5h7l3 3v10H5zM12 3.5v3h3M7.5 9h5M7.5 12h5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  settings: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>'
+};
+function navIcon(name) {
+  const node = h('span', { class: 'tn-nav-icon' });
+  node.innerHTML = NAV_ICONS[name] || '';
+  return node;
+}
+function navLink({ href, label, test, active = false, icon = null, count = null, sub = false }) {
+  return h('a', {
+    class: `tn-nav-item${active ? ' active' : ''}${sub ? ' tn-nav-sub' : ''}`,
+    href, ...(test ? { 'data-test': test } : {}),
+    ...(active ? { 'aria-current': 'page' } : {})
+  }, icon ? navIcon(icon) : h('span', { class: 'tn-nav-icon tn-nav-icon-empty' }),
+  h('span', { class: 'tn-nav-label', text: label }),
+  count == null ? null : h('span', { class: 'tn-nav-count', 'data-test': test ? `${test}-count` : null, text: String(count) }));
+}
+function navButton({ label, test, icon = null, onclick, sub = false }) {
+  return h('button', {
+    class: `tn-nav-item tn-nav-button${sub ? ' tn-nav-sub' : ''}`, type: 'button',
+    'data-test': test,
+    onclick
+  }, icon ? navIcon(icon) : h('span', { class: 'tn-nav-icon tn-nav-icon-empty' }),
+  h('span', { class: 'tn-nav-label', text: label }));
+}
+function navGroup(label) { return h('div', { class: 'tn-nav-group-label', text: label }); }
+
+function navState({ panel, view, section }) {
+  if (panel === 'career') return section === 'resume' ? 'resume' : 'match';
+  if (panel === 'reviews' || view === 'reviews') return 'reviews';
+  if (view === 'viewed') return 'viewed';
+  if (view === 'archived') return 'archived';
+  if (panel === 'mail-admin') return 'mail-admin';
+  if (['settings', 'plugin-connect', 'plugin-sites'].includes(panel)) return 'tools';
+  return 'applied';
+}
+
+function buildShell({ panel, view, section, gen }) {
+  const nav = navState({ panel, view, section });
+  const sidebar = h('aside', { class: 'tn-sidebar', id: 'tn-sidebar', 'aria-label': '主导航' });
+  const brand = h('a', { class: 'tn-sidebar-brand', href: '/', 'aria-label': 'TOUNAR 帮你理首页' },
+    h('span', { class: 'tn-brand-mark', text: 'T' }),
+    h('span', { class: 'tn-brand-word' }, h('strong', { text: 'TOUNAR' }), h('span', { text: '帮你理' }))
   );
-  wrap.append(inner);
-  return wrap;
+  const counts = { pending: null, viewed: null, archived: null };
+  const pendingBadge = h('span', { class: 'tn-nav-count', 'data-test': 'sidebar-pending-count', hidden: true });
+  const viewedBadge = h('span', { class: 'tn-nav-count', 'data-test': 'sidebar-viewed-count', hidden: true });
+  const archivedBadge = h('span', { class: 'tn-nav-count', 'data-test': 'sidebar-archived-count', hidden: true });
+  function withBadge(href, label, test, badge, icon, active = false) {
+    return h('a', {
+      class: `tn-nav-item${active ? ' active' : ''}`, href, 'data-test': test,
+      ...(active ? { 'aria-current': 'page' } : {}),
+      onclick: closeMobileNav
+    }, navIcon(icon), h('span', { class: 'tn-nav-label', text: label }), badge);
+  }
+  const work = h('div', { class: 'tn-nav-section' },
+    navGroup('工作台'),
+    withBadge('/', '投递台账', 'nav-ledger', null, 'ledger', nav === 'applied'),
+    withBadge('/?panel=ledger&view=viewed', '看过没投', 'nav-viewed', viewedBadge, null, nav === 'viewed'),
+    withBadge('/?panel=ledger&view=archived', '已归档', 'nav-archived', archivedBadge, null, nav === 'archived')
+  );
+  // 待确认是一级入口，徽标只使用服务端的 counts.pending_review；失败时不显示假 0。
+  const pendingLink = h('a', {
+    class: `tn-nav-item${nav === 'reviews' ? ' active' : ''}`, href: '/?panel=reviews', 'data-test': 'nav-reviews',
+    ...(nav === 'reviews' ? { 'aria-current': 'page' } : {}), onclick: closeMobileNav
+  }, navIcon('reviews'), h('span', { class: 'tn-nav-label', text: '待确认' }), pendingBadge);
+  const analysis = h('div', { class: 'tn-nav-section' },
+    navGroup('分析'),
+    navLink({ href: '/?panel=career&section=match', label: '匹配分析', test: 'nav-match', active: nav === 'match', icon: 'match' }),
+    navLink({ href: '/?panel=career&section=resume', label: '简历库', test: 'nav-resume', active: nav === 'resume', icon: 'resume' })
+  );
+  const downloadPlugin = pluginDownloadLink({
+    class: 'tn-nav-item tn-nav-button', label: '下载插件', test: 'download-plugin'
+  });
+  downloadPlugin.replaceChildren(navIcon('resume'), h('span', { class: 'tn-nav-label', text: '下载插件' }));
+  downloadPlugin.addEventListener('click', closeMobileNav);
+  const tools = h('div', { class: 'tn-nav-section' },
+    navGroup('设置与工具'),
+    navButton({ label: '提醒设置', test: 'open-settings-reminder', icon: 'settings', onclick: () => { closeMobileNav(); openSettings({ tab: 'reminder' }); } }),
+    navButton({ label: '数据与授权', test: 'open-settings-data', icon: 'settings', onclick: () => { closeMobileNav(); openSettings({ tab: 'data' }); } }),
+    downloadPlugin,
+    navButton({ label: '安装指引', test: 'plugin-help', icon: 'ledger', onclick: () => { closeMobileNav(); openPluginHelp(); } }),
+    App.user?.is_admin ? navLink({ href: '/?panel=mail-admin', label: '邮件测试与模板', test: 'open-mail-admin', icon: 'settings', active: nav === 'mail-admin' }) : null
+  );
+  const account = h('div', { class: 'tn-account' },
+    h('div', { class: 'tn-account-label', text: App.user?.is_admin ? '当前账号 · 管理员' : '当前账号' }),
+    h('div', { class: 'tn-account-email', 'data-test': 'header-email', title: App.user?.email || '', text: App.user?.email || '' }),
+    h('button', {
+      class: 'tn-btn tn-btn-sm tn-btn-block', type: 'button', text: '退出登录', 'data-test': 'logout',
+      onclick: async () => {
+        const ok = await confirmDialog({
+          title: '退出登录？',
+          message: '退出后本页会清除台账缓存与在途请求。已绑定的插件设备与历史台账不受影响。',
+          detail: '如需停止采集或删除数据，请到「数据与授权」面板操作。',
+          confirmLabel: '退出登录'
+        });
+        if (!ok) return;
+        try { await api.post('/api/v1/auth/logout'); } catch { /* 退出失败也回登录页 */ }
+        App.user = null;
+        showLogin('已退出登录');
+      }
+    })
+  );
+  sidebar.append(brand, work, pendingLink, analysis, tools, account);
+
+  const menuButton = h('button', {
+    class: 'tn-menu-button', type: 'button', 'data-test': 'sidebar-open',
+    'aria-controls': 'tn-sidebar', 'aria-expanded': 'false', 'aria-label': '打开导航菜单',
+    onclick: () => toggleMobileNav(true)
+  }, h('span', { class: 'tn-menu-lines', 'aria-hidden': 'true' }));
+  const title = nav === 'reviews' ? '待确认' : nav === 'match' ? '匹配分析' : nav === 'resume' ? '简历库'
+    : nav === 'viewed' ? '看过没投' : nav === 'archived' ? '已归档'
+      : nav === 'mail-admin' ? '设置与工具' : nav === 'tools' ? '设置与工具' : '投递台账';
+  const titleTag = nav === 'mail-admin' ? 'div' : 'h1';
+  const topbar = h('header', { class: 'tn-topbar' },
+    h('div', { class: 'tn-topbar-left' }, menuButton,
+      h('div', {}, h('div', { class: 'tn-topbar-kicker', text: 'TOUNAR · 帮你理' }),
+        h(titleTag, { class: 'tn-topbar-title', 'data-test': 'page-title', text: title }))),
+    h('div', { class: 'tn-topbar-note', text: '台账与求职进展' })
+  );
+  const main = h('div', { class: 'tn-main', id: 'tn-main' });
+  const workspace = h('div', { class: 'tn-workspace' }, topbar, main);
+  const shell = h('div', { class: 'tn-shell' }, sidebar, h('div', { class: 'tn-nav-scrim', onclick: () => toggleMobileNav(false) }), workspace);
+
+  function toggleMobileNav(open) {
+    shell.classList.toggle('nav-open', open);
+    menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      sidebar.setAttribute('tabindex', '-1');
+      sidebar.focus({ preventScroll: true });
+    } else if (document.activeElement === sidebar || sidebar.contains(document.activeElement)) {
+      menuButton.focus({ preventScroll: true });
+    }
+  }
+  function closeMobileNav() {
+    if (shell.classList.contains('nav-open')) toggleMobileNav(false);
+  }
+  const onKey = (e) => {
+    if (e.key === 'Escape' && shell.classList.contains('nav-open')) { e.preventDefault(); toggleMobileNav(false); }
+  };
+  document.addEventListener('keydown', onKey);
+  // 侧栏计数使用与台账相同的服务端口径；加载失败保持未知，绝不显示假 0。
+  function applyCounts(next) {
+    if (!next) return;
+    counts.pending = next.pending_review ?? null;
+    counts.viewed = next.viewed ?? null;
+    counts.archived = next.archived ?? null;
+    for (const [node, value] of [[pendingBadge, counts.pending], [viewedBadge, counts.viewed], [archivedBadge, counts.archived]]) {
+      node.hidden = value == null;
+      node.textContent = value == null ? '' : String(value);
+    }
+  }
+  const onCounts = (event) => { if (!isStale(gen) && shell.isConnected) applyCounts(event.detail); };
+  window.addEventListener('tounar:counts', onCounts);
+  api.get('/api/v1/ledger?view=applied&limit=1').then((res) => {
+    if (!isStale(gen) && shell.isConnected) applyCounts(res.data?.counts);
+  }).catch(() => { /* 保持未知，不显示 0 */ });
+  return shell;
 }
 
 /* 顶栏在进入台账前挂载（登录页/落地页无顶栏） */
@@ -163,6 +297,6 @@ onUnauthorized(() => {
 
 export function setUser(user) { App.user = user; }
 
-export const appExports = { buildHeader, toast };
+export const appExports = { buildShell, toast };
 
 boot();

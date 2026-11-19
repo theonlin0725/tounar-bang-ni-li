@@ -34,8 +34,9 @@ import {
 } from '../domain/deletion.js';
 import { runTick, schedulerStatus } from '../jobs/scheduler.js';
 import {
-  aiStatus, analyzeResume, compareApplications, correctResumeText, createResumeFromBuffer, createResumeFromText,
-  currentResume, getReport, getResume, listResumes, recommendForOwner
+  addMatchCorrection, aiStatus, analyzeResume, compareApplications, correctResumeText, createResumeFromBuffer,
+  createResumeFromText, currentResume, getReport, getResume, interviewQuestionsForReport,
+  listMatchCorrections, listMatchReports, listResumes, matchApplication, recommendForOwner
 } from '../modules/career-ai/service.js';
 
 import { registerMailAdminRoutes } from '../modules/mail-push/admin.js';
@@ -452,6 +453,46 @@ export function registerRoutes() {
   route('POST', '/api/v1/ai/compare', async (req) => {
     const auth = requireAuth(req);
     return { data: await compareApplications({ ownerId: auth.ownerId, applicationIds: req.body.application_ids }) };
+  });
+  route('POST', '/api/v1/ai/match', async (req) => {
+    const auth = requireAuth(req);
+    return { data: await matchApplication({
+      ownerId: auth.ownerId,
+      applicationId: req.body.application_id,
+      parentReportId: req.body.parent_report_id || null
+    }) };
+  });
+  route('GET', '/api/v1/ai/match-reports', (req) => {
+    const auth = requireAuth(req);
+    return { data: listMatchReports(auth.ownerId, req.query.get('application_id') || null) };
+  });
+  route('GET', '/api/v1/ai/reports/:id/corrections', (req) => {
+    const auth = requireAuth(req);
+    return { data: listMatchCorrections(auth.ownerId, req.params.id) };
+  });
+  route('POST', '/api/v1/ai/reports/:id/corrections', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId,
+      scope: `ai.match.correction:${req.params.id}`,
+      req,
+      handler: () => {
+        const result = addMatchCorrection({
+          ownerId: auth.ownerId,
+          reportId: req.params.id,
+          dimension: req.body.dimension,
+          originalJudgment: req.body.original_judgment,
+          userText: req.body.user_text,
+          proposedField: req.body.proposed_field,
+          scope: req.body.scope
+        });
+        return jsonStatus(201, { data: result });
+      }
+    });
+  });
+  route('POST', '/api/v1/ai/reports/:id/interview-questions', async (req) => {
+    const auth = requireAuth(req);
+    return { data: await interviewQuestionsForReport(auth.ownerId, req.params.id) };
   });
   route('POST', '/api/v1/ai/recommend', async (req) => {
     const auth = requireAuth(req);

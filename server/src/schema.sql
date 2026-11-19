@@ -491,16 +491,42 @@ CREATE TABLE IF NOT EXISTS ai_reports (
   kind TEXT NOT NULL,
   resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
   application_ids_json TEXT NOT NULL DEFAULT '[]',
+  parent_report_id TEXT REFERENCES ai_reports(id) ON DELETE SET NULL,
+  report_version TEXT,
+  context_json TEXT,
   status TEXT NOT NULL DEFAULT 'running',
   result_json TEXT,
   error_code TEXT,
   error_message TEXT,
   created_at TEXT NOT NULL,
   completed_at TEXT,
-  CHECK (kind IN ('resume','compare','recommend')),
+  CHECK (kind IN ('resume','compare','recommend','match')),
   CHECK (status IN ('running','ready','failed'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_reports_owner ON ai_reports(owner_id, kind, created_at DESC);
+
+-- 单岗位匹配中的“用户确认补充”：只追加用户明确确认的一段经历/技能/偏好，
+-- 不改写简历画像，也不推断熟练程度或成果。报告结果保留当时的依据快照。
+CREATE TABLE IF NOT EXISTS ai_match_corrections (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  report_id TEXT NOT NULL REFERENCES ai_reports(id) ON DELETE CASCADE,
+  application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+  dimension TEXT NOT NULL,
+  original_judgment TEXT NOT NULL,
+  user_text TEXT NOT NULL,
+  proposed_field TEXT NOT NULL DEFAULT 'other',
+  scope TEXT NOT NULL DEFAULT 'application',
+  created_at TEXT NOT NULL,
+  CHECK (dimension IN ('hard_gate','skills','experience','industry','preference','achievements')),
+  CHECK (proposed_field IN ('skill','experience','industry','achievement','preference','other')),
+  CHECK (scope IN ('application','all')),
+  UNIQUE (owner_id, report_id, dimension, user_text)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_match_corrections_owner
+  ON ai_match_corrections(owner_id, application_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_match_corrections_report
+  ON ai_match_corrections(report_id, created_at);
 
 -- 招聘进展自动工作流的审计/重试记录；原始邮件正文不在此重复存储。
 CREATE TABLE IF NOT EXISTS ai_ingest_runs (

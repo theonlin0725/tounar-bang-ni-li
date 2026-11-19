@@ -31,6 +31,60 @@ export function openDatabase(dbPath) {
   return instance;
 }
 
+/* 2026-11 单岗位匹配复用 ai_reports。旧库的 kind CHECK 不包含 match，
+   SQLite 不能直接改 CHECK，只能重建表；报告行和（可能已存在的）子表都保留。
+   新库由 schema.sql 直接建出带 match 的表，不会进入重建分支。 */
+function migrateAiReports(instance) {
+  const table = instance.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_reports'").get();
+  const sql = String(table?.sql || '');
+  if (sql && !sql.includes("'match'")) {
+    instance.exec('PRAGMA foreign_keys = OFF');
+    try {
+      instance.exec(`BEGIN;
+        CREATE TABLE ai_reports_match_migration (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
+          application_ids_json TEXT NOT NULL DEFAULT '[]',
+          parent_report_id TEXT REFERENCES ai_reports(id) ON DELETE SET NULL,
+          report_version TEXT,
+          context_json TEXT,
+          status TEXT NOT NULL DEFAULT 'running',
+          result_json TEXT,
+          error_code TEXT,
+          error_message TEXT,
+          created_at TEXT NOT NULL,
+          completed_at TEXT,
+          CHECK (kind IN ('resume','compare','recommend','match')),
+          CHECK (status IN ('running','ready','failed'))
+        );
+        INSERT INTO ai_reports_match_migration
+          (id, owner_id, kind, resume_id, application_ids_json, status, result_json,
+           error_code, error_message, created_at, completed_at)
+        SELECT id, owner_id, kind, resume_id, application_ids_json, status, result_json,
+           error_code, error_message, created_at, completed_at FROM ai_reports;
+        DROP TABLE ai_reports;
+        ALTER TABLE ai_reports_match_migration RENAME TO ai_reports;
+        CREATE INDEX IF NOT EXISTS idx_ai_reports_owner ON ai_reports(owner_id, kind, created_at DESC);
+        COMMIT;`);
+    } catch (err) {
+      try { instance.exec('ROLLBACK'); } catch { /* already rolled back */ }
+      throw err;
+    } finally {
+      instance.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+  const addColumn = (tableName, column, definition) => {
+    if (!instance.prepare(`PRAGMA table_info(${tableName})`).all().some((c) => c.name === column)) {
+      instance.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column} ${definition}`);
+    }
+  };
+  addColumn('ai_reports', 'parent_report_id', 'TEXT');
+  addColumn('ai_reports', 'report_version', 'TEXT');
+  addColumn('ai_reports', 'context_json', 'TEXT');
+}
+
 /* 轻量迁移：D06 冻结（2026-10-22）后新装库默认 daily；
    老库一次性把 weekly_monday 迁到 daily，并补 D08 的待确认摘要时间列。 */
 function migrate(instance) {
@@ -48,6 +102,7 @@ function migrate(instance) {
   addColumn('applications', 'manual_status_at', 'TEXT');
   addColumn('ai_ingest_runs', 'rule_version', "TEXT NOT NULL DEFAULT 'auto-intake-v1'");
   addColumn('ai_ingest_runs', 'judge_mode', 'TEXT');
+  migrateAiReports(instance);
   addColumn('mail_connections', 'last_sync_stats_json', 'TEXT');
   addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");
   addColumn('application_field_sources', 'source_detail', 'TEXT');

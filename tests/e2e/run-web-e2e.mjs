@@ -179,6 +179,12 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '0');
   check('W-02 UI 邮箱验证码登录成功（OTP 来自真实 outbox）',
     (await page.textContent('[data-test=header-email]')).trim() === EMAIL, `email=${EMAIL}`);
+  check('W-02a 侧栏一级入口齐全，投递台账为当前页',
+    (await page.locator('[data-test=nav-ledger].active').count()) === 1
+      && (await page.locator('[data-test=nav-reviews]').count()) === 1
+      && (await page.locator('[data-test=nav-match]').count()) === 1
+      && (await page.locator('[data-test=nav-resume]').count()) === 1
+      && (await page.locator('[data-test=open-mail-admin]').count()) === 0);
   check('W-03 新账号台账为空（三统计=0，不塞演示数据）',
     (await page.textContent('#tn-content')).includes('还没有投递记录'),
     `total=${(await page.textContent('[data-test=stat-total]')).trim()}`);
@@ -332,6 +338,9 @@ try {
   }
   check('W-13 待确认队列出现两条弱提交复核（云杉数据 / 青禾网络）',
     !!review1Id && !!review2Id, `review1=${review1Id} review2=${review2Id}`);
+  check('W-13c 侧栏待确认徽标使用同一 counts 口径',
+    (await page.textContent('[data-test=sidebar-pending-count]')).trim() === '2',
+    `badge=${(await page.textContent('[data-test=sidebar-pending-count]')).trim()}`);
   const review2Card = page.locator(`[data-test=review-card][data-review-id="${review2Id}"]`);
   check('W-13a 待确认标题即原网页链接，无独立“打开原网页”按钮',
     (await review2Card.locator('[data-test=review-title-link]').getAttribute('href')) === 'https://jobs.example.com/qinghe/ops-intern'
@@ -363,7 +372,8 @@ try {
   await review1Card.locator('[data-test=review-dismiss]').click();
   await waitToast(page, '已忽略');
   await page.waitForSelector(`[data-test=review-card][data-review-id="${review1Id}"]`, { state: 'detached' });
-  check('W-14c 复核「忽略」立即落库，不弹二次确认', true, 'dismissed');
+  await page.waitForFunction(() => document.querySelector('[data-test=sidebar-pending-count]')?.textContent.trim() === '1');
+  check('W-14c 复核「忽略」立即落库，不弹二次确认；侧栏徽标随处理刷新', true, 'dismissed + badge=1');
 
   /* 正常补录第二条：显式选择状态、公司和岗位可编辑后保存 */
   const card2 = page.locator(`[data-test=review-card][data-review-id="${review2Id}"]`);
