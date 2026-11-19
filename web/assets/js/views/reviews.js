@@ -55,16 +55,19 @@ function traceText(data) {
   if (trace.started_at) lines.push(`开始时间：${fmtDateTime(trace.started_at)}`);
   if (trace.duration_ms != null) lines.push(`总耗时：${traceMs(trace.duration_ms)}`);
   lines.push(`LLM 提取：${traceStatus(trace.llm?.status)}${trace.llm?.model ? ` · ${trace.llm.model}` : ''}${trace.llm?.duration_ms != null ? ` · ${traceMs(trace.llm.duration_ms)}` : ''}${trace.llm?.error ? ` · ${trace.llm.error}` : ''}`);
-  lines.push(`Jev 判断：${traceStatus(trace.jev?.status)}${trace.jev?.via ? ` · ${trace.jev.via === 'dify' ? '经 Dify' : '直连'}` : ''}${trace.jev?.model ? ` · ${trace.jev.model}` : ''}${trace.jev?.duration_ms != null ? ` · ${traceMs(trace.jev.duration_ms)}` : ''}${trace.jev?.error ? ` · ${trace.jev.error}` : ''}`);
-  if (trace.jev?.request_id) lines.push(`Jev 运行标识：${trace.jev.request_id}`);
+  const judgeLabel = analysis.judge_mode === 'flash' || trace.judge_mode === 'flash' ? 'Flash 直判' : 'Jev 判断';
+  lines.push(`${judgeLabel}：${traceStatus(trace.jev?.status)}${trace.jev?.via ? ` · ${trace.jev.via === 'dify' ? '经 Dify' : (trace.jev.via === 'flash' ? 'Flash' : '直连')}` : ''}${trace.jev?.model ? ` · ${trace.jev.model}` : ''}${trace.jev?.duration_ms != null ? ` · ${traceMs(trace.jev.duration_ms)}` : ''}${trace.jev?.error ? ` · ${trace.jev.error}` : ''}`);
+  if (trace.jev?.request_id) lines.push(`判断运行标识：${trace.jev.request_id}`);
   if (trace.dify?.used) lines.push(`Dify 调用：${traceStatus(trace.dify.status)}${trace.dify.run_id ? ` · ${trace.dify.run_id}` : ''}${trace.dify.error ? ` · ${trace.dify.error}` : ''}`);
   if (analysis.verification === 'dify_fallback') {
     lines.push('核验路径：经 Dify 调用真实 Jev');
     if (analysis.direct_jev_error) lines.push(`本地直连 Jev：失败（${analysis.direct_jev_error} 地区/网络限制），已自动转 Dify`);
+  } else if (analysis.judge_mode === 'flash') {
+    lines.push('核验路径：Flash 直判（与服务端归属规则组合）');
   } else if (analysis.verification === 'direct') {
     lines.push('核验路径：本地直连真实 Jev');
   }
-  if (analysis.models) lines.push(`实际模型：LLM ${analysis.models.llm || '—'} / Jev ${analysis.models.jev || '—'}`);
+  if (analysis.models) lines.push(`实际模型：LLM ${analysis.models.llm || '—'} / ${judgeLabel} ${analysis.models.judge || analysis.models.jev || '—'}`);
   const ex = analysis.extracted || {};
   if (ex.company_name || ex.job_title || ex.status) lines.push(`提取结果：公司 ${ex.company_name || '—'}；岗位 ${ex.job_title || '—'}；状态 ${ex.status || '—'}`);
   if (data?.fields) lines.push(`预填字段：公司 ${data.fields.company_name || '—'}；岗位 ${data.fields.job_title || '—'}；状态 ${data.fields.status || '—'}`);

@@ -2,6 +2,7 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { startTestServer } from './helpers.js';
 import { encoderForTest } from '../src/modules/data-capture/mail/sync.js';
@@ -92,6 +93,62 @@ describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败�
     assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), {
       ingested: true, duplicate: true, recovered: true, duplicate_after_recovery: true,
       review_count: 1, unique_first_scan_processed: 1
+    });
+  });
+
+  it('读取模式可显式切换，切换会递增绑定版本并作废旧租约', async () => {
+    const list = await server.request('/api/v1/mail-connections', { cookie });
+    const id = list.json.data[0].id;
+    const before = list.json.data[0];
+    assert.ok('sync_stats' in before);
+    const noConsent = await server.request(`/api/v1/mail-connections/${id}/mode`, {
+      method: 'POST', cookie, body: { mode: 'recruitment_body' }
+    });
+    assert.equal(noConsent.status, 400);
+    const switched = await server.request(`/api/v1/mail-connections/${id}/mode`, {
+      method: 'POST', cookie, body: { mode: 'recruitment_body', consent_version: 'QQ_MAIL_READ_CONSENT_V1' }
+    });
+    assert.equal(switched.status, 202, switched.text);
+    assert.equal(switched.json.data.mode, 'recruitment_body');
+    assert.equal(switched.json.data.binding_version, before.binding_version + 1);
+    const back = await server.request(`/api/v1/mail-connections/${id}/mode`, {
+      method: 'POST', cookie, body: { mode: 'headers_only' }
+    });
+    assert.equal(back.status, 202, back.text);
+    assert.equal(back.json.data.mode, 'headers_only');
+  });
+
+  it('断开后的旧同步租约不能写入邮件或提交游标', async () => {
+    const script = `
+      import { one, run } from './server/src/db.js';
+      import { encoderForTest } from './server/src/modules/data-capture/mail/sync.js';
+      import { classifyRecruitmentMail, extractMailFields } from './server/src/domain/mailParser.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      if (!connection) throw new Error('missing test connection');
+      run("UPDATE mail_connections SET sync_lease_owner='lease-old', sync_lease_until=? WHERE id=?", [
+        new Date(Date.now() + 600000).toISOString(), connection.id
+      ]);
+      const subject = '【租约测试】投递成功通知';
+      const parsed = { uidvalidity: 'lease-uid-validity', subject, tentativeHeader: true,
+        classification: classifyRecruitmentMail({ subject, fromDomain: 'hr.example.com', bodyText: '', mode: 'headers_only' }),
+        fields: extractMailFields({ subject, fromAddress: 'hr@hr.example.com', bodyText: '' }) };
+      const stale = await encoderForTest().ingestMessage(connection,
+        { uid: 555001, messageId: '<lease-stale@example.com>' }, parsed, '', new Date().toISOString(),
+        { leaseId: 'lease-other' });
+      const freshConnection = one('SELECT * FROM mail_connections WHERE id=?', [connection.id]);
+      const current = await encoderForTest().ingestMessage(freshConnection,
+        { uid: 555002, messageId: '<lease-current@example.com>' }, parsed, '', new Date().toISOString(),
+        { leaseId: 'lease-old' });
+      const staleMail = one("SELECT COUNT(*) n FROM mail_messages WHERE uid='555001'").n;
+      const currentMail = one("SELECT COUNT(*) n FROM mail_messages WHERE uid='555002'").n;
+      console.log(JSON.stringify({ stale_aborted: stale.aborted === true, stale_mail: Number(staleMail), current_created: Boolean(current.event || current.mail), current_mail: Number(currentMail) }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), {
+      stale_aborted: true, stale_mail: 0, current_created: true, current_mail: 1
     });
   });
 
@@ -199,6 +256,22 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     const network = Object.assign(new Error('Command failed'), { code: 'ECONNREFUSED' });
     assert.equal(classifyError(network).code, 'IMAP_NETWORK_ERROR');
     assert.equal(classifyError(new TypeError('unexpected')).code, 'IMAP_SYNC_FAILED');
+  });
+
+  it('单段邮件无 part 编号时按 TEXT 读取，空正文必须报错而不是静默吞掉', async () => {
+    const { downloadPart } = encoderForTest();
+    const seen = [];
+    const client = {
+      download: async (uid, part) => {
+        seen.push(part);
+        return { content: Readable.from([Buffer.from('单段正文')]) };
+      }
+    };
+    const text = await downloadPart(client, 7, { type: 'text/plain' });
+    assert.equal(text, '单段正文');
+    assert.deepEqual(seen, ['1']);
+    const empty = { download: async () => ({ content: Readable.from([]) }) };
+    await assert.rejects(() => downloadPart(empty, 7, { type: 'text/html' }), /正文/);
   });
 
   it('证据留存：headers_only 不保留正文，recruitment_body 只留摘要', () => {

@@ -60,3 +60,59 @@ export function findProgressCandidates(ownerId, fields, { source='mail', stage: 
   if(active.length===1)return [candidate(active[0],'single_active_company',0.85)];
   return same.map(a=>candidate(a,'company_only_ambiguous',0.5));
 }
+
+/* 邮件自动同步与人工确认共用的服务端归属规则：
+ *   可信申请号 → 岗位链接 → 公司+岗位+批次 → 公司+岗位。
+ * 多个合理候选、只有公司、字段冲突都返回 ambiguous，交给人工选择；
+ * 没有候选时 target=null，是否允许新建由调用方按证据门槛决定。 */
+export function resolveMailApplication(ownerId, fields = {}) {
+  const rows = all('SELECT * FROM applications WHERE owner_id = ? AND archived_at IS NULL ORDER BY updated_at DESC', [ownerId]);
+  const asCandidate = (application, reason, confidence) => ({ ...application, reason, confidence, application });
+  const appId = String(fields.site_application_id || '').trim();
+  if (appId) {
+    const exact = rows.filter((a) => a.site_application_id === appId && (!fields.site_key || a.site_key === fields.site_key));
+    if (exact.length === 1) return { target: exact[0], candidates: exact.map((a) => asCandidate(a, 'site_application_id', 1)), ambiguous: false, reason: 'site_application_id' };
+    if (exact.length > 1) return { target: null, candidates: exact.map((a) => asCandidate(a, 'site_application_id', 1)), ambiguous: true, reason: 'site_application_id' };
+  }
+  const canonical = canonicalJobUrl(fields.job_url);
+  if (canonical) {
+    const exact = rows.filter((a) => a.canonical_job_url === canonical);
+    if (exact.length === 1) return { target: exact[0], candidates: exact.map((a) => asCandidate(a, 'canonical_job_url', 1)), ambiguous: false, reason: 'canonical_job_url' };
+    if (exact.length > 1) return { target: null, candidates: exact.map((a) => asCandidate(a, 'canonical_job_url', 1)), ambiguous: true, reason: 'canonical_job_url' };
+  }
+  const company = companyIdentity(fields.company_name, fields.from_domain);
+  if (!company) return { target: null, candidates: [], ambiguous: false, reason: 'none' };
+  const sameCompany = rows.filter((a) => companyIdentity(a.company_name) === company);
+  if (!fields.job_title) {
+    return {
+      target: null,
+      candidates: sameCompany.map((a) => asCandidate(a, 'company_only', 0.4)),
+      ambiguous: sameCompany.length > 0,
+      reason: sameCompany.length ? 'company_only' : 'none'
+    };
+  }
+  const sameJob = sameCompany.filter((a) => similarJob(a.job_title, fields.job_title));
+  if (fields.recruitment_batch) {
+    const batch = sameJob.filter((a) => a.recruitment_batch && a.recruitment_batch === fields.recruitment_batch);
+    if (batch.length === 1) return { target: batch[0], candidates: batch.map((a) => asCandidate(a, 'company_title_batch', 0.98)), ambiguous: false, reason: 'company_title_batch' };
+    if (batch.length > 1) return { target: null, candidates: batch.map((a) => asCandidate(a, 'company_title_batch', 0.98)), ambiguous: true, reason: 'company_title_batch' };
+    // 邮件明确写了批次但没有同期记录：不要退回“公司+岗位”覆盖另一个批次，交人工。
+    if (sameJob.length) {
+      return {
+        target: null,
+        candidates: sameJob.map((a) => asCandidate(a, 'batch_mismatch', 0.5)),
+        ambiguous: true,
+        reason: 'batch_mismatch'
+      };
+    }
+  }
+  if (sameJob.length === 1) return { target: sameJob[0], candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: false, reason: 'company_title' };
+  if (sameJob.length > 1) return { target: null, candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: true, reason: 'company_title' };
+  // 公司命中但没有岗位证据：绝不自动挑一条，全部交人工。
+  return {
+    target: null,
+    candidates: sameCompany.map((a) => asCandidate(a, 'company_only', 0.4)),
+    ambiguous: sameCompany.length > 0,
+    reason: sameCompany.length ? 'company_only' : 'none'
+  };
+}

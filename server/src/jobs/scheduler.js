@@ -74,14 +74,18 @@ export async function runTick({ force = false, mail = false, reminders = false, 
 
     const lastMail = meta('last_mail_sync_at');
     const connections = one("SELECT COUNT(*) AS n FROM mail_connections WHERE status <> 'disconnected'");
-    if ((mail || force) || (connections?.n && due(lastMail, config.mailSyncMinutes))) {
+    // 上一轮还有剩余邮件时，不等完整的 MAIL_SYNC_MINUTES，下一 tick 继续分批续扫。
+    const mailDue = Boolean(connections?.n) && (Number(meta('mail_backlog') || 0) > 0 || due(lastMail, config.mailSyncMinutes));
+    if ((mail || force) || (config.enableMailScheduler && mailDue)) {
       summary.mail = await syncAllConnections();
+      const backlog = summary.mail.reduce((sum, row) => sum + (Number(row.remaining) || 0), 0);
+      setMeta('mail_backlog', backlog);
       setMeta('last_mail_sync_at', nowIso());
     }
 
     const clock = shanghaiClock(now);
     const atReminderWindow = clock.hour === config.reminderHour && clock.minute >= config.reminderMinute && clock.minute < config.reminderMinute + 30;
-    if (reminders || force || atReminderWindow) {
+    if ((reminders || force) || (config.enableReminderScheduler && atReminderWindow)) {
       summary.reminders = await runReminders(now, { force: force || reminders });
     }
     lastTick = { at: nowIso(), duration_ms: Date.now() - started, summary };
@@ -92,12 +96,12 @@ export async function runTick({ force = false, mail = false, reminders = false, 
 }
 
 export function startScheduler() {
-  if ((!config.enableScheduler && !config.autoIntakeEnabled) || timer) return { started: false };
+  if ((!config.enableMailScheduler && !config.enableReminderScheduler && !config.autoIntakeEnabled) || timer) return { started: false };
   setTimeout(() => {
     recoverDeletionJobs().catch((err) => console.error(JSON.stringify({ level: 'error', event: 'deletion_recovery_failed', message: err.message })));
   }, 1000);
   timer = setInterval(() => {
-    if (config.enableScheduler) {
+    if (config.enableMailScheduler || config.enableReminderScheduler) {
       runTick().catch((err) => {
         console.error(JSON.stringify({ level: 'error', event: 'scheduler_tick_failed', message: err.message }));
       });
@@ -120,10 +124,15 @@ export function stopScheduler() {
 export function schedulerStatus() {
   return {
     enabled: config.enableScheduler,
-    intake_retry_only: !config.enableScheduler && config.autoIntakeEnabled,
+    mail_enabled: config.enableMailScheduler,
+    reminder_enabled: config.enableReminderScheduler,
+    intake_retry_only: !config.enableMailScheduler && !config.enableReminderScheduler && config.autoIntakeEnabled,
     running,
     last_tick: lastTick,
     last_mail_sync_at: meta('last_mail_sync_at'),
+    mail_backlog: Number(meta('mail_backlog') || 0),
+    mail_sync_minutes: config.mailSyncMinutes,
+    judge_mode: { mail: config.mailIntakeJudge, plugin: config.pluginIntakeJudge },
     reminder_window: `${String(config.reminderHour).padStart(2, '0')}:${String(config.reminderMinute).padStart(2, '0')} Asia/Shanghai`
   };
 }

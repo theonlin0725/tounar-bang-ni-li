@@ -424,21 +424,77 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
       return section;
     }
     const meta = MAIL_STATUS[conn.status] || { label: conn.status, cls: 'state-muted' };
+    const stats = conn.sync_stats || {};
+    const scheduler = me.scheduler || {};
+    const intake = me.intake_health || {};
+    const statLine = [
+      `本轮取到 ${stats.fetched ?? '—'}`,
+      `新增 ${stats.new ?? '—'}`,
+      `处理 ${stats.processed ?? '—'}`,
+      `待确认 ${stats.pending ?? '—'}`,
+      `错误 ${stats.errors ?? '—'}`,
+      conn.remaining != null ? `剩余积压 ${conn.remaining}` : null
+    ].filter(Boolean).join(' · ');
     section.append(
       h('div', { class: 'tn-device', 'data-test': 'mail-connection' },
         h('div', { class: 'tn-device-name' }, conn.email, h('span', { class: `tn-state-pill ${meta.cls}`, text: meta.label })),
         h('div', { class: 'tn-device-meta', text: [
-          conn.mode === 'headers_only' ? '仅读取邮件头' : '招聘候选正文模式',
+          conn.mode === 'headers_only' ? '读取范围：仅邮件头（不下载正文）' : '读取范围：邮件头筛选 + 命中候选正文',
           `首扫起始 ${conn.scan_since ? fmtDateTime(conn.scan_since) : '—'}`,
           conn.last_sync_success_at ? `最近成功同步 ${relativeTime(conn.last_sync_success_at)}` : '尚无成功同步'
         ].join(' · ') }),
+        conn.mode === 'recruitment_body'
+          ? h('div', { class: 'tn-small tn-muted', text: '正文只对命中招聘邮件头筛选的候选下载，用于模型提取；最多保留 300 字摘录作证据，不读取、不保存附件。' })
+          : null,
+        h('div', { class: 'tn-device-meta', 'data-test': 'mail-sync-stats', text: statLine }),
         conn.first_scan_total ? h('div', { class: 'tn-device-meta', text: `首扫进度 ${conn.first_scan_processed ?? 0}/${conn.first_scan_total}` }) : null,
+        h('div', { class: 'tn-device-meta tn-small', text: [
+          scheduler.mail_enabled ? '定时收信已开启' : '定时收信已关闭',
+          scheduler.reminder_enabled ? '提醒发信已开启' : '提醒发信已关闭',
+          scheduler.judge_mode?.mail ? `邮件判断：${scheduler.judge_mode.mail === 'flash' ? 'Flash 直判' : 'Jev 核验'}` : null
+        ].filter(Boolean).join(' · ') }),
+        (intake.retry || intake.failed)
+          ? h('div', { class: 'tn-device-meta tn-danger-text', text: `自动处理：等待重试 ${intake.retry || 0} · 最终失败 ${intake.failed || 0}（失败可在待确认中人工处理）` })
+          : null,
         conn.last_error_message ? h('div', { class: 'tn-device-meta tn-danger-text', text: `最近错误（${conn.last_error_code || 'UNKNOWN'}）：${conn.last_error_message}` }) : null
       )
     );
 
     const actionRow = h('div', { class: 'tn-action-row', style: { marginTop: '8px' } });
     const msgBox = h('div', { 'data-test': 'mail-msg' });
+    if (conn.status !== 'disconnected') {
+      actionRow.append(h('button', {
+        class: 'tn-btn tn-btn-sm', type: 'button',
+        text: conn.mode === 'headers_only' ? '切换为招聘候选正文' : '切回仅邮件头',
+        'data-test': 'mail-mode-switch',
+        onclick: async () => {
+          const nextMode = conn.mode === 'headers_only' ? 'recruitment_body' : 'headers_only';
+          const ok = await confirmDialog({
+            title: nextMode === 'recruitment_body' ? '切换到招聘候选正文模式？' : '切回仅读取邮件头？',
+            message: nextMode === 'recruitment_body'
+              ? 'Tounar 会对命中招聘关键词的候选邮件下载正文，并发送给模型提取公司与岗位。'
+              : 'Tounar 将停止下载邮件正文，只根据邮件头识别招聘进展。',
+            detail: nextMode === 'recruitment_body'
+              ? '正文不写入数据库；仅在证据中保留最多 300 字摘录。不读取、不保存附件。切换后旧同步任务会失效并从当前游标继续。'
+              : '已保存的台账与历史不会删除；新的邮件只按邮件头处理。',
+            confirmLabel: nextMode === 'recruitment_body' ? '切换并重新同步' : '切回仅邮件头'
+          });
+          if (!ok) return;
+          clear(msgBox);
+          try {
+            await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/mode`, {
+              mode: nextMode,
+              ...(nextMode === 'recruitment_body' ? { consent_version: 'QQ_MAIL_READ_CONSENT_V1' } : {})
+            });
+            toast(nextMode === 'recruitment_body' ? '已切换到招聘候选正文模式' : '已切回仅邮件头', 'ok');
+            await reloadMe();
+            pollMail(conn.id, msgBox);
+          } catch (err) {
+            msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
+          }
+        }
+      }));
+    }
     if (conn.status !== 'disconnected') {
       actionRow.append(h('button', {
         class: 'tn-btn tn-btn-sm', type: 'button', text: '立即同步', 'data-test': 'mail-sync',

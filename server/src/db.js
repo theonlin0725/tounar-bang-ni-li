@@ -47,6 +47,8 @@ function migrate(instance) {
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
   addColumn('applications', 'manual_status_at', 'TEXT');
   addColumn('ai_ingest_runs', 'rule_version', "TEXT NOT NULL DEFAULT 'auto-intake-v1'");
+  addColumn('ai_ingest_runs', 'judge_mode', 'TEXT');
+  addColumn('mail_connections', 'last_sync_stats_json', 'TEXT');
   addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");
   addColumn('application_field_sources', 'source_detail', 'TEXT');
   if (!instance.prepare("SELECT value FROM meta WHERE key = 'migration_phase2_confidence'").get()) {

@@ -1,11 +1,12 @@
 import { config } from '../../../config.js';
 import { all, one, run } from '../../../db.js';
-import { AppError, encryptSecret, newId, nowIso, normalizeEmail, assert } from '../../../util.js';
+import { AppError, encryptSecret, newId, nowIso, normalizeEmail, assert, safeJsonParse } from '../../../util.js';
 import { syncConnection } from './sync.js';
 
 const QQ_DOMAINS = new Set(['qq.com', 'foxmail.com', 'vip.qq.com']);
 
 function projection(row) {
+  const stats = safeJsonParse(row.last_sync_stats_json, null);
   return {
     id: row.id,
     email: row.email,
@@ -19,6 +20,8 @@ function projection(row) {
     last_error_message: row.last_error_message,
     first_scan_total: row.first_scan_total,
     first_scan_processed: row.first_scan_processed,
+    remaining: stats?.remaining ?? null,
+    sync_stats: stats,
     binding_version: row.binding_version,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -103,6 +106,25 @@ export function reauthorizeMailConnection(ownerId, id, body = {}) {
   [enc.ciphertext, enc.iv, enc.tag, nowIso(), id, ownerId]);
   kickSync(id);
   return { __status: 202, ...projection(one('SELECT * FROM mail_connections WHERE id = ?', [id])) };
+}
+
+export function updateMailConnectionMode(ownerId, id, body = {}) {
+  const row = one('SELECT * FROM mail_connections WHERE id = ? AND owner_id = ?', [id, ownerId]);
+  if (!row) throw new AppError(404, 'NOT_FOUND', '邮箱连接不存在');
+  if (row.status === 'disconnected') throw new AppError(409, 'MAIL_DISCONNECTED', '邮箱授权已断开，请重新授权');
+  const mode = String(body.mode || '');
+  if (!['headers_only', 'recruitment_body'].includes(mode)) throw new AppError(400, 'VALIDATION_ERROR', 'mode 无效');
+  if (mode === 'recruitment_body' && body.consent_version !== 'QQ_MAIL_READ_CONSENT_V1') {
+    throw new AppError(400, 'VALIDATION_ERROR', '切换到招聘候选正文模式前，请重新确认只读授权说明');
+  }
+  if (row.mode === mode) return { ...projection(row), changed: false };
+  // 切换读取范围同样递增绑定版本并清掉在途租约，旧任务不得继续按旧范围写库。
+  run(`UPDATE mail_connections SET mode = ?, binding_version = binding_version + 1,
+       sync_lease_until = NULL, sync_lease_owner = NULL, last_error_code = NULL, last_error_message = NULL,
+       updated_at = ? WHERE id = ? AND owner_id = ?`,
+  [mode, nowIso(), id, ownerId]);
+  kickSync(id);
+  return { __status: 202, changed: true, ...projection(one('SELECT * FROM mail_connections WHERE id = ?', [id])) };
 }
 
 export function triggerMailSync(ownerId, id) {

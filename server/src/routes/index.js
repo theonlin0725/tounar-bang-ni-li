@@ -25,7 +25,7 @@ import {
 } from '../modules/data-capture/plugin.js';
 import {
   createMailConnection, disconnectMailConnection, getMailConnection, listMailConnections,
-  reauthorizeMailConnection, triggerMailSync
+  reauthorizeMailConnection, triggerMailSync, updateMailConnectionMode
 } from '../modules/data-capture/mail/connections.js';
 import { batchPreview, prepareReminderConfirmation, reminderLinkRead, runReminders } from '../modules/mail-push/reminders.js';
 import { confirmReviewIntake } from '../modules/recruitment-intake/confirm.js';
@@ -100,15 +100,27 @@ export function registerRoutes() {
     const mail = one('SELECT * FROM mail_connections WHERE owner_id = ? ORDER BY created_at DESC LIMIT 1', [auth.ownerId]);
     const devices = all('SELECT * FROM plugin_devices WHERE owner_id = ? ORDER BY created_at DESC', [auth.ownerId]);
     const deletion = latestDeletionJob(auth.ownerId);
+    const mailStats = mail ? safeJsonParse(mail.last_sync_stats_json, null) : null;
+    const intakeHealth = {
+      retry: Number(one("SELECT COUNT(*) AS n FROM ai_ingest_runs WHERE owner_id = ? AND status = 'retry'", [auth.ownerId])?.n || 0),
+      failed: Number(one("SELECT COUNT(*) AS n FROM review_items WHERE owner_id = ? AND status = 'open' AND reason_code = 'AI_RETRY_EXHAUSTED'", [auth.ownerId])?.n || 0)
+    };
     return {
       data: {
         ...authMe(auth),
         user: { ...authMe(auth).user, ...publicUser(auth.user) },
         mail_connection: mail ? {
           id: mail.id, email: mail.email, mode: mail.mode, status: mail.status,
+          scan_since: mail.scan_since,
           last_sync_success_at: mail.last_sync_success_at, last_error_code: mail.last_error_code,
-          last_error_message: mail.last_error_message
+          last_error_message: mail.last_error_message,
+          first_scan_total: mail.first_scan_total, first_scan_processed: mail.first_scan_processed,
+          binding_version: mail.binding_version,
+          sync_stats: mailStats,
+          remaining: mailStats?.remaining ?? null
         } : null,
+        intake_health: intakeHealth,
+        scheduler: schedulerStatus(),
         plugin_devices: devices.map(deviceProjection),
         notification_preferences: getPreferences(auth.ownerId),
         deletion_job: deletion,
@@ -471,6 +483,11 @@ export function registerRoutes() {
   route('POST', '/api/v1/mail-connections/:id/reauthorize', (req) => {
     const auth = requireAuth(req);
     return jsonStatus(202, { data: reauthorizeMailConnection(auth.ownerId, req.params.id, req.body || {}) });
+  });
+  route('POST', '/api/v1/mail-connections/:id/mode', (req) => {
+    const auth = requireAuth(req);
+    const result = updateMailConnectionMode(auth.ownerId, req.params.id, req.body || {});
+    return result.__status ? jsonStatus(result.__status, { data: result }) : { data: result };
   });
   route('POST', '/api/v1/mail-connections/:id/sync', (req) => {
     const auth = requireAuth(req);

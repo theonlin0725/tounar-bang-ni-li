@@ -2,8 +2,9 @@ import { config } from '../../config.js';
 import { one } from '../../db.js';
 import { assignReview, reviewSourceFields } from '../../domain/reviews.js';
 import { AppError, normalizeWhitespace, parseIso, safeJsonParse } from '../../util.js';
+import { resolveMailApplication } from '../../domain/mailMatching.js';
 import { extractRecruitmentSignal } from './llm.js';
-import { judgeRecruitment } from './jev.js';
+import { judgeIntake, judgeModeFor } from './judge.js';
 import { verifyViaDify } from './dify.js';
 import { findCandidates } from './workflow.js';
 
@@ -31,6 +32,7 @@ function sourceContext(review, event) {
   const existingTitle = p.job_title || page.job_title || fields.job_title || '';
   return {
     event, p, fields, mail, subject, body,
+    source: event?.source_method || (review.source_mail_id ? 'mail' : 'plugin'),
     jd: p.jd_text || p.jd_summary || page.jd_excerpt || fields.jd_text || '',
     statusText: p.status_text || '',
     link: p.job_url || page.job_url || fields.job_url || null,
@@ -46,7 +48,7 @@ function publicCandidates(candidates) {
     match_reason: c.reason, matching_confidence: c.confidence
   }));
 }
-function analysisState(ctx, extracted, judged, candidates) {
+function analysisState(ctx, extracted, judged, candidates, mailMatch = null) {
   const company = validField(extracted.company_name) ? extracted.company_name
     : (validField(ctx.existingCompany) ? ctx.existingCompany : null);
   const title = validField(extracted.job_title) ? extracted.job_title
@@ -59,14 +61,26 @@ function analysisState(ctx, extracted, judged, candidates) {
   const statusConfident = status && Number(judged.status?.confidence) >= config.autoIntakeMinStatus && progressReliable;
   const chosen = judged.candidate?.value;
   let target = null;
-  if (chosen && /^c\d+$/.test(chosen)) target = candidates[Number(chosen.slice(1))] || null;
+  let ambiguous = false;
+  if (ctx.source === 'mail' && mailMatch) {
+    // 邮件与自动同步共用服务端归属：可信申请号 → 公司+岗位(+批次)。
+    target = mailMatch.target || null;
+    ambiguous = !!mailMatch.ambiguous;
+  } else if (chosen && /^c\d+$/.test(chosen)) {
+    target = candidates[Number(chosen.slice(1))] || null;
+  }
   const candidateConfident = target && Number(judged.candidate?.confidence) >= config.autoIntakeMinCandidate;
   const missing = [];
   if (!companyValid) missing.push('company_name');
   if (!titleValid) missing.push('job_title');
   if (!status || !statusConfident) missing.push('status');
-  const ambiguous = (chosen === 'uncertain' || (chosen === 'no_match' && candidates.length > 0)
-    || (target && !candidateConfident) || !fieldsConsistent);
+  if (ctx.source === 'mail' && mailMatch) {
+    if (!target && mailMatch.candidates.length) missing.push('application_id');
+  } else if ((chosen === 'uncertain' || (chosen === 'no_match' && candidates.length > 0)
+    || (target && !candidateConfident) || !fieldsConsistent)) {
+    ambiguous = true;
+  }
+  if (!fieldsConsistent) ambiguous = true;
   if (ambiguous) missing.push('application_id');
   const finalCompany = companyValid ? company : null;
   const finalTitle = titleValid ? title : null;
@@ -79,6 +93,7 @@ function analysisState(ctx, extracted, judged, candidates) {
     fields_consistent: judged.fields_consistent,
     missing: [...new Set(missing)], target, candidate_confident: !!candidateConfident,
     ambiguous, candidates: publicCandidates(candidates),
+    server_match: mailMatch ? { reason: mailMatch.reason, ambiguous: !!mailMatch.ambiguous } : null,
     extracted, judged
   };
 }
@@ -103,7 +118,7 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
     company_hint: ctx.existingCompany || null, job_title_hint: ctx.existingTitle || null
   };
   const trace = {
-    started_at: new Date().toISOString(), duration_ms: null, request_id: null,
+    started_at: new Date().toISOString(), duration_ms: null, request_id: null, judge_mode: null,
     llm: { status: 'not_called', model: null, duration_ms: null, error: null },
     jev: { status: 'not_called', via: null, model: null, duration_ms: null, error: null, request_id: null },
     dify: { status: 'not_called', used: false, run_id: null, duration_ms: null, error: null }
@@ -133,18 +148,29 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
       throw llmErr;
     }
     extracted = llm.extraction;
+    const sourceMethod = event?.source_method || (review.source_mail_id ? 'mail' : 'plugin');
+    const mode = judgeModeFor(sourceMethod);
+    trace.judge_mode = mode;
+    let mailMatch = sourceMethod === 'mail' ? resolveMailApplication(ownerId, {
+      ...extracted, from_domain: ctx.p.from_domain || '', job_url: extracted.job_url || ctx.link,
+      site_key: event?.site_key || ctx.p.site_key || null
+    }) : null;
     candidates = findCandidates(ownerId, {
       company_name: extracted.company_name, job_title: extracted.job_title,
       recruitment_batch: extracted.recruitment_batch, site_application_id: extracted.site_application_id,
       job_url: extracted.job_url || ctx.link
     });
+    for (const candidate of mailMatch?.candidates || []) {
+      if (!candidates.some((c) => c.id === candidate.id)) candidates.push(candidate);
+    }
     trace.jev.status = 'running';
-    trace.jev.via = 'direct';
+    trace.jev.via = mode === 'flash' ? 'flash' : 'direct';
     const jevStarted = Date.now();
     try {
-      judged = await judgeRecruitment({
+      judged = await judgeIntake({
+        source: sourceMethod,
         state: {
-          source: event?.source_method || (review.source_mail_id ? 'mail' : 'plugin'),
+          source: sourceMethod,
           subject: ctx.subject, body_text: ctx.body, status_text: ctx.statusText,
           received_at: ctx.receivedAt, source_text: sourceText,
           extracted, existing_fields: { company_name: ctx.existingCompany, job_title: ctx.existingTitle },
@@ -157,6 +183,7 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
         candidates
       });
       trace.jev.status = 'success';
+      trace.jev.via = judged.judge_mode === 'flash' ? 'flash' : 'direct';
       trace.jev.model = judged.model || null;
       trace.jev.request_id = judged.request_id || null;
       trace.jev.duration_ms = Date.now() - jevStarted;
@@ -165,8 +192,8 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
       trace.jev.duration_ms = Date.now() - jevStarted;
       trace.jev.error = String(jevErr?.code || jevErr?.message || jevErr).slice(0, 200);
       directJevError = trace.jev.error;
-      // 本机 IP 对 TypeSafe 地区受限（实测 HTTP 451）时，Dify 云上的同一流程可实际调用 Jev。
-      if (!/^JEV_/.test(directJevError)) throw jevErr;
+      // Flash 模式失败直接返回可重试错误；Dify 只作为 Jev 直连的地区限制兜底。
+      if (mode === 'flash' || !/^JEV_/.test(directJevError)) throw jevErr;
       trace.dify.status = 'running';
       trace.dify.used = true;
       const difyStarted = Date.now();
@@ -213,13 +240,27 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
         fields_consistent: dify.fields_consistent,
         status: { value: dify.status || 'no_status', confidence: dify.status ? 1 : 0, probabilities: null },
         candidate: { value: dify.matched_candidate || (candidates.length ? 'uncertain' : 'no_match'), confidence: dify.candidate_confidence },
+        judge_mode: 'jev',
         model: dify.model,
         request_id: dify.workflow_run_id,
         usage: { workflow_run_id: dify.workflow_run_id, elapsed_time: dify.elapsed_time }
       };
+      mailMatch = sourceMethod === 'mail' ? resolveMailApplication(ownerId, {
+        ...extracted, from_domain: ctx.p.from_domain || '', job_url: extracted.job_url || ctx.link,
+        site_key: event?.site_key || ctx.p.site_key || null
+      }) : null;
+      candidates = findCandidates(ownerId, {
+        company_name: extracted.company_name, job_title: extracted.job_title,
+        recruitment_batch: extracted.recruitment_batch, site_application_id: extracted.site_application_id,
+        job_url: extracted.job_url || ctx.link
+      });
+      for (const candidate of mailMatch?.candidates || []) {
+        if (!candidates.some((c) => c.id === candidate.id)) candidates.push(candidate);
+      }
     }
-    const state = analysisState(ctx, extracted, judged, candidates);
+    const state = analysisState(ctx, extracted, judged, candidates, mailMatch);
     const appliedAtHint = parseIso(ctx.p.applied_at) || parseIso(ctx.p.applied_date)
+      || parseIso(ctx.p.source_received_at)
       || (event?.event_type === 'application_submitted' ? parseIso(event.occurred_at) : null)
       || (ctx.mail ? parseIso(ctx.mail.received_at) : null);
     const appliedPrecisionHint = ctx.p.applied_at_precision
@@ -228,7 +269,8 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
     const missing = [...state.missing];
     if (needsDate) missing.push('applied_at');
     const analysis = {
-      models: { llm: llm.model, jev: judged.model },
+      models: { llm: llm.model, judge: judged.model, jev: judged.model, judge_mode: judged.judge_mode || trace.judge_mode || null },
+      judge_mode: judged.judge_mode || trace.judge_mode || null,
       verification, direct_jev_error: directJevError, jev_request_id: judged.request_id || null,
       actual_progress: judged.actual_progress, evidence_support: judged.evidence_support, progress_reliable: state.progress_reliable,
       status_suggestion: state.status_suggestion, status_confidence: state.status_confidence,
@@ -236,6 +278,7 @@ export async function confirmReviewIntake({ ownerId, reviewId, expectedVersion, 
       fields_consistent: judged.fields_consistent,
       status_probabilities: judged.status?.probabilities || null,
       candidate_confidence: judged.candidate?.confidence ?? null,
+      server_match: state.server_match,
       evidence: extracted.evidence || [], uncertainties: extracted.uncertainties || [],
       extracted: { company_name: extracted.company_name || null, job_title: extracted.job_title || null, status: extracted.status || null }
     };

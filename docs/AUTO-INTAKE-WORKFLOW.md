@@ -183,3 +183,11 @@ node --env-file-if-exists .env tools/eval-intake.mjs
 - 没有真实 IMAP/QQ 邮箱的端到端联调；当前用隔离样本验证模型链路。
 - 没有 Dify；直接用后端编排，减少一层工作流运行时。若需要 Dify，可替换 `llm.js`/`jev.js` 的调用层，服务端校验/审计/前端不变。
 - 没有对真实用户邮件做准确率承诺；上线后应持续保存人工纠正样本，按周重算自动准确率、覆盖率、待确认比例和错误更新数。
+
+## 9. 2026-11-19 增量：可切换 Flash 直判与有上限重试
+
+- `MAIL_INTAKE_JUDGE=flash`：邮件复用 `AI_API_URL/AI_MODEL` 做内容与阶段判断；`PLUGIN_INTAKE_JUDGE` 独立，插件默认继续走 Jev。默认仍是 `jev`，可随时切回。
+- 邮件归属不再由模型直接决定：服务端 `domain/mailMatching.js` 按「可信申请号 → 岗位链接 → 公司+岗位+批次 → 公司+岗位」选目标；同公司多岗、只有公司名、字段冲突一律进人工待确认。
+- 自动同步与人工确认共用 `judgeIntake()` 和同一套归属函数。Jev 直连失败时仍保留 Dify 兜底（仅 Jev 模式）。
+- 技术失败重试上限 `AUTO_INTAKE_MAX_ATTEMPTS`（默认 5）。耗尽后 `ai_ingest_runs.status='failed'`，并生成 `AI_RETRY_EXHAUSTED` 人工待确认，不再无限重跑。
+- 收信与提醒发信可独立开关：`ENABLE_MAIL_SCHEDULER` / `ENABLE_REMINDER_SCHEDULER`；设置页展示本轮新增/处理/待确认/错误、剩余积压、最近成功与判断模式。

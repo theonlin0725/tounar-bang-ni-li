@@ -18,6 +18,7 @@
     "otp:latest": "node server/scripts/latest-otp.js",
     "probe:site": "node tools/probe-site.mjs",
     "probe:llm": "node --env-file-if-exists .env tools/probe-llm.mjs",
+    "probe:gemini": "node --env-file-if-exists .env tools/probe-gemini.mjs",
     "plugin:tryrun": "node tools/tryrun-plugin.mjs",
     "remind": "node --env-file-if-exists .env server/scripts/run-reminders.js",
     "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js",

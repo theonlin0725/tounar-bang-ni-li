@@ -83,14 +83,19 @@ async function readStreamLimited(stream, maxBytes = BODY_MAX_BYTES) {
 }
 
 async function downloadPart(client, uid, part) {
-  if (!part?.part) return '';
-  try {
-    const download = await client.download(uid, part.part, { uid: true, maxBytes: BODY_MAX_BYTES, binary: true });
-    if (!download?.content) return '';
-    return readStreamLimited(download.content);
-  } catch {
-    return '';
+  // 单段邮件（没有 childNodes）的 bodyStructure 可能没有 part 编号；
+  // imapflow 对 part="1" 有单段 TEXT 特判，这里统一兜底为 "1"，并在失败时抛错，
+  // 由调用方保留游标、下轮重试，而不是静默吞成空正文。
+  const partId = String(part?.part || '1');
+  const download = await client.download(uid, partId, { uid: true, maxBytes: BODY_MAX_BYTES, binary: true });
+  if (!download?.content) {
+    throw new AppError(503, 'MAIL_BODY_EMPTY', `邮件正文 part ${partId} 为空`, { retryable: true });
   }
+  const text = await readStreamLimited(download.content);
+  if (!text.trim()) {
+    throw new AppError(503, 'MAIL_BODY_EMPTY', `邮件正文 part ${partId} 读取为空`, { retryable: true });
+  }
+  return text;
 }
 
 function classifyError(err) {
@@ -121,24 +126,47 @@ function logSyncError(connectionId, stage, err) {
   }));
 }
 
-function markConnectionError(connection, info) {
-  run(`UPDATE mail_connections SET status = ?, last_sync_attempt_at = ?, last_error_code = ?, last_error_message = ?,
-       updated_at = ?, sync_lease_until = NULL, sync_lease_owner = NULL WHERE id = ?`,
-  [info.status, nowIso(), info.code, info.message, nowIso(), connection.id]);
+function currentBinding(connectionId, bindingVersion, leaseId) {
+  const row = one(`SELECT binding_version, status, sync_lease_owner, sync_lease_until
+    FROM mail_connections WHERE id = ?`, [connectionId]);
+  if (!row || row.status === 'disconnected') return false;
+  if (Number(row.binding_version) !== Number(bindingVersion)) return false;
+  if (leaseId && row.sync_lease_owner !== leaseId) return false;
+  if (leaseId && row.sync_lease_until && Date.parse(row.sync_lease_until) <= Date.now()) return false;
+  return true;
 }
 
-function markConnectionSuccess(connection, cursor, firstScanTotal, firstScanProcessed) {
-  run(`UPDATE mail_connections SET status = 'connected', last_sync_attempt_at = ?, last_sync_success_at = ?,
+function commitCursor(connection, cursor) {
+  if (!cursor) return;
+  run(`INSERT INTO mail_cursors (connection_id, owner_id, mailbox, uidvalidity, last_uid, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(connection_id, mailbox) DO UPDATE SET uidvalidity = excluded.uidvalidity,
+         last_uid = excluded.last_uid, updated_at = excluded.updated_at`,
+  [connection.id, connection.owner_id, cursor.mailbox, cursor.uidvalidity, String(cursor.lastUid), nowIso()]);
+}
+
+function markConnectionError(connection, info, { leaseId = null, cursor = null, stats = null } = {}) {
+  const result = run(`UPDATE mail_connections SET status = ?, last_sync_attempt_at = ?, last_error_code = ?, last_error_message = ?,
+       last_sync_stats_json = COALESCE(?, last_sync_stats_json), updated_at = ?, sync_lease_until = NULL, sync_lease_owner = NULL
+       WHERE id = ? AND binding_version = ? ${leaseId ? 'AND sync_lease_owner = ?' : ''}`,
+  [info.status, nowIso(), info.code, info.message, stats ? JSON.stringify(stats) : null, nowIso(),
+    connection.id, connection.binding_version, ...(leaseId ? [leaseId] : [])]);
+  // 断开/重新授权/租约易手后，旧任务不得提交游标或覆盖状态。
+  if (result.changes && cursor) commitCursor(connection, cursor);
+  return result.changes > 0;
+}
+
+function markConnectionSuccess(connection, cursor, firstScanTotal, firstScanProcessed, { leaseId = null, stats = null } = {}) {
+  const result = run(`UPDATE mail_connections SET status = 'connected', last_sync_attempt_at = ?, last_sync_success_at = ?,
        last_error_code = NULL, last_error_message = NULL, first_scan_total = COALESCE(?, first_scan_total),
-       first_scan_processed = ?, updated_at = ?, sync_lease_until = NULL, sync_lease_owner = NULL WHERE id = ?`,
-  [nowIso(), nowIso(), firstScanTotal, firstScanProcessed, nowIso(), connection.id]);
-  if (cursor) {
-    run(`INSERT INTO mail_cursors (connection_id, owner_id, mailbox, uidvalidity, last_uid, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(connection_id, mailbox) DO UPDATE SET uidvalidity = excluded.uidvalidity,
-           last_uid = excluded.last_uid, updated_at = excluded.updated_at`,
-    [connection.id, connection.owner_id, cursor.mailbox, cursor.uidvalidity, String(cursor.lastUid), nowIso()]);
-  }
+       first_scan_processed = ?, last_sync_stats_json = COALESCE(?, last_sync_stats_json),
+       updated_at = ?, sync_lease_until = NULL, sync_lease_owner = NULL
+       WHERE id = ? AND binding_version = ? ${leaseId ? 'AND sync_lease_owner = ?' : ''} AND status <> 'disconnected'`,
+  [nowIso(), nowIso(), firstScanTotal, firstScanProcessed, stats ? JSON.stringify(stats) : null, nowIso(),
+    connection.id, connection.binding_version, ...(leaseId ? [leaseId] : [])]);
+  if (!result.changes) return false;
+  if (cursor) commitCursor(connection, cursor);
+  return true;
 }
 
 function getLease(connectionId) {
@@ -168,7 +196,10 @@ function firstScanProcessedCount(connectionId, uidvalidity, firstScanTotal) {
   return firstScanTotal == null ? uniqueCount : Math.min(uniqueCount, Number(firstScanTotal) || 0);
 }
 
-async function runEventPipeline(connection, mailId, eventId, parsed, bodyText) {
+async function runEventPipeline(connection, mailId, eventId, parsed, bodyText, { leaseId = null } = {}) {
+  if (leaseId && !currentBinding(connection.id, connection.binding_version, leaseId)) {
+    return { state: 'aborted', aborted: true, reason: 'binding_changed' };
+  }
   const aiCandidate = Boolean(config.autoIntakeEnabled && parsed.tentativeHeader);
   const fields = parsed.fields;
   const event = one('SELECT * FROM events WHERE id = ?', [eventId]);
@@ -179,6 +210,9 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText) {
       receivedAt: event.occurred_at, statusText: parsed.classification.category
     })
     : processMailEvent(event);
+  if (leaseId && !currentBinding(connection.id, connection.binding_version, leaseId)) {
+    return { state: 'aborted', aborted: true, reason: 'binding_changed', result };
+  }
   if (result.review) {
     run('UPDATE mail_messages SET review_item_id = ?, processing_state = ? WHERE id = ?',
       [result.review.id, 'pending', mailId]);
@@ -194,7 +228,10 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText) {
   };
 }
 
-async function ingestMessage(connection, message, parsed, bodyText, receivedAt) {
+async function ingestMessage(connection, message, parsed, bodyText, receivedAt, { leaseId = null } = {}) {
+  if (leaseId && !currentBinding(connection.id, connection.binding_version, leaseId)) {
+    return { state: 'aborted', aborted: true, reason: 'binding_changed' };
+  }
   const sourceKey = messageUidKey(connection.id, 'INBOX', parsed.uidvalidity, message.uid);
   const existingEvent = one(`SELECT * FROM events WHERE connection_id = ? AND mailbox = 'INBOX' AND uidvalidity = ? AND uid = ?`,
     [connection.id, parsed.uidvalidity, String(message.uid)]);
@@ -208,7 +245,7 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt) 
     // A crash after the insert must not strand an event forever. Resume only when
     // no user review exists; ordinary applied/ignored events remain idempotent.
     if (existingEvent.processing_state === 'pending' && !review && !retryBlocked) {
-      const recovered = await runEventPipeline(connection, mail?.id || null, existingEvent.id, parsed, bodyText);
+      const recovered = await runEventPipeline(connection, mail?.id || null, existingEvent.id, parsed, bodyText, { leaseId });
       return { duplicate: true, recovered: true, ...recovered };
     }
     return { duplicate: true, event: existingEvent, mail };
@@ -257,6 +294,9 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt) 
       payload.site_job_id = exact[0].site_job_id;
     }
   }
+  if (leaseId && !currentBinding(connection.id, connection.binding_version, leaseId)) {
+    return { state: 'aborted', aborted: true, reason: 'binding_changed' };
+  }
   transaction(() => {
     run(`INSERT INTO mail_messages
       (id, owner_id, connection_id, mailbox, uidvalidity, uid, message_id, subject_excerpt, from_domain, received_at,
@@ -281,9 +321,17 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt) 
     }
   });
   if ((classification.relevant && classification.status) || aiCandidate) {
-    return runEventPipeline(connection, mailId, eventId, parsed, bodyText);
+    return runEventPipeline(connection, mailId, eventId, parsed, bodyText, { leaseId });
   }
-  return { mail: one('SELECT * FROM mail_messages WHERE id = ?', [mailId]) };
+  return { created: true, mail: one('SELECT * FROM mail_messages WHERE id = ?', [mailId]) };
+}
+
+function renewLease(connectionId, bindingVersion, leaseId) {
+  const until = new Date(Date.now() + 10 * 60000).toISOString();
+  const result = run(`UPDATE mail_connections SET sync_lease_until = ?
+    WHERE id = ? AND binding_version = ? AND sync_lease_owner = ? AND status <> 'disconnected'`,
+  [until, connectionId, bindingVersion, leaseId]);
+  return result.changes > 0;
 }
 
 export async function syncConnection(connectionId, { ownerId = null } = {}) {
@@ -299,16 +347,21 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
   try {
     password = decryptCredential(fresh);
   } catch (err) {
-    markConnectionError(fresh, { status: 'reauth_required', code: 'REAUTH_REQUIRED', message: '邮箱授权无法读取，请重新授权' });
+    markConnectionError(fresh, { status: 'reauth_required', code: 'REAUTH_REQUIRED', message: '邮箱授权无法读取，请重新授权' }, { leaseId: lease });
     return { status: 'reauth_required', error: err.message };
   }
   if (!password) {
-    markConnectionError(fresh, { status: 'reauth_required', code: 'REAUTH_REQUIRED', message: '邮箱授权已失效，请重新授权' });
+    markConnectionError(fresh, { status: 'reauth_required', code: 'REAUTH_REQUIRED', message: '邮箱授权已失效，请重新授权' }, { leaseId: lease });
     return { status: 'reauth_required' };
   }
   let client;
   let lock;
   let stage = 'connect';
+  const stats = {
+    started_at: nowIso(), finished_at: null,
+    fetched: 0, new: 0, processed: 0, applied: 0, pending: 0, ignored: 0,
+    duplicate: 0, errors: 0, remaining: 0, batch_limit: 50
+  };
   try {
     client = new ImapFlow({
       host: IMAP_HOST,
@@ -343,16 +396,27 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
       uids = (Array.isArray(search) ? search : []).filter((uid) => uid > last).sort((a, b) => a - b);
     }
     const batch = uids.slice(0, 50);
+    stats.fetched = batch.length;
     let lastProcessedUid = cursor?.uidvalidity === uidValidity ? Number(cursor.last_uid || 0) : 0;
+    let bodyError = null;
+    let aborted = false;
     if (batch.length) {
       stage = 'fetch';
       const messages = await client.fetchAll(batch.join(','), {
         uid: true, envelope: true, internalDate: true, bodyStructure: true, size: true
       }, { uid: true });
+      let seen = 0;
       for (const message of messages) {
+        seen += 1;
         stage = 'ingest';
-        const current = one('SELECT binding_version, status FROM mail_connections WHERE id = ?', [fresh.id]);
-        if (!current || current.status === 'disconnected') break;
+        if (seen % 10 === 1 && !renewLease(fresh.id, fresh.binding_version, lease)) {
+          aborted = true;
+          break;
+        }
+        if (!currentBinding(fresh.id, fresh.binding_version, lease)) {
+          aborted = true;
+          break;
+        }
         const from = addressFromEnvelope(message.envelope);
         const subject = decodeMimeWords(message.envelope?.subject || '');
         const receivedAt = message.internalDate instanceof Date
@@ -364,10 +428,19 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           const html = findHtmlPart(message.bodyStructure);
           const plain = findTextPart(message.bodyStructure) || html;
           if (plain) {
-            const raw = await downloadPart(client, message.uid, plain);
-            bodyText = plain.type === 'text/html' ? stripHtml(raw) : normalizeWhitespace(raw, 12000);
+            try {
+              stage = 'body_download';
+              const raw = await downloadPart(client, message.uid, plain);
+              bodyText = plain.type === 'text/html' ? stripHtml(raw) : normalizeWhitespace(raw, 12000);
+            } catch (err) {
+              logSyncError(fresh.id, 'body_download', err);
+              bodyError = { uid: message.uid, code: err?.code || 'MAIL_BODY_DOWNLOAD_FAILED', message: err?.message || '正文下载失败' };
+              stats.errors += 1;
+              break; // 游标停在上一封成功邮件，下一轮重试这封
+            }
           }
         }
+        stage = 'ingest';
         const classification = classifyRecruitmentMail({
           subject, fromDomain: from.address.split('@')[1] || '', bodyText, mode: fresh.mode
         });
@@ -392,24 +465,60 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           }
         }
         const parsed = { uidvalidity: uidValidity, subject, classification, fields, tentativeHeader };
-        await ingestMessage(fresh, {
+        const ingested = await ingestMessage(fresh, {
           uid: message.uid,
           messageId: message.envelope?.messageId || null
-        }, parsed, bodyText, receivedAt);
+        }, parsed, bodyText, receivedAt, { leaseId: lease });
+        if (ingested.aborted) {
+          aborted = true;
+          break;
+        }
+        if (ingested.duplicate) stats.duplicate += 1;
+        else if (ingested.created || ingested.mail) stats.new += 1;
+        const pipeline = ingested.result;
+        if (pipeline) {
+          stats.processed += 1;
+          if (pipeline.state === 'pending' || pipeline.review) stats.pending += 1;
+          else if (pipeline.state === 'ignored') stats.ignored += 1;
+          else if (pipeline.state === 'applied') stats.applied += 1;
+          else if (pipeline.state === 'retry' || pipeline.state === 'failed') stats.errors += 1;
+        } else if (!ingested.duplicate) {
+          stats.processed += 1;
+        }
         lastProcessedUid = Math.max(lastProcessedUid, message.uid);
       }
     }
     stage = 'finalize';
+    if (aborted || !renewLease(fresh.id, fresh.binding_version, lease) ||
+        !currentBinding(fresh.id, fresh.binding_version, lease)) {
+      stats.finished_at = nowIso();
+      stats.remaining = uids.filter((uid) => uid > lastProcessedUid).length;
+      return { status: 'superseded', skipped: true, ...stats, last_uid: lastProcessedUid };
+    }
     const processedCount = firstScanProcessedCount(fresh.id, uidValidity, firstScanTotal);
-    markConnectionSuccess(fresh, {
-      mailbox: 'INBOX', uidvalidity: uidValidity, lastUid: lastProcessedUid
-    }, firstScanTotal, processedCount);
+    stats.remaining = uids.filter((uid) => uid > lastProcessedUid).length;
+    stats.finished_at = nowIso();
+    const nextCursor = { mailbox: 'INBOX', uidvalidity: uidValidity, lastUid: lastProcessedUid };
+    if (bodyError) {
+      const info = {
+        status: 'degraded',
+        code: bodyError.code || 'MAIL_BODY_DOWNLOAD_FAILED',
+        message: `邮件正文下载失败（UID ${bodyError.uid}）：${bodyError.message}；已保留游标，下次继续重试`
+      };
+      markConnectionError(fresh, info, { leaseId: lease, cursor: nextCursor, stats });
+      return { status: 'degraded', code: info.code, error: info.message, uidvalidity: uidValidity, ...stats, last_uid: lastProcessedUid };
+    }
+    const committed = markConnectionSuccess(fresh, nextCursor, firstScanTotal, processedCount, { leaseId: lease, stats });
+    if (!committed) {
+      return { status: 'superseded', skipped: true, ...stats, last_uid: lastProcessedUid };
+    }
     return {
       status: 'connected',
       uidvalidity: uidValidity,
-      fetched: batch.length,
-      remaining: Math.max(0, uids.length - batch.length),
-      last_uid: lastProcessedUid
+      ...stats,
+      last_uid: lastProcessedUid,
+      first_scan_total: firstScanTotal ?? null,
+      first_scan_processed: processedCount
     };
   } catch (err) {
     const info = classifyError(err);
@@ -420,8 +529,10 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
       const detail = programmingError ? `: ${String(err.message || '').slice(0, 160)}` : '';
       info.message = `邮箱同步失败（${stage} / ${errorName}${detail}），已保留上次成功结果`;
     }
-    markConnectionError(fresh, info);
-    return { status: info.status, code: info.code, error: info.message };
+    stats.finished_at = nowIso();
+    stats.errors += 1;
+    markConnectionError(fresh, info, { leaseId: lease, stats });
+    return { status: info.status, code: info.code, error: info.message, ...stats };
   } finally {
     try { lock?.release(); } catch { /* ignore */ }
     try { if (client?.usable) await client.logout(); } catch { /* ignore */ }
@@ -441,6 +552,6 @@ export async function syncAllConnections() {
 export function encoderForTest() {
   return {
     messageUidKey, findTextPart, findHtmlPart, decodeMimeWords, classifyError,
-    firstScanProcessedCount, ingestMessage
+    firstScanProcessedCount, ingestMessage, downloadPart, currentBinding, renewLease
   };
 }

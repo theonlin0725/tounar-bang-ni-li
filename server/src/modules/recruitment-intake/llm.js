@@ -38,6 +38,45 @@ function parseJsonLoose(raw) {
   if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
   throw new Error('not json');
 }
+
+/* 统一 OpenAI 兼容 JSON 调用：抽取器与 Flash 直判共用同一网关、超时与错误码。 */
+export async function chatJsonCompletion({ system, user, timeoutMs = config.aiLlmTimeoutMs }) {
+  if (!config.aiApiUrl) throw new AppError(503, 'AUTO_AI_NOT_CONFIGURED', '自动入账需要服务端 AI_API_URL/AI_MODEL', { retryable: false });
+  const url = /\/chat\/completions$/i.test(config.aiApiUrl.replace(/\/$/, ''))
+    ? config.aiApiUrl.replace(/\/$/, '')
+    : `${config.aiApiUrl.replace(/\/$/, '')}/chat/completions`;
+  const payload = {
+    model: config.aiModel || 'default',
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ]
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(config.aiApiKey ? { Authorization: `Bearer ${config.aiApiKey}` } : {}) },
+      body: JSON.stringify(payload), signal: controller.signal
+    });
+  } catch {
+    throw new AppError(503, 'AUTO_AI_UNAVAILABLE', 'AI 提取服务连接失败', { retryable: true });
+  } finally { clearTimeout(timer); }
+  if (!res.ok) {
+    if ([401, 403].includes(res.status)) throw new AppError(503, 'AUTO_AI_UNAUTHORIZED', 'AI 提取服务鉴权失败', { retryable: false });
+    throw new AppError(503, 'AUTO_AI_UNAVAILABLE', 'AI 提取服务暂时不可用', { retryable: res.status >= 500 || res.status === 429 });
+  }
+  let data;
+  try { data = await res.json(); } catch { throw new AppError(502, 'AUTO_AI_INVALID_RESPONSE', 'AI 提取结果无法解析', { retryable: true }); }
+  const content = data?.choices?.[0]?.message?.content ?? data?.output?.text ?? null;
+  if (!content) throw new AppError(502, 'AUTO_AI_INVALID_RESPONSE', 'AI 提取结果为空', { retryable: true });
+  return { data, content };
+}
+
 function text(value, max = 200) {
   if (value == null) return null;
   const s = String(value).replace(/\s+/g, ' ').trim();
@@ -74,44 +113,15 @@ function normalize(raw, sourceText) {
 }
 
 export async function extractRecruitmentSignal({ source, subject = '', bodyText = '', statusText = '', fromDomain = '', receivedAt = '', ruleFields = {} }) {
-  if (!config.aiApiUrl) throw new AppError(503, 'AUTO_AI_NOT_CONFIGURED', '自动入账需要服务端 AI_API_URL/AI_MODEL', { retryable: false });
-  const url = /\/chat\/completions$/i.test(config.aiApiUrl.replace(/\/$/, ''))
-    ? config.aiApiUrl.replace(/\/$/, '')
-    : `${config.aiApiUrl.replace(/\/$/, '')}/chat/completions`;
   const sourceText = [subject, statusText, bodyText].filter(Boolean).join('\n');
-  const payload = {
-    model: config.aiModel || 'default',
-    temperature: 0,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: JSON.stringify({
-        source, subject, from_domain: fromDomain, received_at: receivedAt,
-        status_text: statusText, body_text: String(bodyText || '').slice(0, 8000),
-        rule_extracted: ruleFields
-      }) }
-    ]
-  };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.aiLlmTimeoutMs);
-  let res;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(config.aiApiKey ? { Authorization: `Bearer ${config.aiApiKey}` } : {}) },
-      body: JSON.stringify(payload), signal: controller.signal
-    });
-  } catch {
-    throw new AppError(503, 'AUTO_AI_UNAVAILABLE', 'AI 提取服务连接失败', { retryable: true });
-  } finally { clearTimeout(timer); }
-  if (!res.ok) {
-    if ([401, 403].includes(res.status)) throw new AppError(503, 'AUTO_AI_UNAUTHORIZED', 'AI 提取服务鉴权失败', { retryable: false });
-    throw new AppError(503, 'AUTO_AI_UNAVAILABLE', 'AI 提取服务暂时不可用', { retryable: res.status >= 500 || res.status === 429 });
-  }
-  let data;
-  try { data = await res.json(); } catch { throw new AppError(502, 'AUTO_AI_INVALID_RESPONSE', 'AI 提取结果无法解析', { retryable: true }); }
-  const content = data?.choices?.[0]?.message?.content ?? data?.output?.text ?? null;
-  if (!content) throw new AppError(502, 'AUTO_AI_INVALID_RESPONSE', 'AI 提取结果为空', { retryable: true });
+  const { data, content } = await chatJsonCompletion({
+    system: SYSTEM,
+    user: JSON.stringify({
+      source, subject, from_domain: fromDomain, received_at: receivedAt,
+      status_text: statusText, body_text: String(bodyText || '').slice(0, 8000),
+      rule_extracted: ruleFields
+    })
+  });
   try { return { extraction: normalize(parseJsonLoose(content), sourceText), model: data.model || config.aiModel || null }; }
   catch { throw new AppError(502, 'AUTO_AI_INVALID_RESPONSE', 'AI 提取结果不是有效 JSON', { retryable: true }); }
 }

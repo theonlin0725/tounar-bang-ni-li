@@ -161,6 +161,7 @@ it('P2: 邮件推断投递日期有标记，撤回恢复浏览态；开关关闭
 });
 it('P2: 不按固定阶段阶梯拦截、不覆盖终态、搜索相似度不混淆两条岗位',()=>{
   const app=apps.createApplication({ownerId:owner,fields:{company_name:'保护企业',job_title:'产品经理',site_key:'test',site_application_id:'phase2-protect',applied_at:'2026-10-01T00:00:00Z'},sourceMethod:'manual',status:'interview'});
+  db.markApplicationChanged(owner,app.id,null,'manual',{last_status_changed_at:'2026-10-01T00:00:00Z',last_progress_at:'2026-10-01T00:00:00Z'});
   assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'assessment',confidence:1})).application.status,'assessment');
   db.markApplicationChanged(owner,app.id,null,'manual',{status:'offer'});
   assert.equal(apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'phase2-protect',mapped_status:'rejected',confidence:1})).review.reason_code,'TERMINAL_LOCKED');
@@ -257,6 +258,20 @@ it('P3: 笔试推进面试后旧回看作废，较晚预约重新锚定',()=>{
   assert.equal(stageFollowupState(result,7,new Date('2026-10-27T00:00:00Z')).due,false);
   assert.equal(stageFollowupState(result,7,new Date('2026-11-01T00:00:00Z')).due,true);
 });
+
+it('P3: 迟到的旧投递回执不能把测评状态拉回已投递',()=>{
+  const own=owner;
+  const app=apps.createApplication({ownerId:own,fields:{company_name:'旧信企业',job_title:'旧信岗位',site_key:'test',site_application_id:'old-receipt-id',applied_at:'2026-10-01T00:00:00Z',job_url:'https://example.com/job/old-receipt'},sourceMethod:'manual',status:'applied'});
+  apps.processMailEvent(mailEvent({site_key:'test',site_application_id:'old-receipt-id',mapped_status:'assessment',confidence:1,source_received_at:'2026-10-20T03:00:00Z'},own));
+  const before=db.getApplication(own,app.id);
+  assert.equal(before.status,'assessment');
+  const old=mailEvent({site_key:'test',site_application_id:'old-receipt-id',mapped_status:'applied',confidence:1,source_received_at:'2026-10-19T03:00:00Z'},own);
+  const result=apps.processMailEvent(old);
+  assert.equal(result.application.status,'assessment');
+  assert.equal(result.ignored,'OLDER_MAIL_EVIDENCE');
+  assert.equal(db.getApplication(own,app.id).status,'assessment');
+});
+
 it('P1/P2: 无候选邮件可预填新建，投递日期明确标记为推断上界',()=>{
   const mail=db.one('SELECT id FROM mail_messages WHERE owner_id=?',[owner]);
   const e=mailEvent({company_name:'邮件新增企业',job_title:'新岗位',mapped_status:'assessment',confidence:0.4,source_mail_id:mail.id});

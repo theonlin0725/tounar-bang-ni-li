@@ -257,7 +257,7 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
     if (Number(expectedVersion) !== review.version) {
       throw new AppError(409, 'VERSION_CONFLICT', '复核项已更新，请刷新后重试', { details: { current_version: review.version } });
     }
-    if (!['confirm', 'dismiss', 'link', 'create'].includes(action)) {
+    if (!['confirm', 'dismiss', 'link', 'create', 'closed'].includes(action)) {
       throw new AppError(400, 'VALIDATION_ERROR', 'action 无效');
     }
     const suggested = safeJsonParse(review.suggested_changes_json, {});
@@ -268,10 +268,10 @@ export function resolveReview({ ownerId, reviewId, expectedVersion, action, appl
     const inferredAt = sourceMail?.received_at || (review.source_mail_id ? one('SELECT occurred_at FROM events WHERE id = ? AND owner_id = ?', [review.source_event_id, ownerId])?.occurred_at : null);
     const resolution = (data, before = null, after = null) => JSON.stringify({ ...data,
       undo_until: new Date(Date.now() + 10000).toISOString(), before, after_version: after?.version || null });
-    if (action === 'dismiss') {
+    if (action === 'dismiss' || action === 'closed') {
       run(`UPDATE review_items SET status = 'dismissed', resolution_json = ?, resolved_at = ?, version = version + 1
            WHERE id = ? AND owner_id = ?`,
-      [resolution({ resolution: 'dismissed', reason: reason || null }), nowIso(), reviewId, ownerId]);
+      [resolution({ resolution: action === 'closed' ? 'closed' : 'dismissed', reason: reason || null }), nowIso(), reviewId, ownerId]);
       bumpRevision();
       setEventIgnored(ownerId, review.source_event_id);
       audit(ownerId, actor, 'review.dismiss', 'review', reviewId, { idempotency_key: idempotencyKey });
@@ -411,7 +411,7 @@ export function assignReview({ ownerId, reviewId, expectedVersion, status: rawSt
       throw new AppError(409, 'VERSION_CONFLICT', '待确认项已更新，请刷新后重试', { details: { current_version: review.version } });
     }
     const status = normalizeStatus(rawStatus);
-    if (status !== 'pending' && !APPLIED_STATUSES.has(status)) {
+    if (status !== 'pending' && status !== 'closed' && !APPLIED_STATUSES.has(status)) {
       throw new AppError(400, 'VALIDATION_ERROR', '状态只能是看过没投、已投递、笔试、面试、录用或拒绝');
     }
     const event = review.source_event_id

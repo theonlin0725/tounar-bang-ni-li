@@ -28,6 +28,22 @@ AI_MAX_JOBS=12
 - `CLOUD_ENDPOINT/CLOUD_PUBLISHABLE_KEY` 是既有 WorkBuddy 云端邮件兜底，不是本功能的默认服务端模型；当前本机探针返回 403/无服务端登录态，因此 AI 功能要求上面的显式网关。
 - 没有配置时接口返回 `AI_NOT_CONFIGURED`，前端明确提示，不生成假报告。
 
+### 用 Gemini API（OpenAI 兼容层）
+
+AI Studio 的 Gemini key 可以直接当 OpenAI 兼容网关用：
+
+```bash
+AI_API_URL=https://generativelanguage.googleapis.com/v1beta/openai
+AI_API_KEY=你的 Gemini key
+AI_MODEL=gemini-4-hydrogen
+AI_PROVIDER=openai_compatible
+```
+
+- URL 结尾不要写成 `/v1`；客户端会自动拼 `/chat/completions`。
+- 免费层有 RPM/RPD 限制；Google AI Pro 的每月 API 额度需在 AI Studio 开通 billing 并手动领取。
+- 填好后运行 `npm run probe:gemini`，验证连通性和本模块依赖的 JSON 模式。
+
+
 ## 数据与接口
 
 新增表：`resumes`（文本、画像、当前版本）、`ai_reports`（对比/推荐报告）。删除用户数据时会清理这两张表。

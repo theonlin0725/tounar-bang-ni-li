@@ -3,13 +3,13 @@ import { all, getApplication, markApplicationChanged, one, run, transaction } fr
 import {
   applyStatusTransition, createApplication, createReviewForEvent, fillMissingFields
 } from '../../domain/applications.js';
-import { companyIdentity, similarJob } from '../../domain/mailMatching.js';
+import { companyIdentity, similarJob, resolveMailApplication } from '../../domain/mailMatching.js';
 import {
   AppError, TERMINAL, canonicalJobUrl, isSafeHttpUrl, newId, normalizeCompanyKey,
   nowIso, parseIso, safeJsonParse
 } from '../../util.js';
 import { extractRecruitmentSignal } from './llm.js';
-import { judgeRecruitment } from './jev.js';
+import { judgeIntake } from './judge.js';
 
 const STATUS_SET = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected', 'closed']);
 const APPLIED_SET = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected']);
@@ -90,16 +90,55 @@ function finishRun(runRow, patch) {
 }
 function retryRun(runRow, event, err) {
   const retryable = err?.retryable !== false;
+  const attempts = Number(runRow.attempts || 1);
+  const exhausted = retryable && attempts >= config.autoIntakeMaxAttempts;
   const next = new Date(Date.now() + Math.max(1, config.autoIntakeRetryMinutes) * 60000).toISOString();
   finishRun(runRow, {
-    status: retryable ? 'retry' : 'failed',
+    status: retryable && !exhausted ? 'retry' : 'failed',
     error_code: err?.code || 'AUTO_INTAKE_FAILED',
     error_message: String(err?.message || '自动处理失败').slice(0, 500),
-    next_retry_at: retryable ? next : null
+    next_retry_at: retryable && !exhausted ? next : null
   });
-  run("UPDATE events SET processing_state='pending', review_reason='AI_PIPELINE_RETRY', processed_at=? WHERE id=? AND owner_id=?",
-    [nowIso(), event.id, event.owner_id]);
-  return { state: 'retry', error_code: err?.code || 'AUTO_INTAKE_FAILED', retryable };
+  run("UPDATE events SET processing_state='pending', review_reason=?, processed_at=? WHERE id=? AND owner_id=?",
+    [exhausted ? 'AI_RETRY_EXHAUSTED' : 'AI_PIPELINE_RETRY', nowIso(), event.id, event.owner_id]);
+  if (!exhausted) return { state: 'retry', error_code: err?.code || 'AUTO_INTAKE_FAILED', retryable };
+  // 有上限的重试结束后不再无限重跑：转成可见的人工待确认，避免事件永远沉默。
+  event.payload = eventPayload(event);
+  const p = event.payload;
+  let review = null;
+  try {
+    review = createReviewForEvent(event, {
+      kind: 'intake_failure',
+      reasonCode: 'AI_RETRY_EXHAUSTED',
+      summary: `自动识别连续 ${attempts} 次失败，请人工核对或补录`,
+      suggested: {
+        ...(p.company_name ? { company_name: p.company_name } : {}),
+        ...(p.job_title ? { job_title: p.job_title } : {}),
+        status: p.mapped_status || 'pending'
+      },
+      fields: p,
+      evidence: {
+        ai: {
+          error_code: err?.code || 'AUTO_INTAKE_FAILED',
+          error_message: String(err?.message || '自动处理失败').slice(0, 500),
+          attempts,
+          judge_mode: event.source_method === 'mail' ? config.mailIntakeJudge : config.pluginIntakeJudge
+        },
+        subject_excerpt: p.subject_excerpt,
+        body_excerpt: p.body_excerpt,
+        from_domain: p.from_domain,
+        source_received_at: p.source_received_at,
+        category: p.category
+      }
+    });
+  } catch (reviewErr) {
+    // 待确认创建失败也不能吞掉原错误：ai_ingest_runs 已标 failed，事件仍为 pending。
+    console.error(JSON.stringify({
+      level: 'error', event: 'intake_failure_review_failed',
+      event_id: event.id, message: String(reviewErr?.message || reviewErr).slice(0, 200)
+    }));
+  }
+  return { state: 'failed', error_code: err?.code || 'AUTO_INTAKE_FAILED', retryable: false, review };
 }
 
 function reviewFor({ event, kind, reasonCode, summary, ex, status, candidates, appliedAt, precision, extracted, judged }) {
@@ -129,7 +168,7 @@ function reviewFor({ event, kind, reasonCode, summary, ex, status, candidates, a
       ai: {
         extraction: extracted,
         judgement: judged,
-        models: { llm: runRowModel?.llm_model || null, jev: judged?.model || null }
+        models: { llm: runRowModel?.llm_model || null, judge: judged?.model || null, judge_mode: judged?.judge_mode || null }
       },
       subject_excerpt: p.subject_excerpt,
       body_excerpt: p.body_excerpt,
@@ -182,10 +221,24 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       run("UPDATE events SET processing_state='ignored', review_reason='AI_NOT_RECRUITMENT', processed_at=? WHERE id=? AND owner_id=?", [nowIso(), event.id, event.owner_id]);
       return { state: 'ignored', reason: 'not_recruitment' };
     }
-    const candidates = findCandidates(event.owner_id, extracted);
-    judged = await judgeRecruitment({
+    const source = event.source_method === 'plugin' ? 'plugin' : 'mail';
+    // 邮件先在服务端按可信身份找归属；模型只做内容/阶段/新旧判断。
+    // 这样自动同步与人工确认可以复用同一套归属规则，也不会让模型凭公司名覆盖其他岗位。
+    const mailMatch = source === 'mail'
+      ? resolveMailApplication(event.owner_id, {
+        ...extracted, from_domain: fromDomain || p.from_domain || '',
+        site_key: event.site_key || p.site_key || null
+      })
+      : null;
+    const foundCandidates = findCandidates(event.owner_id, extracted);
+    const candidates = [...foundCandidates];
+    for (const candidate of mailMatch?.candidates || []) {
+      if (!candidates.some((c) => c.id === candidate.id)) candidates.push(candidate);
+    }
+    judged = await judgeIntake({
+      source,
       state: {
-        source: event.source_method || 'mail',
+        source,
         subject: subject || p.subject_excerpt || null,
         from_domain: fromDomain || p.from_domain || null,
         received_at: p.source_received_at || event.occurred_at || null,
@@ -200,7 +253,11 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       },
       candidates
     });
-    finishRun(runRow, { jev_model: judged.model, jev_json: JSON.stringify(judged) });
+    runRowModel = { llm_model: llm.model, judge_mode: judged.judge_mode || null };
+    finishRun(runRow, {
+      jev_model: judged.model, jev_json: JSON.stringify(judged),
+      judge_mode: judged.judge_mode || null
+    });
     const status = resolveStatus(extracted, judged);
     const rejectedRole = ['advertisement', 'forwarded_or_historical'].includes(extracted.content_role);
     const processDescription = extracted.content_role === 'process_description';
@@ -216,7 +273,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
     }
     if (judged.actual_progress < 0.4) {
       const subjectText = `${subject || p.subject_excerpt || ''}`;
-      // 只有邮件头的明确面试/笔试/测评邀请仍是有效线索；没有正文时 Jev 可能保守。
+      // 只有邮件头的明确面试/笔试/测评邀请仍是有效线索；没有正文时判断器可能保守。
       // 但用户自己的 Re:/转发线程不算新的用户进展。
       const headerProgress = event.source_method === 'mail'
         && !/^(?:re|fw|fwd|回复|转发)\s*[:：]/i.test(subjectText)
@@ -236,9 +293,23 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
     const newness = judged.newness?.value;
     const chosen = judged.candidate?.value;
     let target = null;
-    if (chosen && /^c\d+$/.test(chosen)) {
+    if (source === 'mail') {
+      target = mailMatch?.target || null;
+    } else if (chosen && /^c\d+$/.test(chosen)) {
       target = candidates[Number(chosen.slice(1))] || null;
-      if (!target) throw new AppError(502, 'AI_CANDIDATE_INVALID', 'Jev 返回了不存在的候选岗位', { retryable: true });
+      if (!target) throw new AppError(502, 'AI_CANDIDATE_INVALID', '判断器返回了不存在的候选岗位', { retryable: true });
+    }
+    // 字段错位/公司岗位互换时不写账，交人工核对。只检查原文实际给出的字段。
+    // 放在时间/同状态 no-op 之前，避免错误字段静默命中一条旧记录后被当作“无需变更”。
+    const fieldConflict = source === 'mail' && (
+      (extracted.company_name && judged.company_valid != null && judged.company_valid < 0.6)
+      || (extracted.job_title && judged.job_title_valid != null && judged.job_title_valid < 0.6)
+      || (judged.fields_consistent != null && judged.fields_consistent < 0.6)
+    );
+    if (fieldConflict) {
+      const review = reviewFor({ event, kind: 'intake_failure', reasonCode: 'AI_FIELD_CONFLICT', summary: '公司/岗位字段与原文对不上，请核对后选择或补录', ex: extracted, status: status || 'pending', candidates, extracted, judged });
+      finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_FIELD_CONFLICT' });
+      return { state: 'pending', review };
     }
     if (target) {
       const targetAt = parseIso(target.manual_status_at) || parseIso(target.last_status_changed_at) || parseIso(target.stage_received_at);
@@ -281,9 +352,23 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_STATUS_LOW_CONFIDENCE' });
       return { state: 'pending', review };
     }
-    if (target && judged.candidate.confidence < config.autoIntakeMinCandidate) {
+    if (target && source !== 'mail' && judged.candidate.confidence < config.autoIntakeMinCandidate) {
       const review = reviewFor({ event, kind: 'ambiguous_match', reasonCode: 'AI_CANDIDATE_UNCERTAIN', summary: '岗位归属把握度不足，请确认', ex: extracted, status, candidates, extracted, judged });
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_CANDIDATE_UNCERTAIN' });
+      return { state: 'pending', review };
+    }
+    // 邮件没有唯一可信归属：同公司多岗、只有公司名、字段冲突都交人工选。
+    if (source === 'mail' && !target && mailMatch?.candidates?.length) {
+      const companyOnly = mailMatch.reason === 'company_only';
+      const review = reviewFor({
+        event, kind: companyOnly ? 'mail_progress' : 'ambiguous_match',
+        reasonCode: companyOnly ? 'AI_COMPANY_ONLY' : 'AI_MATCH_UNCERTAIN',
+        summary: companyOnly
+          ? '只识别到公司名，无法确定是哪个岗位，请选择目标或新建'
+          : '这条进展可能属于多个岗位，请确认归属',
+        ex: extracted, status, candidates, extracted, judged
+      });
+      finishRun(runRow, { status: 'review', decision: 'review', reason_code: companyOnly ? 'AI_COMPANY_ONLY' : 'AI_MATCH_UNCERTAIN' });
       return { state: 'pending', review };
     }
     if (!target && chosen === 'uncertain' && candidates.length > 0) {
@@ -301,7 +386,19 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_NO_MATCH_WITH_CANDIDATES' });
       return { state: 'pending', review };
     }
-    if (!target && !identityReliable(extracted)) {
+    // 模型选中的候选与服务器可信归属不一致时，不直接覆盖，交人工裁决。
+    if (target && source === 'mail' && chosen && /^c\d+$/.test(chosen)) {
+      const picked = candidates[Number(chosen.slice(1))];
+      if (picked && picked.id !== target.id) {
+        const review = reviewFor({ event, kind: 'ambiguous_match', reasonCode: 'AI_CANDIDATE_CONFLICT', summary: '模型判断的岗位与可信申请信息不一致，请确认目标', ex: extracted, status, candidates, extracted, judged });
+        finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_CANDIDATE_CONFLICT', application_id: target.id, before_status: target.status });
+        return { state: 'pending', review };
+      }
+    }
+    const identityReady = source === 'mail'
+      ? Boolean(extracted.company_name && extracted.job_title)
+      : identityReliable(extracted);
+    if (!target && !identityReady) {
       const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_IDENTITY_INSUFFICIENT', summary: '识别到招聘进展，但岗位身份不足，请确认', ex: extracted, status, candidates, extracted, judged });
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_IDENTITY_INSUFFICIENT' });
       return { state: 'pending', review };

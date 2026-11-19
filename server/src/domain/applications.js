@@ -348,6 +348,15 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
   if (TERMINAL.has(app.status)) {
     return { ok: false, review: { kind: 'terminal_conflict', reasonCode: 'TERMINAL_LOCKED', summary: '记录已处于终态，自动事件不能覆盖' } };
   }
+  // 迟到的旧回执（例如补抓到的“投递成功”）不能把已推进的测评/面试状态拉回去。
+  if (sourceMethod === 'mail' && evidenceAt) {
+    const currentAt = parseIso(app.last_progress_at) || parseIso(app.last_status_changed_at);
+    const rank = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 5, closed: 5 };
+    if (currentAt && Date.parse(evidenceAt) < Date.parse(currentAt)
+      && (rank[targetStatus] ?? 0) < (rank[app.status] ?? 0)) {
+      return { ok: true, app, changed: false, ignored: 'OLDER_MAIL_EVIDENCE' };
+    }
+  }
   if (targetStatus === 'pending') {
     return { ok: false, review: { kind: 'status_conflict', reasonCode: 'APPLIED_FACT_REMOVAL', summary: '自动事件不能撤销已投事实' } };
   }
@@ -862,6 +871,6 @@ export function processMailEvent(event) {
     app=transition.app;
     if(source==='plugin')app=markApplicationChanged(app.owner_id,app.id,event.id,source,{last_site_observed_at:event.observed_at||nowIso()},{reason:'官网状态观察'});
     run("UPDATE events SET application_id = ?, processing_state = 'applied', processed_at = ? WHERE id = ? AND owner_id = ?",[app.id,nowIso(),event.id,event.owner_id]);
-    return { state:'applied', application:app };
+    return { state:'applied', application:app, change: transition.changed ? 'updated' : 'unchanged', ...(transition.ignored ? { ignored: transition.ignored } : {}) };
   });
 }

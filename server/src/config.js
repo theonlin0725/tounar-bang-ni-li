@@ -77,7 +77,11 @@ export const config = {
   reminderHour: intEnv('REMINDER_HOUR', 8),
   reminderMinute: intEnv('REMINDER_MINUTE', 0),
   reminderTickSeconds: intEnv('REMINDER_TICK_SECONDS', 30),
+  // ENABLE_SCHEDULER 是旧的全局开关；收信与提醒可各自覆盖，互不牵连。
+  // 关掉提醒发信时仍可继续收信；关掉收信时也不影响 08:00 提醒窗口。
   enableScheduler: boolEnv('ENABLE_SCHEDULER', true),
+  enableMailScheduler: boolEnv('ENABLE_MAIL_SCHEDULER', boolEnv('ENABLE_SCHEDULER', true)),
+  enableReminderScheduler: boolEnv('ENABLE_REMINDER_SCHEDULER', boolEnv('ENABLE_SCHEDULER', true)),
   // D03 已冻结（2026-10-22）：看过未投的线索 30 天自动归档，保留可查、不计入累计投递
   browseArchiveDays: intEnv('BROWSE_ARCHIVE_DAYS', 30),
   browseArchiveSetClosed: boolEnv('BROWSE_ARCHIVE_SET_CLOSED', false),
@@ -122,23 +126,30 @@ export const config = {
   aiApiKey: process.env.AI_API_KEY || '',
   aiModel: process.env.AI_MODEL || '',
   aiProvider: process.env.AI_PROVIDER || (process.env.AI_API_URL ? 'openai_compatible' : 'workbuddy_cloud'),
-  // 招聘进展自动工作流：LLM 提取 → Jev 判断 → 服务端校验 → 自动入账/更新/待确认。
+  // 招聘进展自动工作流：LLM 提取 → 判断（Jev 或 Flash 直判）→ 服务端校验 → 自动入账/更新/待确认。
   jevApiUrl: process.env.JEV_API_URL || 'https://api.typesafe.ai/v1/systemone',
   jevApiKey: process.env.JEV_API_KEY || '',
   jevModel: process.env.JEV_MODEL || 'jev-latest',
   jevTimeoutMs: intEnv('JEV_TIMEOUT_MS', 30000),
+  // 判断模型开关：mail 只影响邮件自动同步/人工确认；plugin 独立，默认继续走 Jev。
+  // flash = 复用 AI_API_* 的 OpenAI 兼容模型直接判断；jev = 现有 TypeSafe 判断。
+  mailIntakeJudge: String(process.env.MAIL_INTAKE_JUDGE || 'jev').toLowerCase(),
+  pluginIntakeJudge: String(process.env.PLUGIN_INTAKE_JUDGE || 'jev').toLowerCase(),
+  mailIntakeJudgeFallback: String(process.env.MAIL_INTAKE_JUDGE_FALLBACK || 'none').toLowerCase(),
   // 本机到 TypeSafe 被区域限制时的 Dify 云兜底（同一工作流内有真实 Jev HTTP 节点）
   difyApiUrl: process.env.DIFY_API_URL || '',
   difyApiKey: process.env.DIFY_API_KEY || '',
   difyUserId: process.env.DIFY_USER_ID || 'tounar-confirm',
   difyTimeoutMs: intEnv('DIFY_TIMEOUT_MS', 30000),
-  autoIntakeEnabled: boolEnv('AUTO_INTAKE_ENABLED', Boolean(process.env.AI_API_URL && process.env.AI_API_KEY && process.env.JEV_API_KEY)),
+  autoIntakeEnabled: boolEnv('AUTO_INTAKE_ENABLED', Boolean(process.env.AI_API_URL && process.env.AI_API_KEY
+    && (process.env.JEV_API_KEY || String(process.env.MAIL_INTAKE_JUDGE || 'jev').toLowerCase() === 'flash'))),
   autoIntakeMinProgress: confidenceEnv('AUTO_INTAKE_MIN_PROGRESS', 0.72),
   autoIntakeMinEvidence: confidenceEnv('AUTO_INTAKE_MIN_EVIDENCE', 0.65),
   autoIntakeMinStatus: confidenceEnv('AUTO_INTAKE_MIN_STATUS', 0.6),
   autoIntakeMinCandidate: confidenceEnv('AUTO_INTAKE_MIN_CANDIDATE', 0.6),
   autoIntakeMinTerminal: confidenceEnv('AUTO_INTAKE_MIN_TERMINAL', 0.85),
   autoIntakeRetryMinutes: intEnv('AUTO_INTAKE_RETRY_MINUTES', 5),
+  autoIntakeMaxAttempts: Math.max(1, intEnv('AUTO_INTAKE_MAX_ATTEMPTS', 5)),
 };
 
 export const featureFlags = {
@@ -154,6 +165,6 @@ export const featureFlags = {
   D10: 'custom local pairing/whitelist; external platform verification blocked (G01/G03)',
   D11: 'frozen: 08:00 Asia/Shanghai trigger; same-day retry; no second-precision guarantee',
   D12: 'frozen: auto-capture default; manual entry fallback with lead autofill',
-  AUTO_INTAKE: config.autoIntakeEnabled ? `frozen 2026-11-01: LLM extraction + Jev judgment + server validation; thresholds ${config.autoIntakeMinProgress}/${config.autoIntakeMinEvidence}` : 'disabled by config or missing AI/JEV credentials',
+  AUTO_INTAKE: config.autoIntakeEnabled ? `frozen 2026-11-01: LLM extraction + ${config.mailIntakeJudge === 'flash' ? 'Flash direct judgement (mail)' : 'Jev judgement'} + server validation; thresholds ${config.autoIntakeMinProgress}/${config.autoIntakeMinEvidence}` : 'disabled by config or missing AI/JEV credentials',
   D13: 'pending user decision (note field)'
 };
