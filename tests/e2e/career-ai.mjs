@@ -89,7 +89,7 @@ try {
         summary: '优先投递数据产品方向的未投递岗位。',
         recommendations: input.jobs.slice(0, 1).map((j) => ({
           application_id: j.application_id, rank: 1, match_level: 'high',
-          reasons: ['技能交叉'], strengths: ['SQL 与用户研究'], gaps: ['行业经验待补'], next_step: '先补行业研究'
+          reasons: ['技能交叉', '地点匹配', '成长空间'], strengths: ['SQL 与用户研究', '数据分析', '项目复盘'], gaps: ['行业经验待补', '正式年限', '作品集'], next_step: '先补行业研究'
         })),
         limitations: ['未访问外部招聘网站']
       };
@@ -145,24 +145,13 @@ try {
   page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/', { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-test=ledger-row]');
-  await page.locator(`[data-test=select-app][data-select-app-id="${applied.json.data.id}"]`).check();
-  await page.click('[data-test=tab-viewed]');
-  await page.waitForSelector(`[data-test=ledger-row][data-app-id="${pending.application_id}"]`);
-  await page.locator(`[data-test=select-app][data-select-app-id="${pending.application_id}"]`).check();
-  const compareBarText = await page.locator('[data-test=compare-bar]').innerText();
-  check('跨投递明细/看过没投勾选，对比栏保留两个岗位名称',
-    compareBarText.includes('星河科技') && compareBarText.includes('青禾网络'), compareBarText.replace(/\s+/g, ' '));
-  await page.click('[data-test=compare-open]');
-  await page.waitForSelector('[data-test=career-view]');
-  check('对比入口跳转到现有 AI 页面并带入两个岗位', (await page.locator('[data-test=compare-section]').innerText()).includes('星河科技')
-    && (await page.locator('[data-test=compare-section]').innerText()).includes('青禾网络'));
-
+  await page.goto('/?panel=career&section=resume', { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=resume-section]');
+  check('简历库首屏无旧页首说明与返回台账，主操作在上', !(await page.locator('[data-test=resume-section]').innerText()).includes('返回台账')
+    && !(await page.locator('[data-test=resume-section]').innerText()).includes('1. 简历'));
   await page.setInputFiles('[data-test=resume-file]', resumeFile);
-  await page.click('[data-test=resume-upload]');
   try {
-    await page.waitForFunction(() => document.querySelector('[data-test=resume-section]')?.innerText.includes('分析失败'), null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector('[data-test=resume-section]')?.innerText.includes('AI 服务暂时不可用'), null, { timeout: 15000 });
   } catch (e) {
     console.log('DEBUG resume section', (await page.locator('[data-test=resume-section]').innerText()).slice(0, 1200));
     console.log('DEBUG toasts', await page.locator('.tn-toast').allTextContents());
@@ -173,27 +162,78 @@ try {
   await page.click('[data-test=resume-analyze]');
   await page.waitForSelector('[data-test=resume-profile]', { timeout: 20000 });
   const resumeTextUi = await page.locator('[data-test=resume-section]').innerText();
-  check('重试后简历画像展示技能、经历和原文证据', resumeTextUi.includes('SQL') && resumeTextUi.includes('星河科技') && resumeTextUi.includes('原文：'));
+  check('重试后简历画像展示技能与经历摘要', resumeTextUi.includes('SQL') && resumeTextUi.includes('星河科技'));
   check('简历状态切换为画像已就绪', resumeTextUi.includes('画像已就绪'), resumeTextUi.slice(0, 220));
   check('分析调用只发送服务端配置，前端没有模型密钥', fakeCalls.every((c) => c.authorization === 'Bearer test-key'));
+  check('首屏画像只展示摘要，组内明细和原文默认收起',
+    (await page.locator('[data-test=resume-profile-skills]').getAttribute('open')) === null
+      && (await page.locator('[data-test=resume-profile-skills]').innerText()).includes('SQL'));
+  const resumeCallsBeforeExpand = fakeCalls.filter((c) => c.system.includes('简历结构化助手')).length;
+  await page.screenshot({ path: path.join(out, 'resume-collapsed.png'), fullPage: true });
+  await page.locator('[data-test=resume-profile-skills] summary').click();
+  check('展开画像组后才显示原文证据，不触发模型',
+    (await page.locator('[data-test=resume-profile-skills]').innerText()).includes('原文：')
+      && fakeCalls.filter((c) => c.system.includes('简历结构化助手')).length === resumeCallsBeforeExpand,
+    'skill evidence');
+  await page.screenshot({ path: path.join(out, 'resume-expanded.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(200);
+  const resumeMobile = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
+  check('简历库手机单列无横向溢出', resumeMobile.scrollWidth <= resumeMobile.innerWidth + 1, JSON.stringify(resumeMobile));
+  await page.screenshot({ path: path.join(out, 'resume-mobile-390.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  const firstResumeId = await page.locator('[data-test=resume-current]').getAttribute('data-resume-id');
+  await page.setInputFiles('[data-test=resume-file]', resumeFile);
+  await page.waitForFunction(() => document.querySelector('[data-test=resume-current]')?.innerText.includes('画像已就绪')
+    && document.querySelectorAll('[data-test=resume-version-row]').length >= 1, null, { timeout: 20000 });
+  const secondResumeId = await page.locator('[data-test=resume-current]').getAttribute('data-resume-id');
+  check('同名文件连续上传形成独立版本，当前版本为最近创建项',
+    !!firstResumeId && !!secondResumeId && firstResumeId !== secondResumeId,
+    `${firstResumeId} -> ${secondResumeId}`);
+  await page.locator(`[data-test=resume-version-row][data-resume-id="${firstResumeId}"] [data-test=resume-version-view]`).click();
+  await page.waitForSelector('[data-test=resume-preview]');
+  await page.waitForFunction(() => document.querySelector('[data-test=resume-preview]')?.innerText.includes('星河科技'), null, { timeout: 10000 });
+  const previewText = await page.locator('[data-test=resume-preview]').innerText();
+  const previewCurrentId = await page.locator('[data-test=resume-current]').getAttribute('data-resume-id');
+  check('预览旧版本不改变当前版本，预览显示完整文本',
+    previewText.includes('预览版本')
+      && previewText.includes('星河科技')
+      && previewCurrentId === secondResumeId,
+    `preview=${previewText.slice(0, 120)} current=${previewCurrentId} expected=${secondResumeId}`);
+  await page.locator('[data-test=resume-preview] [data-test=resume-preview-current]').click();
+  await page.waitForFunction((id) => document.querySelector('[data-test=resume-current]')?.getAttribute('data-resume-id') === id, firstResumeId);
+  check('历史版本设为当前后唯一当前切换，预览不写入内容',
+    (await page.locator('[data-test=resume-current]').getAttribute('data-resume-id')) === firstResumeId);
+  await page.locator(`[data-test=resume-version-row][data-resume-id="${secondResumeId}"] [data-test=resume-version-current]`).click();
+  await page.waitForFunction((id) => document.querySelector('[data-test=resume-current]')?.getAttribute('data-resume-id') === id, secondResumeId);
+  check('切换回最近版本后匹配仍使用当前版本', (await page.locator('[data-test=resume-current]').getAttribute('data-resume-id')) === secondResumeId);
 
-  await page.click('[data-test=compare-run]');
-  await page.waitForSelector('[data-test=compare-report]', { timeout: 20000 });
-  const compareText = await page.locator('[data-test=compare-report]').innerText();
-  check('岗位对比报告包含两个岗位、已投递标识与差异', compareText.includes('星河科技')
-    && compareText.includes('青禾网络') && compareText.includes('已投递') && compareText.includes('主要差异'));
-
+  await page.goto(`/?panel=career&section=match&app=${encodeURIComponent(pending.application_id)}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=recommend-run]', { timeout: 20000 });
   await page.click('[data-test=recommend-run]');
   await page.waitForSelector('[data-test=recommend-report]', { timeout: 20000 });
   const recommendText = await page.locator('[data-test=recommend-report]').innerText();
   check('推荐只出现未投递岗位，并单独标记无 JD 候选', recommendText.includes('青禾网络')
     && recommendText.includes('列表公司') && recommendText.includes('未纳入确定推荐'));
+  const recommendCards = page.locator('[data-test=recommend-job]').first().locator('.tn-recommend-card');
+  check('推荐卡分推荐理由、匹配优势、主要缺口三块', (await recommendCards.count()) === 3
+    && (await recommendCards.nth(0).innerText()).includes('推荐理由')
+    && (await recommendCards.nth(1).innerText()).includes('匹配优势')
+    && (await recommendCards.nth(2).innerText()).includes('主要缺口'));
+  const firstRecommendJob = page.locator('[data-test=recommend-job]').first();
+  check('推荐卡先列两条，更多内容可展开', (await firstRecommendJob.locator('[data-test=recommend-more]').count()) === 3);
+  await firstRecommendJob.locator('[data-test=recommend-more]').first().click();
+  check('推荐卡展开其余条目后不丢失排名和岗位链接', (await firstRecommendJob.innerText()).includes('成长空间')
+    && (await firstRecommendJob.locator('a').count()) >= 1);
 
   /* 侧栏与单岗位匹配：真实按钮 -> 真实 API -> 本地假模型 */
   await page.goto(`/?panel=career&app=${encodeURIComponent(pending.application_id)}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-test=match-section]');
-  check('侧栏一级入口和账号邮箱可见，匹配分析为当前页', (await page.locator('[data-test=nav-ledger]').count()) === 1
+  check('侧栏一级入口、唯一设置入口和账号邮箱可见，匹配分析为当前页', (await page.locator('[data-test=nav-ledger]').count()) === 1
     && (await page.locator('[data-test=nav-reviews]').count()) === 1
+    && (await page.locator('[data-test=nav-settings]').count()) === 1
+    && (await page.locator('[data-test=open-settings-reminder]').count()) === 0
+    && (await page.locator('[data-test=download-plugin]').count()) === 0
     && (await page.locator('[data-test=nav-match].active').count()) === 1
     && (await page.textContent('[data-test=header-email]')).trim() === 'demo@tounar.local');
   check('岗位详情带入的单岗位默认选中', (await page.inputValue('[data-test=match-application]')) === pending.application_id);
@@ -208,6 +248,13 @@ try {
     (await page.locator('[data-test^=match-dimension-][data-dimension]').count()) === 6
       && (await page.locator('[data-test^=match-dimension-detail-]').evaluateAll((nodes) => nodes.every((n) => n.hidden))) === true
       && (await page.locator('.tn-match-core-summary').count()) === 0);
+  check('优势与差距按技能/工具/经历/项目分组，首屏组头收起',
+    (await page.locator('[data-test^=match-summary-]').count()) >= 4
+      && (await page.locator('[data-test=match-summary-skill]').getAttribute('open')) === null
+      && (await page.locator('[data-test=match-summary-tool]').getAttribute('open')) === null);
+  await page.click('[data-test=match-summary-tool] summary');
+  check('展开一组才显示状态分组与逐条依据', (await page.locator('[data-test=match-summary-tool]').innerText()).includes('优势')
+    && (await page.locator('[data-test=match-summary-tool]').innerText()).includes('待补证'));
   await page.click('[data-test=match-dim-toggle-hard_gate]');
   check('门槛表只在硬性门槛卡片展开后出现', (await page.locator('[data-test=match-gates]').count()) === 1
     && (await page.locator('[data-test=match-dimension-detail-hard_gate]').isVisible()));
@@ -274,15 +321,17 @@ try {
   await page.click('[data-test=match-rerun-action]');
   await page.waitForFunction((oldId) => document.querySelector('[data-test=match-report]')?.getAttribute('data-report-id') !== oldId, firstReportId, { timeout: 20000 });
   const secondReportId = await page.locator('[data-test=match-report]').getAttribute('data-report-id');
-  check('重跑生成新报告，旧报告仍可查看', secondReportId && secondReportId !== firstReportId
-    && (await page.locator('[data-test=match-history] option').count()) >= 2);
+  await page.click('[data-test=match-history-toggle]');
+  const historyCount = await page.locator('[data-test=match-history-item]').count();
+  check('重跑生成新报告，历史入口在岗位行且列表可展开', secondReportId && secondReportId !== firstReportId && historyCount >= 2,
+    `history=${historyCount}`);
 
   await page.route(`**/api/v1/ai/reports/${encodeURIComponent(firstReportId)}`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 650));
     await route.continue();
   });
-  await page.selectOption('[data-test=match-history]', firstReportId);
-  await page.selectOption('[data-test=match-history]', secondReportId);
+  await page.locator(`[data-test=match-history-item][data-report-id="${firstReportId}"]`).click();
+  await page.locator(`[data-test=match-history-item][data-report-id="${secondReportId}"]`).click();
   await page.waitForTimeout(900);
   check('同岗位历史报告先点 A 后点 B，较早请求不能覆盖 B',
     (await page.locator('[data-test=match-report]').getAttribute('data-report-id')) === secondReportId);
@@ -323,18 +372,12 @@ try {
   const compareCallCount = () => fakeCalls.filter((c) => c.system.includes('岗位比较助手')).length;
   const compareBefore = compareCallCount();
   const compareIds = [applied.json.data.id, pending.application_id].map(encodeURIComponent).join(',');
-  await page.goto(`/?panel=career&apps=${compareIds}`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-test=compare-section]');
-  await page.waitForTimeout(500);
-  check('直接访问旧对比深链不自动重跑模型', compareCallCount() === compareBefore);
   await page.goto(`/?panel=career&apps=${compareIds}&autorun=compare`, { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-test=compare-report]', { timeout: 20000 });
-  check('从台账主动“对比选中”只自动运行一次并消费 autorun', compareCallCount() === compareBefore + 1
-    && !page.url().includes('autorun='));
-  await page.reload({ waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-test=compare-section]');
-  await page.waitForTimeout(500);
-  check('刷新已消费的对比链接不重复请求模型', compareCallCount() === compareBefore + 1);
+  await page.waitForSelector('[data-test=match-section]');
+  check('旧对比深链安全落到单岗选岗页，零模型调用、零对比区',
+    compareCallCount() === compareBefore
+      && (await page.locator('[data-test=compare-section]').count()) === 0
+      && !page.url().includes('apps=') && !page.url().includes('autorun='));
   await page.goto('/?panel=career&section=resume', { waitUntil: 'networkidle' });
   check('简历库侧栏入口复用原简历上传与画像视图', (await page.locator('[data-test=nav-resume].active').count()) === 1
     && (await page.locator('[data-test=page-title]').innerText()).includes('简历库')
@@ -367,6 +410,22 @@ try {
   await page.waitForTimeout(300);
   check('选择搜索结果不自动触发模型', fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === modelCallsBeforeBulk);
 
+  for (let i = 0; i < 22; i += 1) {
+    const res = await server.request('/api/v1/resumes/text', {
+      method: 'POST', cookie: login.cookie,
+      body: { text: `批量版本 ${i}\n熟悉 SQL 与用户研究。` + ' 数据分析经历。'.repeat(60), filename: `批量同名简历.txt` }
+    });
+    if (res.status !== 201) throw new Error(`resume seed ${i}: ${res.status}`);
+  }
+  await page.goto('/?panel=career&section=resume', { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=resume-history]');
+  const firstVersionPage = await page.locator('[data-test=resume-version-row]').count();
+  await page.waitForSelector('[data-test=resume-history-more]');
+  await page.click('[data-test=resume-history-more]');
+  await page.waitForFunction((before) => document.querySelectorAll('[data-test=resume-version-row]').length > before, firstVersionPage, { timeout: 10000 });
+  const secondVersionPage = await page.locator('[data-test=resume-version-row]').count();
+  check('简历历史超过 20 份仍可分页找回同名版本', firstVersionPage === 19 && secondVersionPage >= 23,
+    `first=${firstVersionPage} second=${secondVersionPage}`);
   check('AI 分析没有改变岗位状态', (await server.request(`/api/v1/applications/${pending.application_id}`, { cookie: login.cookie })).json.data.status === 'pending');
   check('页面无未捕获异常', errors.length === 0, errors.join('; '));
   await page.screenshot({ path: path.join(out, 'career-ai.png'), fullPage: true });

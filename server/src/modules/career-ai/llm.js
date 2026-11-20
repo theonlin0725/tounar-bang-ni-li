@@ -649,17 +649,34 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
   if (gateDimensionIndex >= 0) dimensions[gateDimensionIndex] = gateDimension;
   else dimensions = [gateDimension, ...dimensions.filter((d) => d.key !== 'hard_gate')];
 
+  const TOOL_ITEM = /(SQL|Python|Java|C\+\+|C#|Golang|JavaScript|TypeScript|Excel|Tableau|Power\s?BI|Figma|Photoshop|Git|Linux|Docker|Kubernetes|AWS|Azure|Office|SPSS|MATLAB|软件|工具|平台|框架|编程语言)/i;
+  const PROJECT_ITEM = /(项目|作品|案例|交付|上线|落地|系统|dashboard|看板)/i;
+  const MISSING_ITEM = /(未发现|未提及|未呈现|未体现|暂无|资料不足|不详|待补|没有找到|查过的简历)/i;
+  function itemTopic(dimensionKey, value) {
+    const raw = String(value || '');
+    if (PROJECT_ITEM.test(raw)) return 'project';
+    if (TOOL_ITEM.test(raw)) return 'tool';
+    if (dimensionKey === 'skills') return 'skill';
+    if (dimensionKey === 'experience') return 'experience';
+    return 'other';
+  }
+  function gapGroup(d, value) {
+    if (d.conclusion === '无法判断' || d.user_evidence === '资料不足' || MISSING_ITEM.test(String(value || ''))) return '待补证';
+    return '明确差距';
+  }
   const dimStrengths = dimensions.flatMap((d) => d.strengths.map((item) => ({
     dimension: d.name, key: d.key, dimension_key: d.key, text: item,
-    evidence: d.evidence,
+    evidence: d.evidence, evidence_scope: 'dimension',
     user_evidence: d.evidence.filter((e) => e.source === 'resume' || e.source === 'user_confirmed'),
+    topic: itemTopic(d.key, item), status_group: '优势',
     kind: '有证据的优势'
   })));
   const dimGaps = dimensions.flatMap((d) => d.gaps.map((item) => ({
     dimension: d.name, key: d.key, dimension_key: d.key, text: item, requirement: d.requirement,
-    evidence: d.evidence,
+    evidence: d.evidence, evidence_scope: 'dimension',
     user_evidence: d.evidence.filter((e) => e.source === 'resume' || e.source === 'user_confirmed'),
-    next_step: d.next_step,
+    next_step: d.next_step, topic: itemTopic(d.key, item),
+    status_group: gapGroup(d, item),
     kind: d.conclusion === '无法判断' || d.user_evidence === '资料不足' ? '资料不足' : '明确差距'
   })));
   const userTextAll = sourceText(resumeText, confirmedText);

@@ -26,7 +26,8 @@ try {
   const page=await context.newPage();await page.goto(server.base);
   const request=(action,payload={})=>page.evaluate(async({action,payload})=>{const m=await import('/assets/js/views/plugin-access.js');return m.extensionRequest(action,payload);},{action,payload});
   const status=await request('status');check('backend permission excluded from site count',status.groups.every(g=>g.granted.length===0));
-  await page.locator('[data-test="open-settings-data"]').click();
+  await page.locator('[data-test="nav-settings"]').click();
+  await page.locator('[data-test="settings-tab-data"]').click();
   const card=page.locator('[data-test="site-access-card"]');
   await card.getByText('已授权 0 个网站',{exact:true}).waitFor();
   check('manual pairing fallback remains in settings',await page.locator('[data-test="pairing-section"] [data-test="pair-code"]').count()===1);
@@ -47,7 +48,8 @@ try {
   await card.getByRole('textbox',{name:'搜索公司或域名'}).fill('');
   await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).uncheck();
   await page.waitForTimeout(300);
-  await page.reload();await page.locator('[data-test="open-settings-data"]').click();
+  await page.reload();await page.locator('[data-test="nav-settings"]').click();
+  await page.locator('[data-test="settings-tab-data"]').click();
   await page.locator('[data-test="site-access-summary"]').getByText('已授权 0 个网站').waitFor();
   check('explicit deselection survives reload',!await page.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
   const pending=await sw.evaluate(async base=>startPairing({serverUrl:base,deviceName:'Browser test'}),server.base);

@@ -5,11 +5,10 @@ import { confirmPluginConnection, openSiteManager, promptPluginConnection } from
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
 import { renderLogin } from './views/login.js';
-import { renderLedger, openSettings } from './views/ledger.js?v=20261120-1';
+import { renderLedger } from './views/ledger.js?v=20261120-1';
 import { renderLanding } from './views/landing.js';
-import { renderMailAdmin } from './views/mail-admin.js';
 import { renderCareer } from './views/career.js';
-import { pluginDownloadLink, openPluginHelp } from './views/plugin-help.js';
+import { renderSettingsPage } from './views/settings.js';
 
 export const App = {
   gen: 0,
@@ -26,7 +25,7 @@ function route() {
   const params = new URLSearchParams(location.search);
   return {
     name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
-    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), autorun: params.get('autorun')
+    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun')
   };
 }
 
@@ -65,13 +64,29 @@ export async function enterApp(panel = null) {
   clear(root);
   try { const me = await api.get('/api/v1/me'); if (isStale(gen)) return; App.user = me.data.user; } catch (err) { if (isStale(gen)) return; if (err.status === 401) return; root.append(h('p', { text: errorText(err) })); return; }
   const currentRoute = route();
+  if (currentRoute.panel === 'career' && (currentRoute.apps || currentRoute.autorun)) {
+    const url = new URL(location.href);
+    url.searchParams.delete('apps');
+    url.searchParams.delete('autorun');
+    history.replaceState({}, '', `${url.pathname}${url.search}`);
+    currentRoute.apps = null;
+    currentRoute.autorun = null;
+  }
   const activePanel = panel || currentRoute.panel;
   const shell = buildShell({ panel: activePanel, view: currentRoute.view, section: currentRoute.section, gen });
   root.append(shell);
   const main = shell.querySelector('#tn-main');
-  if (activePanel === 'mail-admin') {
-    await renderMailAdmin(main, { isCurrent: () => !isStale(gen) });
-    if (!isStale(gen)) promptPluginConnection({automatic:true});
+  if (['settings', 'mail-admin', 'plugin-connect', 'plugin-sites'].includes(activePanel)) {
+    const requestedTab = activePanel === 'mail-admin' ? 'mail-admin'
+      : ['plugin-connect', 'plugin-sites'].includes(activePanel) ? 'data' : currentRoute.tab;
+    await renderSettingsPage(main, {
+      tab: requestedTab || 'reminder',
+      isCurrent: () => !isStale(gen),
+      onChanged: () => {}
+    });
+    if (isStale(gen)) return;
+    if (activePanel === 'plugin-connect') confirmPluginConnection();
+    else if (activePanel === 'plugin-sites') openSiteManager();
     return;
   }
   if (activePanel === 'career') {
@@ -127,8 +142,7 @@ function navState({ panel, view, section }) {
   if (panel === 'reviews' || view === 'reviews') return 'reviews';
   if (view === 'viewed') return 'viewed';
   if (view === 'archived') return 'archived';
-  if (panel === 'mail-admin') return 'mail-admin';
-  if (['settings', 'plugin-connect', 'plugin-sites'].includes(panel)) return 'tools';
+  if (['settings', 'mail-admin', 'plugin-connect', 'plugin-sites'].includes(panel)) return 'settings';
   return 'applied';
 }
 
@@ -166,18 +180,9 @@ function buildShell({ panel, view, section, gen }) {
     navLink({ href: '/?panel=career&section=match', label: '匹配分析', test: 'nav-match', active: nav === 'match', icon: 'match' }),
     navLink({ href: '/?panel=career&section=resume', label: '简历库', test: 'nav-resume', active: nav === 'resume', icon: 'resume' })
   );
-  const downloadPlugin = pluginDownloadLink({
-    class: 'tn-nav-item tn-nav-button', label: '下载插件', test: 'download-plugin'
-  });
-  downloadPlugin.replaceChildren(navIcon('resume'), h('span', { class: 'tn-nav-label', text: '下载插件' }));
-  downloadPlugin.addEventListener('click', closeMobileNav);
   const tools = h('div', { class: 'tn-nav-section' },
-    navGroup('设置与工具'),
-    navButton({ label: '提醒设置', test: 'open-settings-reminder', icon: 'settings', onclick: () => { closeMobileNav(); openSettings({ tab: 'reminder' }); } }),
-    navButton({ label: '数据与授权', test: 'open-settings-data', icon: 'settings', onclick: () => { closeMobileNav(); openSettings({ tab: 'data' }); } }),
-    downloadPlugin,
-    navButton({ label: '安装指引', test: 'plugin-help', icon: 'ledger', onclick: () => { closeMobileNav(); openPluginHelp(); } }),
-    App.user?.is_admin ? navLink({ href: '/?panel=mail-admin', label: '邮件测试与模板', test: 'open-mail-admin', icon: 'settings', active: nav === 'mail-admin' }) : null
+    navGroup('设置'),
+    navLink({ href: '/?panel=settings', label: '设置', test: 'nav-settings', active: nav === 'settings', icon: 'settings' })
   );
   const account = h('div', { class: 'tn-account' },
     h('div', { class: 'tn-account-label', text: App.user?.is_admin ? '当前账号 · 管理员' : '当前账号' }),
@@ -207,9 +212,8 @@ function buildShell({ panel, view, section, gen }) {
   }, h('span', { class: 'tn-menu-lines', 'aria-hidden': 'true' }));
   const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
     : view === 'viewed' ? '看过没投' : view === 'archived' ? '已归档'
-      : view === 'mail-admin' ? '设置与工具' : view === 'tools' ? '设置与工具' : '投递台账';
-  const titleTag = nav === 'mail-admin' ? 'div' : 'h1';
-  const pageTitleEl = h(titleTag, { class: 'tn-topbar-title', 'data-test': 'page-title', text: titleFor(nav) });
+      : view === 'settings' ? '设置' : '投递台账';
+  const pageTitleEl = h('h1', { class: 'tn-topbar-title', 'data-test': 'page-title', text: titleFor(nav) });
   const topbar = h('header', { class: 'tn-topbar' },
     h('div', { class: 'tn-topbar-left' }, menuButton,
       h('div', {}, h('div', { class: 'tn-topbar-kicker', text: 'TOUNAR · 帮你理' }), pageTitleEl)),
@@ -260,7 +264,7 @@ function buildShell({ panel, view, section, gen }) {
       if (isActive) node.setAttribute('aria-current', 'page');
       else node.removeAttribute('aria-current');
     }
-    for (const test of ['nav-match', 'nav-resume', 'open-mail-admin']) {
+    for (const test of ['nav-match', 'nav-resume', 'nav-settings']) {
       const node = sidebar.querySelector(`[data-test="${test}"]`);
       if (!node) continue;
       node.classList.remove('active');
@@ -347,5 +351,10 @@ onUnauthorized(() => {
 export function setUser(user) { App.user = user; }
 
 export const appExports = { buildShell, toast };
+
+window.addEventListener('popstate', () => {
+  if (App.loggedIn) enterApp();
+  else boot();
+});
 
 boot();

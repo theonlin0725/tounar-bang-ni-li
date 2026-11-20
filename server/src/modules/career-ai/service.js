@@ -4,7 +4,7 @@ import {
   AppError, clipText, newId, normalizeWhitespace, nowIso, safeJsonParse
 } from '../../util.js';
 import { extractResumeText, MAX_RESUME_TEXT } from './resume-parser.js';
-import { aiAvailable, analyzeResumeProfile, compareJobs, generateInterviewQuestions, matchJob, recommendJobs } from './llm.js';
+import { aiAvailable, analyzeResumeProfile, generateInterviewQuestions, matchJob, recommendJobs } from './llm.js';
 
 const MATCH_DIMENSIONS = ['hard_gate', 'skills', 'experience', 'industry', 'preference', 'achievements'];
 const CORRECTION_FIELDS = ['skill', 'experience', 'industry', 'achievement', 'preference', 'other'];
@@ -36,7 +36,7 @@ function storeResume({ ownerId, filename, mime, size, text, truncated }) {
   return transaction(() => {
     const id = newId('resume');
     const at = nowIso();
-    run('UPDATE resumes SET is_current = 0, updated_at = ? WHERE owner_id = ? AND is_current = 1', [at, ownerId]);
+    run('UPDATE resumes SET is_current = 0 WHERE owner_id = ? AND is_current = 1', [ownerId]);
     run(`INSERT INTO resumes
       (id, owner_id, filename, mime, size, text, text_chars, profile_json, status, is_current, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'parsed', 1, ?, ?)`,
@@ -61,8 +61,42 @@ export async function createResumeFromText({ ownerId, text, filename = '粘贴�
   });
 }
 
-export function listResumes(ownerId) {
-  return all('SELECT * FROM resumes WHERE owner_id = ? ORDER BY created_at DESC LIMIT 20', [ownerId]).map((row) => projection(row));
+function encodeResumeCursor(row) {
+  return Buffer.from(`${row.created_at}\u0000${row.id}`, 'utf8').toString('base64url');
+}
+function decodeResumeCursor(value) {
+  if (!value) return null;
+  try {
+    const [createdAt, id] = Buffer.from(String(value), 'base64url').toString('utf8').split('\u0000');
+    if (!createdAt || !id) return null;
+    return { createdAt, id };
+  } catch { return null; }
+}
+export function listResumes(ownerId, { limit = 20, cursor = null } = {}) {
+  const size = Math.max(1, Math.min(50, Number(limit) || 20));
+  const at = decodeResumeCursor(cursor);
+  const rows = at
+    ? all(`SELECT * FROM resumes WHERE owner_id = ? AND (created_at < ? OR (created_at = ? AND id < ?))
+        ORDER BY created_at DESC, id DESC LIMIT ?`, [ownerId, at.createdAt, at.createdAt, at.id, size + 1])
+    : all(`SELECT * FROM resumes WHERE owner_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`, [ownerId, size + 1]);
+  const hasMore = rows.length > size;
+  const items = rows.slice(0, size);
+  return {
+    items: items.map((row) => projection(row)),
+    page: { has_more: hasMore, next_cursor: hasMore && items.length ? encodeResumeCursor(items[items.length - 1]) : null }
+  };
+}
+
+export function setCurrentResume(ownerId, resumeId) {
+  return transaction(() => {
+    const row = one('SELECT * FROM resumes WHERE id = ? AND owner_id = ?', [String(resumeId || ''), ownerId]);
+    if (!row) throw new AppError(404, 'NOT_FOUND', '简历不存在');
+    if (!row.is_current) {
+      run('UPDATE resumes SET is_current = 0 WHERE owner_id = ? AND is_current = 1', [ownerId]);
+      run('UPDATE resumes SET is_current = 1 WHERE id = ? AND owner_id = ?', [row.id, ownerId]);
+    }
+    return projection(one('SELECT * FROM resumes WHERE id = ? AND owner_id = ?', [row.id, ownerId]), { includeText: true });
+  });
 }
 
 export function currentResume(ownerId) {
@@ -148,38 +182,6 @@ function finishReport(id, ownerId, result) {
 function failReport(id, ownerId, err) {
   run("UPDATE ai_reports SET status = 'failed', error_code = ?, error_message = ?, completed_at = ? WHERE id = ? AND owner_id = ?",
     [err.code || 'AI_FAILED', clipText(err.message || 'AI 分析失败', 300), nowIso(), id, ownerId]);
-}
-
-export async function compareApplications({ ownerId, applicationIds }) {
-  const ids = [...new Set((Array.isArray(applicationIds) ? applicationIds : []).map(String))];
-  if (ids.length < 2 || ids.length > 6) throw new AppError(400, 'VALIDATION_ERROR', '请选择 2–6 个岗位进行对比');
-  const { row: resume, profile } = requireReadyResume(ownerId);
-  if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法进行岗位对比', { retryable: false });
-  const jobs = ids.map((id) => {
-    const app = getApplication(ownerId, id);
-    if (!app) throw new AppError(404, 'NOT_FOUND', '所选岗位不存在或不属于当前账号');
-    const jd = String(app.jd_text || app.jd_summary || '');
-    return {
-      id: app.id, company_name: app.company_name, job_title: app.job_title, status: app.status,
-      has_applied: !!app.has_applied, location: app.location, recruitment_batch: app.recruitment_batch,
-      job_url: app.job_url || null, jd_text: app.jd_text || '', jd_summary: app.jd_summary || '',
-      information_sufficient: jd.length >= 80
-    };
-  });
-  const reportId = startReport({ ownerId, kind: 'compare', resumeId: resume.id, applicationIds: ids });
-  try {
-    const result = await compareJobs({ profile, jobs });
-    result.selected_jobs = jobs.map((j) => ({
-      application_id: j.id, company_name: j.company_name, job_title: j.job_title,
-      status: j.status, has_applied: j.has_applied, job_url: j.job_url,
-      information_sufficient: j.information_sufficient
-    }));
-    result.resume_id = resume.id;
-    return finishReport(reportId, ownerId, result);
-  } catch (err) {
-    failReport(reportId, ownerId, err);
-    throw err;
-  }
 }
 
 function matchCorrections(ownerId, applicationId) {
@@ -273,24 +275,53 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
   }
 }
 
-export function listMatchReports(ownerId, applicationId) {
-  const rows = all("SELECT * FROM ai_reports WHERE owner_id = ? AND kind = 'match' ORDER BY created_at DESC LIMIT 20", [ownerId]);
-  return rows.filter((row) => {
-    const ids = safeJsonParse(row.application_ids_json, []);
-    return !applicationId || ids.includes(applicationId);
-  }).slice(0, 10).map((row) => {
+function encodeReportCursor(row) {
+  return Buffer.from(`${row.created_at}\u0000${row.id}`, 'utf8').toString('base64url');
+}
+function decodeReportCursor(value) {
+  if (!value) return null;
+  try {
+    const [createdAt, id] = Buffer.from(String(value), 'base64url').toString('utf8').split('\u0000');
+    return createdAt && id ? { createdAt, id } : null;
+  } catch { return null; }
+}
+export function listMatchReports(ownerId, applicationId, { limit = 12, cursor = null } = {}) {
+  const size = Math.max(1, Math.min(50, Number(limit) || 12));
+  const at = decodeReportCursor(cursor);
+  const filters = ["owner_id = ?", "kind = 'match'"];
+  const params = [ownerId];
+  if (applicationId) {
+    // 先在 SQL 中按岗位收窄，再排序分页；不能让其他岗位占满最近 20 条。
+    filters.push("application_ids_json LIKE ?");
+    params.push(`%"${String(applicationId)}"%`);
+  }
+  if (at) {
+    filters.push('(created_at < ? OR (created_at = ? AND id < ?))');
+    params.push(at.createdAt, at.createdAt, at.id);
+  }
+  params.push(size);
+  const rows = all(`SELECT * FROM ai_reports WHERE ${filters.join(' AND ')}
+    ORDER BY created_at DESC, id DESC LIMIT ?`, params);
+  const items = rows.map((row) => {
     const report = reportProjection(row, { includeContext: false });
+    const ids = report.application_ids || [];
+    if (applicationId && !ids.includes(applicationId)) return null;
+    const resume = one('SELECT filename, updated_at FROM resumes WHERE id = ? AND owner_id = ?', [row.resume_id, ownerId]);
     return {
       id: report.id, status: report.status, created_at: report.created_at,
       completed_at: report.completed_at, parent_report_id: report.parent_report_id,
       report_version: report.report_version,
-      application_ids: report.application_ids,
+      application_ids: ids,
+      resume_filename: report.result?.resume?.filename || resume?.filename || null,
+      resume_updated_at: report.result?.resume?.updated_at || resume?.updated_at || null,
       ability: report.result?.ability || null,
       priority: report.result?.priority || null,
       job: report.result?.job || null,
       error_code: report.error_code, error_message: report.error_message
     };
-  });
+  }).filter(Boolean);
+  const hasMore = rows.length >= size;
+  return { items, page: { has_more: hasMore, next_cursor: hasMore && rows.length ? encodeReportCursor(rows[rows.length - 1]) : null } };
 }
 
 export function addMatchCorrection({

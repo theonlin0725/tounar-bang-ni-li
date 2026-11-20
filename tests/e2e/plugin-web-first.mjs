@@ -70,7 +70,7 @@ try {
  const recheckNav=noPlugin.waitForNavigation({waitUntil:'domcontentloaded'});
  await noPlugin.getByRole('button',{name:'已安装，刷新页面重新检测',exact:true}).click();
  await recheckNav;
- await noPlugin.locator('[data-test=open-settings-data]').waitFor();
+ await noPlugin.locator('[data-test=nav-settings]').waitFor();
  check('installed recheck reloads the page',true);
  await noPlugin.evaluate(async()=>{const m=await import('/assets/js/views/plugin-access.js');await m.promptPluginConnection();});
  await noPlugin.locator('[data-test=plugin-install-modal]').waitFor({timeout:15000});

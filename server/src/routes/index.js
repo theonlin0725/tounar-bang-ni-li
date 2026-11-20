@@ -34,9 +34,9 @@ import {
 } from '../domain/deletion.js';
 import { runTick, schedulerStatus } from '../jobs/scheduler.js';
 import {
-  addMatchCorrection, aiStatus, analyzeResume, compareApplications, correctResumeText, createResumeFromBuffer,
+  addMatchCorrection, aiStatus, analyzeResume, correctResumeText, createResumeFromBuffer,
   createResumeFromText, currentResume, getReport, getResume, interviewQuestionsForReport,
-  listMatchCorrections, listMatchReports, listResumes, matchApplication, recommendForOwner
+  listMatchCorrections, listMatchReports, listResumes, matchApplication, recommendForOwner, setCurrentResume
 } from '../modules/career-ai/service.js';
 
 import { registerMailAdminRoutes } from '../modules/mail-push/admin.js';
@@ -417,7 +417,11 @@ export function registerRoutes() {
   });
   route('GET', '/api/v1/resumes', (req) => {
     const auth = requireAuth(req);
-    return { data: listResumes(auth.ownerId) };
+    const result = listResumes(auth.ownerId, {
+      limit: req.query.get('limit'),
+      cursor: req.query.get('cursor')
+    });
+    return { data: result.items, page: result.page };
   });
   route('GET', '/api/v1/resumes/current', (req) => {
     const auth = requireAuth(req);
@@ -450,9 +454,12 @@ export function registerRoutes() {
     const auth = requireAuth(req);
     return { data: correctResumeText(auth.ownerId, req.params.id, req.body.text) };
   });
-  route('POST', '/api/v1/ai/compare', async (req) => {
+  route('POST', '/api/v1/resumes/:id/current', (req) => {
     const auth = requireAuth(req);
-    return { data: await compareApplications({ ownerId: auth.ownerId, applicationIds: req.body.application_ids }) };
+    return { data: setCurrentResume(auth.ownerId, req.params.id) };
+  });
+  route('POST', '/api/v1/ai/compare', () => {
+    throw new AppError(410, 'AI_COMPARE_RETIRED', '多岗位对比已下线；请使用单岗位匹配或未投递岗位推荐。');
   });
   route('POST', '/api/v1/ai/match', async (req) => {
     const auth = requireAuth(req);
@@ -464,7 +471,10 @@ export function registerRoutes() {
   });
   route('GET', '/api/v1/ai/match-reports', (req) => {
     const auth = requireAuth(req);
-    return { data: listMatchReports(auth.ownerId, req.query.get('application_id') || null) };
+    const result = listMatchReports(auth.ownerId, req.query.get('application_id') || null, {
+      limit: req.query.get('limit'), cursor: req.query.get('cursor')
+    });
+    return { data: result.items, page: result.page };
   });
   route('GET', '/api/v1/ai/reports/:id/corrections', (req) => {
     const auth = requireAuth(req);

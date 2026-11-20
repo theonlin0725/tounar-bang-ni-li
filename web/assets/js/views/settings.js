@@ -1,4 +1,6 @@
 import { createSiteAccessCard, promptPluginConnection } from './plugin-access.js';
+import { pluginInstallContent } from './plugin-help.js';
+import { renderMailAdmin } from './mail-admin.js';
 /* 提醒设置 + 数据与授权：全部敏感操作显式、可解释；外部条件失败如实展示，不伪装成功。 */
 
 import { api, ApiError, errorText } from '../api.js';
@@ -74,6 +76,14 @@ const PROGRESS_VALUE = {
 };
 
 export function openSettings({ tab = 'reminder', onChanged } = {}) {
+  return buildSettings({ tab, onChanged, page: false });
+}
+
+export function renderSettingsPage(container, { tab = 'reminder', onChanged, isCurrent = null } = {}) {
+  return buildSettings({ tab, onChanged, page: true, container, isCurrent });
+}
+
+function buildSettings({ tab = 'reminder', onChanged, page = false, container = null, isCurrent = null } = {}) {
   const genAtOpen = App.gen;
   const timers = new Set();
   const state = {
@@ -86,18 +96,24 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
   };
   let disposed = false;
   let siteAccessCard = null;
+  const stillCurrent = () => !disposed && App.gen === genAtOpen && (!isCurrent || isCurrent());
 
-  const tabRow = h('div', { class: 'tn-tabs', style: { marginBottom: '16px' } });
-  const panelHost = h('div', {});
-  const body = h('div', {}, tabRow, panelHost);
-
-  const modal = openModal({
-    title: '设置与授权',
-    subtitle: '提醒设置 · 插件绑定 · QQ 邮箱 · 删除数据',
-    body,
-    onClose: () => { disposed = true; siteAccessCard?.dispose(); for (const t of timers) clearTimeout(t); timers.clear(); },
-    testid: 'settings-modal'
-  });
+  const tabRow = h('div', { class: 'tn-tabs tn-settings-tabs', style: { marginBottom: '16px' } });
+  const panelHost = h('div', { class: 'tn-settings-panel' });
+  const body = h('div', { class: 'tn-settings-body' }, tabRow, panelHost);
+  let modal = null;
+  if (page) {
+    container.append(h('div', { class: 'tn-settings-page', 'data-test': 'settings-page' }, body));
+    modal = { close: () => {} };
+  } else {
+    modal = openModal({
+      title: '设置与授权',
+      subtitle: '提醒设置 · 插件绑定 · QQ 邮箱 · 删除数据',
+      body,
+      onClose: () => { disposed = true; siteAccessCard?.dispose(); for (const t of timers) clearTimeout(t); timers.clear(); },
+      testid: 'settings-modal'
+    });
+  }
 
   function later(fn, ms) {
     const t = setTimeout(() => { timers.delete(t); if (!disposed) fn(); }, ms);
@@ -106,17 +122,24 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
 
   function renderTabs() {
     clear(tabRow);
-    for (const [id, label] of [['reminder', '提醒设置'], ['data', '数据与授权']]) {
+    const tabs = [['reminder', '提醒设置'], ['data', '数据与授权'], ['install', '安装指引']];
+    if (state.me?.user?.is_admin) tabs.push(['mail-admin', '邮件测试与模板']);
+    if (!tabs.some(([id]) => id === state.activeTab) && state.activeTab !== 'mail-admin') state.activeTab = 'reminder';
+    for (const [id, label] of tabs) {
       tabRow.append(h('button', {
         class: `tn-tab${state.activeTab === id ? ' active' : ''}`, type: 'button', 'data-test': `settings-tab-${id}`,
         text: label,
-        onclick: () => { state.activeTab = id; renderTabs(); renderPanel(); }
+        onclick: () => {
+          state.activeTab = id;
+          if (page) history.pushState({}, '', `/?panel=settings&tab=${encodeURIComponent(id)}`);
+          renderTabs(); renderPanel();
+        }
       }));
     }
   }
 
   function renderPanel() {
-    if (disposed) return;
+    if (!stillCurrent()) return;
     siteAccessCard?.dispose();
     siteAccessCard = null;
     clear(panelHost);
@@ -135,7 +158,12 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
       return;
     }
     if (state.activeTab === 'reminder') renderReminderPanel();
-    else renderDataPanel();
+    else if (state.activeTab === 'data') renderDataPanel();
+    else if (state.activeTab === 'install') renderInstallPanel();
+    else if (state.activeTab === 'mail-admin') {
+      if (state.me?.user?.is_admin) renderMailAdminPanel();
+      else panelHost.append(h('div', { class: 'tn-banner err', role: 'alert' }, h('div', { class: 'tn-banner-body', text: '仅管理员可访问邮件测试与模板。' })));
+    } else renderReminderPanel();
   }
 
   async function loadMe() {
@@ -144,14 +172,15 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
     renderPanel();
     try {
       const res = await api.get('/api/v1/me');
-      if (disposed || App.gen !== genAtOpen) return;
+      if (!stillCurrent()) return;
       state.me = res.data;
     } catch (err) {
-      if (disposed || App.gen !== genAtOpen) return;
+      if (!stillCurrent()) return;
       state.loadError = errorText(err);
     } finally {
-      if (!disposed && App.gen === genAtOpen) {
+      if (stillCurrent()) {
         state.loading = false;
+        renderTabs();
         renderPanel();
       }
     }
@@ -159,6 +188,19 @@ export function openSettings({ tab = 'reminder', onChanged } = {}) {
 
   function reloadMe() {
     return loadMe();
+  }
+
+  function renderInstallPanel() {
+    clear(panelHost);
+    panelHost.append(h('h2', { class: 'tn-settings-subtitle', text: '安装浏览器插件' }), pluginInstallContent());
+  }
+
+  function renderMailAdminPanel() {
+    renderMailAdmin(panelHost, { isCurrent: stillCurrent }).catch((err) => {
+      if (!stillCurrent()) return;
+      clear(panelHost);
+      panelHost.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
+    });
   }
 
   /* ==================== 提醒设置 ==================== */

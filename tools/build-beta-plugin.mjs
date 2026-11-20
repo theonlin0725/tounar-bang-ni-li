@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension/manifest.json'), 'utf8'));
 const version = manifest.version;
+const pluginHelpSource = fs.readFileSync(path.join(ROOT, 'web/assets/js/views/plugin-help.js'), 'utf8');
+if (!pluginHelpSource.includes(`PLUGIN_VERSION = '${version}'`)) {
+  throw new Error(`web plugin download version does not match manifest ${version}; update web/assets/js/views/plugin-help.js`);
+}
 const serverRaw = process.env.BETA_SERVER_URL || 'https://bangnili.app.workbuddy.host';
 const shareCode = process.env.SHARE_CODE || '';
 const serverUrl = `${serverRaw.replace(/\/$/, '')}${shareCode ? `/?sharecode=${encodeURIComponent(shareCode)}` : ''}`;

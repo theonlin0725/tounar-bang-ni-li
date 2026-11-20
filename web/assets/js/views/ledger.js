@@ -16,17 +16,8 @@ import { openSettings } from './settings.js';
 export { openSettings };
 
 const PAGE_SIZE = 20;
-const compareState = { owner: null, ids: new Set(), meta: new Map() };
-function ensureCompareOwner() {
-  const owner = App.user?.email || '';
-  if (compareState.owner === owner) return;
-  compareState.owner = owner;
-  compareState.ids.clear();
-  compareState.meta.clear();
-}
 
 export async function renderLedger(main, { gen, panel = null, applicationId = null, initialView = null } = {}) {
-  ensureCompareOwner();
   const initial = ['applied', 'viewed', 'archived', 'reviews'].includes(initialView) ? initialView : 'applied';
   const state = {
     view: initial,
@@ -48,7 +39,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     h('div', { id: 'tn-banner' }),
     h('div', { class: 'tn-toolbar', id: 'tn-toolbar' }),
     h('div', { class: 'tn-tabs', id: 'tn-tabs' }),
-    h('div', { class: 'tn-compare-bar', id: 'tn-compare-bar', 'data-test': 'compare-bar', hidden: true }),
     h('div', { id: 'tn-content' }),
     h('div', { class: 'tn-freshness', id: 'tn-freshness' })
   );
@@ -56,7 +46,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   const bannerEl = main.querySelector('#tn-banner');
   const toolbarEl = main.querySelector('#tn-toolbar');
   const tabsEl = main.querySelector('#tn-tabs');
-  const compareBarEl = main.querySelector('#tn-compare-bar');
   const contentEl = main.querySelector('#tn-content');
   const freshnessEl = main.querySelector('#tn-freshness');
 
@@ -154,44 +143,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     }
   }
 
-  /* ---------- 跨板块岗位勾选与 AI 对比入口 ---------- */
-  const isSelectableView = () => state.view === 'applied' || state.view === 'viewed';
-  function rememberSelection(item) {
-    compareState.meta.set(item.id, {
-      company_name: item.company_name || '',
-      job_title: item.job_title || '',
-      status: item.status,
-      has_applied: !!item.has_applied
-    });
-  }
-  function updateCompareBar() {
-    clear(compareBarEl);
-    const ids = [...compareState.ids];
-    if (!ids.length) { compareBarEl.hidden = true; return; }
-    compareBarEl.hidden = false;
-    const chips = h('div', { class: 'tn-compare-chips' });
-    for (const id of ids) {
-      const meta = compareState.meta.get(id) || {};
-      const label = [meta.company_name, meta.job_title].filter(Boolean).join(' · ') || id;
-      const remove = h('button', { class: 'tn-compare-x', type: 'button', title: '移出对比', 'aria-label': '移出对比', text: '×', onclick: () => {
-        compareState.ids.delete(id); compareState.meta.delete(id); updateCompareBar();
-        if (isSelectableView()) renderTable();
-      } });
-      chips.append(h('span', { class: 'tn-compare-chip', title: label }, h('span', { text: label }), remove));
-    }
-    const open = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'compare-open', text: `对比选中（${ids.length}）`, disabled: ids.length < 2, onclick: () => {
-      if (compareState.ids.size < 2) return;
-      location.href = '/?panel=career&autorun=compare&apps=' + encodeURIComponent([...compareState.ids].slice(0, 6).join(','));
-    } });
-    compareBarEl.append(h('div', { class: 'tn-compare-inner' },
-      h('strong', { text: 'AI 岗位对比' }),
-      chips,
-      h('span', { class: 'tn-grow' }),
-      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '清空', 'data-test': 'compare-clear', onclick: () => { compareState.ids.clear(); compareState.meta.clear(); updateCompareBar(); if (isSelectableView()) renderTable(); } }),
-      open
-    ));
-  }
-
   /* ---------- 表格 ---------- */
   function renderTable() {
     clear(contentEl);
@@ -214,20 +165,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     const card = h('div', { class: 'tn-table-card' });
     const scroll = h('div', { class: 'tn-table-scroll' });
     const table = h('table', { class: 'tn-table', 'data-test': 'ledger-table' });
-    const selectable = isSelectableView();
-    const selectAll = h('input', { type: 'checkbox', 'data-test': 'select-all', 'aria-label': '选择本页岗位' });
-    const someSelected = state.items.some((item) => compareState.ids.has(item.id));
-    selectAll.checked = state.items.length > 0 && state.items.every((item) => compareState.ids.has(item.id));
-    selectAll.indeterminate = someSelected && !selectAll.checked;
-    selectAll.addEventListener('change', () => {
-      for (const item of state.items) {
-        if (selectAll.checked) { compareState.ids.add(item.id); rememberSelection(item); }
-        else { compareState.ids.delete(item.id); compareState.meta.delete(item.id); }
-      }
-      renderTable();
-    });
     table.append(h('thead', {}, h('tr', {},
-      selectable ? h('th', { class: 'tn-select-col' }, selectAll) : null,
       h('th', { text: '公司' }), h('th', { text: '岗位' }), h('th', { text: 'JD 摘要' }),
       h('th', { text: '投递渠道' }), h('th', { text: '状态' }), h('th', { text: '已投天数' }),
       h('th', { text: '查看岗位' }), h('th', { text: '更新时间' })
@@ -238,25 +176,11 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     scroll.append(table);
     card.append(scroll, renderFooter());
     contentEl.append(card);
-    updateCompareBar();
   }
 
   function renderRow(item) {
     const tr = h('tr', { class: `tn-row-click${highlighted.has(item.id) ? ' tn-row-updated' : ''}`, 'data-test': 'ledger-row', 'data-app-id': item.id });
     tr.addEventListener('click', () => openDetailFor(item.id));
-    if (isSelectableView()) {
-      const cb = h('input', { type: 'checkbox', 'data-test': 'select-app', 'data-select-app-id': item.id, 'aria-label': `选择 ${item.company_name || ''} ${item.job_title || ''}` });
-      cb.checked = compareState.ids.has(item.id);
-      cb.addEventListener('click', (e) => e.stopPropagation());
-      cb.addEventListener('change', () => {
-        if (cb.checked) { compareState.ids.add(item.id); rememberSelection(item); }
-        else { compareState.ids.delete(item.id); compareState.meta.delete(item.id); }
-        updateCompareBar();
-      });
-      const cell = h('td', { class: 'tn-select-col' }, cb);
-      cell.addEventListener('click', (e) => e.stopPropagation());
-      tr.append(cell);
-    }
     const subParts = [['recruitment_batch','批次'],['location','城市']].map(([field,label]) => item[field] && item.field_confidence?.[field] !== 'low' ? item[field] : `${label}待补充`);
     const roundText = item.round_label || (item.interview_round ? `${item.interview_round} 面` : null);
     const fieldNode = (field, className = '') => {
@@ -471,7 +395,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
       if (seq !== reqSeq || isStale(myGen) || !mounted) return;
       const data = res.data;
       state.items = data.items;
-      for (const item of state.items) if (compareState.ids.has(item.id)) rememberSelection(item);
       state.stats = data.stats;
       state.counts = data.counts;
       window.dispatchEvent(new CustomEvent('tounar:counts', { detail: data.counts || {} }));
@@ -561,7 +484,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     state.error = null;
     notifyView(id);
     buildTabs();
-    updateCompareBar();
     if (id === 'reviews') {
       renderBanner();
       clear(contentEl);

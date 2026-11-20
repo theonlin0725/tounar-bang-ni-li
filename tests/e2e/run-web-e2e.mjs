@@ -145,7 +145,7 @@ async function sessionCookie(context, base) {
 
 try {
   /* ================= 0. 环境 ================= */
-  server = await startTestServer({ name: SERVER_NAME, env: { ALLOWED_EMAILS: EMAIL } });
+  server = await startTestServer({ name: SERVER_NAME, env: { ALLOWED_EMAILS: EMAIL, ADMIN_EMAILS: EMAIL } });
   const resolved = await resolveChromiumExecutable();
   if (!resolved) throw new Error('未找到可用 Chromium（CFT 与 Playwright 自带均不可用）');
   browserSource = resolved.source;
@@ -155,6 +155,13 @@ try {
   await ctx1.addInitScript(email=>sessionStorage.setItem('tounar.plugin.onboarding.'+email,'connection'), EMAIL);
   const page = await ctx1.newPage();
   page.setDefaultTimeout(20000);
+  const openSettingsTab = async (tab) => {
+    await page.click('[data-test=nav-settings]');
+    await page.waitForSelector('[data-test=settings-page]');
+    const tabButton = page.locator(`[data-test=settings-tab-${tab}]`);
+    if (await tabButton.count()) await tabButton.click();
+    await page.waitForSelector(`[data-test=settings-tab-${tab}].active`);
+  };
   page.on('pageerror', (err) => browserLog.push(`pageerror: ${err.message}`));
   page.on('console', (msg) => {
     if (msg.type() === 'error' && !/401/.test(msg.text())) browserLog.push(`console: ${msg.text()}`);
@@ -167,6 +174,7 @@ try {
     (await page.locator('[data-test=login-send]').count()) === 1
       && (await page.locator('input[type=password]').count()) === 0,
     '纯 OTP 登录，无演示账号');
+  check('W-01a 登录页下载入口指向当前 0.2.11 包', (await page.locator('[data-test=login-download-plugin]').getAttribute('href')).endsWith('bangnili-extension-0.2.11.zip'));
   await shot(page, '01-login');
 
   await page.fill('[data-test=login-email]', EMAIL);
@@ -439,11 +447,19 @@ try {
     `total=${(await page.textContent('[data-test=stat-total]')).trim()}`);
 
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
-  await page.click('[data-test=open-settings-reminder]');
+  await openSettingsTab('reminder');
   await page.waitForSelector('[data-test=pref-mode]');
-  check('W-16c 设置弹窗打开后焦点在弹窗内', await page.evaluate(() => !!document.activeElement?.closest('[data-test=settings-modal]')));
-  for (let i = 0; i < 8; i += 1) await page.keyboard.press('Tab');
-  check('W-16d 设置弹窗 Tab 循环不逃到背景', await page.evaluate(() => !!document.activeElement?.closest('[data-test=settings-modal]')));
+  check('W-16c 设置页按任务分栏，提醒页为默认', (await page.locator('[data-test=settings-page]').count()) === 1
+    && (await page.textContent('[data-test=page-title]')).trim() === '设置');
+  await page.keyboard.press('Tab');
+  check('W-16d 设置页键盘可继续操作，没有被旧弹窗锁住', await page.evaluate(() => !!document.activeElement && !document.activeElement.closest('[data-test=settings-modal]')));
+  check('W-16e 管理员设置显示四个任务页签', (await page.locator('[data-test=settings-tab-mail-admin]').count()) === 1
+    && (await page.locator('[data-test=settings-tab-install]').count()) === 1);
+  await page.click('[data-test=settings-tab-mail-admin]');
+  await page.waitForSelector('.mail-admin-heading');
+  check('W-16f 邮件管理与模板仅在管理员设置页签内可达', (await page.locator('[data-test=mail-template]').count()) === 1);
+  await page.click('[data-test=settings-tab-reminder]');
+  await page.waitForSelector('[data-test=pref-mode]');
   await page.selectOption('[data-test=pref-frequency]', 'daily');
   await page.click('[data-test=pref-save]');
   await waitToast(page, '提醒设置已保存');
@@ -457,7 +473,25 @@ try {
     previewText.includes('当前条件下会发送') && previewText.includes('星河科技'),
     previewText.replace(/\s+/g, ' ').slice(0, 120));
   await shot(page, '07-settings-reminder');
-  await page.click('[data-test=settings-modal] .tn-modal-close');
+  await openSettingsTab('install');
+  const installText = await page.locator('[data-test=settings-page]').innerText();
+  const installHref = await page.locator('[data-test=settings-page] [data-test=plugin-help-download]').getAttribute('href');
+  const installDownload = await page.request.get(new URL(installHref, server.base).toString());
+  const installBody = await installDownload.body();
+  check('W-18a 设置安装指引直接下载当前包，版本、文件名与实际 ZIP 一致',
+    installText.includes('0.2.11') && installHref.endsWith('bangnili-extension-0.2.11.zip')
+      && installDownload.status() === 200 && installBody[0] === 0x50 && installBody[1] === 0x4b,
+    `href=${installHref} status=${installDownload.status()} bytes=${installBody.length}`);
+  await shot(page, '07b-settings-install');
+  await page.goto('/?panel=settings&tab=install', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-test=settings-tab-install].active');
+  check('W-18b 设置页可直接以 URL 页签恢复安装指引', (await page.textContent('[data-test=page-title]')).trim() === '设置');
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(200);
+  const settingsMobile = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth }));
+  check('设置页窄屏页签换行且无横向溢出', settingsMobile.scrollWidth <= settingsMobile.innerWidth + 1, JSON.stringify(settingsMobile));
+  await shot(page, '07a-settings-install-mobile');
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   /* ================= 7. 内部 tick → 提醒邮件 → 落地页两步确认 ================= */
   const tickRes = await server.tick({ reminders: true });
@@ -526,7 +560,7 @@ try {
   ctx2 = null;
 
   /* ================= 8. 设置面板：UI 配对 / 撤销 / 邮箱如实降级 ================= */
-  await page.click('[data-test=open-settings-data]');
+  await openSettingsTab('data');
   await page.waitForSelector('[data-test=devices-section]');
   const pairRes = await server.request('/api/v1/plugin-pairings', {
     method: 'POST', body: { device_name: 'Web E2E 设备二' }
@@ -544,8 +578,7 @@ try {
     method: 'POST', body: { request_id: pair.request_id, request_secret: pair.request_secret }
   });
   const device2 = exchangeRes.json?.data;
-  await page.click('[data-test=settings-modal] .tn-modal-close');
-  await page.click('[data-test=open-settings-data]');
+  await openSettingsTab('data');
   await page.waitForSelector('[data-test=devices-section]');
   await page.waitForSelector(`[data-test=device-item][data-device-id="${device2.device_id}"]`);
   check('W-26 设备列表显示新绑定设备', true, `device=${device2.device_id}`);
@@ -584,7 +617,6 @@ try {
   check('W-29 断开邮箱连接：删除授权凭证并保留台账', true, 'status=disconnected');
 
   /* ================= 9. 退出登录（遮罩清理）→ 重新登录 ================= */
-  await page.click('[data-test=settings-modal] .tn-modal-close');
   await page.click('[data-test=logout]');
   await page.waitForSelector('[data-test=confirm-ok]');
   await page.click('[data-test=confirm-ok]');
@@ -610,12 +642,13 @@ try {
   await page.fill('[data-test=login-code]', otp3);
   await page.click('[data-test=login-submit]');
   await page.waitForSelector('[data-test=header-email]');
+  if (page.url().includes('panel=settings')) await page.click('[data-test=nav-ledger]');
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
   check('W-31 重新登录成功（新会话；数据仍在）', true, 'total=3');
   const uiCookie = await sessionCookie(ctx1, server.base);
 
   /* ================= 10. 删除全部数据：重验证 → 设备回执 → completed ================= */
-  await page.click('[data-test=open-settings-data]');
+  await openSettingsTab('data');
   await page.waitForSelector('[data-test=deletion-section]');
   const prevOtp3 = server.latestOutbox('otp', EMAIL)?.__file || null;
   await page.locator('[data-test=reauth-box] button', { hasText: '发送验证码' }).click();

@@ -17,7 +17,8 @@ try {
  await context.addInitScript(()=>{if (/^https?:$/.test(location.protocol)) sessionStorage.setItem('tounar.plugin.onboarding.demo@tounar.local','connection');});
  const cookie=(await server.login('demo@tounar.local')).cookie;const [name,...value]=cookie.split(';')[0].split('=');await context.addCookies([{name,value:value.join('='),url:server.base}]);
  page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error') console.log('Browser: '+m.text());});
- await page.goto(server.base);await page.locator('[data-test=open-settings-data]').click();
+ await page.goto(server.base);await page.locator('[data-test=nav-settings]').click();
+ await page.locator('[data-test=settings-tab-data]').click();
  const card=page.locator('[data-test=site-access-card]');await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).waitFor();
  const beforeBackend=await sw.evaluate(()=>chrome.permissions.contains({origins:['http://127.0.0.1/*']}));
  const beforePages=context.pages().length;const beforeWindows=await sw.evaluate(async()=>(await chrome.windows.getAll()).length);
@@ -25,7 +26,7 @@ try {
  const modal=page.locator('[data-test=permission-confirm-modal]');await modal.waitFor();
  const frame=page.frameLocator('[data-test=permission-frame]');await frame.getByRole('button',{name:'确认授权',exact:true}).waitFor();
  await frame.getByText('字节跳动招聘 · 2 个域名',{exact:true}).waitFor();
- check('confirmation is embedded in the original page',page.url()===server.base+'/');
+ check('confirmation is embedded in the original settings page',page.url().includes('panel=settings')&&page.url().includes('tab=data'));
  check('no new browser tab or window',context.pages().length===beforePages && await sw.evaluate(async()=>(await chrome.windows.getAll()).length)===beforeWindows);
  check('original website selection preserved behind modal',await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
  await page.screenshot({path:path.join(dir,'01-inline-confirm.png'),fullPage:true});

@@ -99,7 +99,9 @@ export async function phase2Web(check) {
     await page.waitForFunction(()=>[...document.querySelectorAll('.tn-toast')].some(x=>x.textContent.includes('已撤回邮件自动更新')));
     check('P2-详情撤回邮件自动判断并留历史',db.prepare('SELECT status FROM applications WHERE id=?').get(app.id).status==='applied');
     await page.click('[data-test=detail-drawer] .tn-drawer-close');
-    await page.click('[data-test=open-settings-reminder]');
+    await page.click('[data-test=nav-settings]');
+    await page.waitForSelector('[data-test=settings-page]');
+    await page.click('[data-test=settings-tab-reminder]');
     await page.waitForSelector('[data-test=pref-stage-followup]');
     check('P3-阶段回看默认7天，与旧阈值分开展示',await page.locator('[data-test=pref-stage-followup]').inputValue()==='7');
     await page.selectOption('[data-test=pref-stage-followup]','14');await page.click('[data-test=pref-save]');

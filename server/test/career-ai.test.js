@@ -1,6 +1,8 @@
 import { after, before, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { startTestServer, strongViewEvent } from './helpers.js';
 
 const RESUME = `张明
@@ -211,7 +213,7 @@ it('模型配置可用；文本简历上传、结构化分析后画像有原文�
   assert.equal(current.json.data.profile.grounded, true);
 });
 
-it('岗位对比使用当前账号的真实岗位、标记已投递并返回相对排序', async () => {
+it('多岗位对比创建入口已退役，原岗位仍可用于单岗匹配与推荐', async () => {
   const resume = (await get('/api/v1/resumes/current')).json.data;
   assert.equal(resume.status, 'ready');
   const a = await createApp({
@@ -224,14 +226,14 @@ it('岗位对比使用当前账号的真实岗位、标记已投递并返回相�
   }, 'career-b');
   assert.equal(a.status, 201, a.text); assert.equal(b.status, 201, b.text);
   appliedAId = a.json.data.id; appliedBId = b.json.data.id;
+  const callsBefore = calls.length;
   const compared = await post('/api/v1/ai/compare', { application_ids: [a.json.data.id, b.json.data.id] });
-  assert.equal(compared.status, 200, compared.text);
-  const report = compared.json.data;
-  assert.equal(report.status, 'ready');
-  assert.equal(report.result.jobs.length, 2);
-  assert.ok(report.result.jobs.every((j) => j.has_applied === true));
-  assert.ok(report.result.ranking.length === 2);
-  assert.ok(report.result.overview);
+  assert.equal(compared.status, 410, compared.text);
+  assert.equal(compared.json.error.code, 'AI_COMPARE_RETIRED');
+  assert.equal(calls.length, callsBefore);
+  const matches = await get(`/api/v1/ai/match-reports?application_id=${a.json.data.id}`);
+  assert.equal(matches.status, 200, matches.text);
+  assert.equal(matches.json.data.length, 0);
 });
 
 const MATCH_JD = `岗位职责
@@ -261,7 +263,11 @@ it('单岗位匹配生成五段报告，门槛材料不足时优先级待确认�
   assert.equal(report.result.priority.conclusion, '待确认');
   assert.ok(report.result.overall_advice);
   assert.ok(report.result.strengths.length >= 1);
-  assert.ok(report.result.gaps.some((g) => g.kind === '资料不足'));
+  assert.ok(report.result.gaps.every((g) => ['优势', '明确差距', '待补证'].includes(g.status_group)));
+  assert.ok(report.result.gaps.every((g) => g.evidence_scope === 'dimension' && g.topic));
+  assert.ok(report.result.strengths.some((s) => s.topic === 'tool' && /SQL/.test(s.text)));
+  assert.ok(report.result.gaps.some((g) => /缺少正式岗位年限/.test(g.text) && g.status_group === '明确差距'));
+  assert.ok(report.result.gaps.some((g) => /上海线下办公/.test(g.text) && g.status_group === '待补证'));
   assert.ok(report.context.resume.id);
   assert.match(report.context.application.jd_summary, /上海线下办公/);
   assert.ok(calls.some((c) => c.system.includes('单岗位求职匹配分析助手')));
@@ -422,7 +428,7 @@ it('PDF、DOCX 文件可解析为文本，不支持格式明确拒绝', async ()
   assert.equal(unsupported.json.error.code, 'RESUME_UNSUPPORTED');
 });
 
-it('数据隔离：不能读取他人简历或用他人岗位发起对比', async () => {
+it('数据隔离：不能读取他人简历，退役对比不泄露岗位', async () => {
   const demoResume = (await get('/api/v1/resumes/current')).json.data;
   const crossResume = await server.request(`/api/v1/resumes/${demoResume.id}`, { cookie: peerCookie });
   assert.equal(crossResume.status, 404);
@@ -435,7 +441,7 @@ it('数据隔离：不能读取他人简历或用他人岗位发起对比', asyn
   const crossCompare = await server.request('/api/v1/ai/compare', {
     method: 'POST', cookie: peerCookie, body: { application_ids: [appliedAId, appliedBId] }
   });
-  assert.equal(crossCompare.status, 404, crossCompare.text);
+  assert.equal(crossCompare.status, 410, crossCompare.text);
   const peerStatus = await server.request('/api/v1/ai/status', { cookie: peerCookie });
   assert.equal(peerStatus.json.data.resume_ready, true);
 });
@@ -624,4 +630,70 @@ it('P1 研究方向/岗位技能不是硬门槛：未呈现不能触发红色阻
   assert.doesNotMatch(result.overall_advice, /硬性门槛阻断|先处理硬性门槛/);
   const dim = result.dimensions.find((d) => d.key === 'skills');
   assert.notEqual(dim?.conclusion, '不匹配');
+});
+
+
+it('匹配历史先按岗位筛选再分页，其他岗位近期报告不会挤掉本岗', async () => {
+  assert.ok(matchReportId && matchAppId && appliedAId);
+  const db = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
+  const base = db.prepare('SELECT owner_id, resume_id FROM ai_reports WHERE id = ?').get(matchReportId);
+  for (let i = 0; i < 25; i += 1) {
+    db.prepare(`INSERT INTO ai_reports
+      (id, owner_id, kind, resume_id, application_ids_json, report_version, status, result_json, created_at, completed_at)
+      VALUES (?, ?, 'match', ?, ?, 'match-v2', 'ready', '{}', ?, ?)`)
+      .run(`other-report-${i}`, base.owner_id, base.resume_id, JSON.stringify([appliedAId]),
+        `2026-11-21T00:${String(i).padStart(2, '0')}:00.000Z`, `2026-11-21T00:${String(i).padStart(2, '0')}:01.000Z`);
+  }
+  db.close();
+  const res = await get(`/api/v1/ai/match-reports?application_id=${matchAppId}&limit=12`);
+  assert.equal(res.status, 200, res.text);
+  assert.equal(res.json.data.every((r) => r.application_ids.includes(matchAppId)), true);
+  assert.ok(res.json.data.some((r) => r.id === matchReportId));
+  assert.equal(res.json.data.some((r) => r.id.startsWith('other-report-')), false);
+});
+
+it('简历版本可分页找回、预览不改变当前、设为当前幂等且不改内容时间', async () => {
+  const original = (await server.request('/api/v1/resumes/current', { cookie: peerCookie })).json.data;
+  assert.ok(original?.id);
+  const created = [];
+  for (let i = 0; i < 22; i += 1) {
+    const text = `版本 ${i}\n` + '数据分析与用户研究经历。'.repeat(100) + ` version-${i}`;
+    const res = await server.request('/api/v1/resumes/text', {
+      method: 'POST', cookie: peerCookie, body: { text, filename: `同名简历.txt` }
+    });
+    assert.equal(res.status, 201, res.text);
+    created.push(res.json.data);
+  }
+  const ids = new Set(created.map((r) => r.id));
+  assert.equal(ids.size, 22);
+  const first = await server.request('/api/v1/resumes?limit=20', { cookie: peerCookie });
+  assert.equal(first.status, 200, first.text);
+  assert.equal(first.json.data.length, 20);
+  assert.equal(first.json.page.has_more, true);
+  assert.ok(first.json.page.next_cursor);
+  const second = await server.request(`/api/v1/resumes?limit=20&cursor=${encodeURIComponent(first.json.page.next_cursor)}`, { cookie: peerCookie });
+  assert.equal(second.status, 200, second.text);
+  assert.ok(second.json.data.length >= 2);
+  assert.equal(second.json.data.some((r) => r.id === created[0].id), true);
+  const target = created[0];
+  const full = await server.request(`/api/v1/resumes/${target.id}`, { cookie: peerCookie });
+  assert.equal(full.status, 200, full.text);
+  assert.ok(full.json.data.text.length > 800);
+  assert.ok(full.json.data.text.includes('version-0'));
+  const beforeSwitch = (await server.request('/api/v1/resumes/current', { cookie: peerCookie })).json.data;
+  assert.notEqual(beforeSwitch.id, target.id);
+  const switched = await server.request(`/api/v1/resumes/${target.id}/current`, { method: 'POST', cookie: peerCookie, body: {} });
+  assert.equal(switched.status, 200, switched.text);
+  assert.equal(switched.json.data.id, target.id);
+  assert.equal(switched.json.data.updated_at, target.updated_at);
+  const secondSwitch = await server.request(`/api/v1/resumes/${target.id}/current`, { method: 'POST', cookie: peerCookie, body: {} });
+  assert.equal(secondSwitch.status, 200);
+  assert.equal(secondSwitch.json.data.id, target.id);
+  const now = (await server.request('/api/v1/resumes/current', { cookie: peerCookie })).json.data;
+  assert.equal(now.id, target.id);
+  const cross = await server.request(`/api/v1/resumes/${target.id}/current`, { method: 'POST', cookie, body: {} });
+  assert.equal(cross.status, 404);
+  const restore = await server.request(`/api/v1/resumes/${original.id}/current`, { method: 'POST', cookie: peerCookie, body: {} });
+  assert.equal(restore.status, 200);
+  assert.equal(restore.json.data.id, original.id);
 });
