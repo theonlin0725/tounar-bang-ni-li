@@ -233,7 +233,7 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
     information_sufficient: jdText.length >= 80
   };
   const context = {
-    schema_version: 'match-context-v1',
+    schema_version: 'match-context-v2',
     application: job,
     resume: {
       id: resume.id, filename: resume.filename, updated_at: resume.updated_at,
@@ -244,7 +244,7 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
   };
   const reportId = startReport({
     ownerId, kind: 'match', resumeId: resume.id, applicationIds: [id],
-    parentReportId: parent?.id || null, reportVersion: 'match-v1', context
+    parentReportId: parent?.id || null, reportVersion: 'match-v2', context
   });
   try {
     const result = await matchJob({
@@ -348,7 +348,9 @@ export async function interviewQuestionsForReport(ownerId, reportId) {
   return generateInterviewQuestions({
     profile: context.resume.profile,
     job: context.application,
-    report: result
+    report: result,
+    resumeText: context.resume.text || '',
+    confirmedText: (context.corrections || []).map((c) => c.user_text || '').join('\n')
   });
 }
 

@@ -63,7 +63,7 @@ AI_PROVIDER=openai_compatible
 | POST | `/api/v1/ai/recommend` | 当前账号全部未投递岗位推荐 |
 | GET | `/api/v1/ai/reports/:id` | 读取本人报告（单岗位报告附当次与后续补充） |
 
-所有查询按 `owner_id` 隔离；对比和单岗位匹配只接受本人的 application_id。单岗位报告保存 `match-context-v1` 快照（岗位 JD、简历画像/文本、当时使用的补充证据），旧报告不会被新证据改写；重跑生成新报告并记录 `parent_report_id`。推荐服务端过滤 `has_applied=1` 或已归档的岗位，AI 不修改岗位状态。
+所有查询按 `owner_id` 隔离；对比和单岗位匹配只接受本人的 application_id。单岗位报告保存 `match-context-v2` 快照（岗位 JD、简历画像/文本、当时使用的补充证据），旧报告不会被新证据改写；重跑生成新报告并记录 `parent_report_id`。推荐服务端过滤 `has_applied=1` 或已归档的岗位，AI 不修改岗位状态。
 
 ## 画像与报告约束
 

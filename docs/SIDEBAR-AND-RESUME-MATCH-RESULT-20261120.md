@@ -2,6 +2,8 @@
 
 对应提示词：`docs/SIDEBAR-AND-RESUME-MATCH-DEV-PROMPT-20261120.md`
 
+> 初版交付记录。验收发现的门槛/证据/焦点/竞态修复见 `docs/SIDEBAR-AND-RESUME-MATCH-ACCEPTANCE-FIX-20261120.md`；当前新版报告为 `match-v2`。
+
 本次改动分成两个可独立验收的交付面：
 
 1. 左侧导航工作区迁移，保留原台账、待确认、简历/AI、设置、旧深链和移动端操作。

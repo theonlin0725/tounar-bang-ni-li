@@ -48,6 +48,45 @@ before(async () => {
       };
     } else if (system.includes('单岗位求职匹配分析助手')) {
       const input = JSON.parse(user);
+      if (['验收冲突公司', '软要求公司', '不同许可公司', '不同经验公司', '全部满足公司'].includes(input.job?.company_name)) {
+        answer = {
+          ability: { conclusion: '部分匹配', summary: '模型声称能力部分匹配，SQL 有基础。', basis: '简历里提到 SQL。' },
+          priority: { conclusion: '优先投', summary: '模型声称应立即优先投递。', basis: '模型没有核验硬门槛。' },
+          overall_advice: '立即优先投递。',
+          hard_gates: [],
+          dimensions: [
+            { key: 'skills', requirement: 'SQL 分析', user_evidence: '熟悉 SQL', conclusion: '部分匹配', strengths: ['SQL 基础可迁移'], gaps: [], evidence: [{ source: 'resume', quote: '熟悉 SQL' }, { source: 'jd', quote: 'SQL' }], next_step: '补充 SQL 项目细节' }
+          ],
+          limitations: []
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+        return;
+      }
+      if (input.job?.company_name === '证据混合公司') {
+        answer = {
+          ability: { conclusion: '部分匹配', summary: 'Tableau 项目增加营收 100 万。', basis: 'SQL 与 Tableau 均可迁移。' },
+          priority: { conclusion: '适合投', summary: 'Tableau 项目经验直接匹配。', basis: '100 万营收。' },
+          overall_advice: '结合 Tableau 项目立即投递。',
+          hard_gates: [],
+          dimensions: [
+            { key: 'skills', requirement: 'SQL', user_evidence: '精通 Tableau', conclusion: '部分匹配', strengths: ['Tableau 项目增加营收 100 万'], gaps: ['未发现 Tableau 项目'], evidence: [{ source: 'resume', quote: '熟悉 SQL' }, { source: 'jd', quote: 'SQL' }], next_step: '补充 SQL 项目' }
+          ],
+          limitations: []
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+        return;
+      }
+      if (input.job?.company_name === '无证据阻断公司') {
+        answer = {
+          ability: { conclusion: '匹配', summary: '模型声称匹配。', basis: '无。' },
+          priority: { conclusion: '暂缓', summary: '模型声称暂缓。', basis: '模型声称没有阻断。' },
+          overall_advice: '立即优先投递。',
+          hard_gates: [{ requirement: '必须持有中国境内有效工作许可', jd_evidence: '必须持有中国境内有效工作许可', user_info: '无', resume_evidence: '', result: '不满足', basis: '无。' }],
+          dimensions: [], limitations: []
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+        return;
+      }
       if (input.job?.company_name === '证据测试公司') {
         answer = {
           ability: { conclusion: '匹配', summary: '模型声称匹配。', basis: '无。' },
@@ -55,7 +94,7 @@ before(async () => {
           overall_advice: '模型声称优先投。',
           hard_gates: [{ requirement: '五年经验', jd_evidence: 'JD 中不存在的五年经验', user_info: '未知', result: '满足', basis: '无。' }],
           dimensions: [
-            { key: 'skills', requirement: 'SQL', user_evidence: '精通', conclusion: '匹配', strengths: ['模型声称精通'], gaps: [], evidence: [{ source: 'resume', quote: '简历中不存在的精通证据' }], next_step: '无' }
+            { key: 'skills', requirement: 'SQL 与用户研究', user_evidence: '精通 Tableau', conclusion: '匹配', strengths: ['Tableau 项目增加营收 100 万'], gaps: [], evidence: [{ source: 'jd', quote: '熟悉 SQL' }], next_step: '无' }
           ],
           limitations: []
         };
@@ -130,6 +169,13 @@ async function uploadResume() {
   assert.equal(res.status, 201, res.text);
   return res.json.data;
 }
+async function uploadAndAnalyze(text, filename = '测试简历.txt') {
+  const res = await post('/api/v1/resumes/text', { text, filename });
+  assert.equal(res.status, 201, res.text);
+  const analyzed = await post(`/api/v1/resumes/${res.json.data.id}/analyze`, {});
+  assert.equal(analyzed.status, 200, analyzed.text);
+  return analyzed.json.data;
+}
 async function createApp(body, key) {
   return server.request('/api/v1/applications/manual', {
     method: 'POST', cookie, headers: { 'Idempotency-Key': key }, body
@@ -182,7 +228,7 @@ const MATCH_JD = `岗位职责
 任职要求
 本科及以上学历；3 年以上数据产品经验；上海线下办公。`;
 
-it('单岗位匹配生成五段报告，硬门槛阻断优先投，且不改岗位状态', async () => {
+it('单岗位匹配生成五段报告，门槛材料不足时优先级待确认，且不改岗位状态', async () => {
   const created = await createApp({
     company_name: '远山数据', job_title: '数据产品经理', has_applied: true, status: 'applied',
     applied_date: '2026-10-03', jd_summary: MATCH_JD,
@@ -196,12 +242,12 @@ it('单岗位匹配生成五段报告，硬门槛阻断优先投，且不改岗�
   matchReportId = report.id;
   assert.equal(report.kind, 'match');
   assert.equal(report.status, 'ready');
-  assert.equal(report.report_version, 'match-v1');
+  assert.equal(report.report_version, 'match-v2');
   assert.equal(report.result.dimensions.length, 6);
   assert.deepEqual(report.result.dimensions.map((d) => d.key),
     ['hard_gate', 'skills', 'experience', 'industry', 'preference', 'achievements']);
-  assert.ok(report.result.hard_gates.some((g) => g.result === '不满足'));
-  assert.equal(report.result.priority.conclusion, '暂缓');
+  assert.ok(report.result.hard_gates.some((g) => g.result === '信息不足'));
+  assert.equal(report.result.priority.conclusion, '待确认');
   assert.ok(report.result.overall_advice);
   assert.ok(report.result.strengths.length >= 1);
   assert.ok(report.result.gaps.some((g) => g.kind === '资料不足'));
@@ -241,6 +287,9 @@ it('失实引文和不存在的 JD 门槛被拒绝，肯定结论降为无法判
   assert.equal(res.json.data.result.priority.conclusion, '待确认');
   assert.ok(!res.json.data.result.hard_gates.some((g) => g.requirement.includes('五年经验')));
   assert.ok(res.json.data.result.dimensions.every((d) => d.conclusion === '无法判断'));
+  assert.ok(res.json.data.result.strengths.every((s) => !/Tableau|100\s*万|营收/.test(s.text)));
+  assert.ok(!JSON.stringify(res.json.data.result.ability).includes('Tableau'));
+  assert.ok(!JSON.stringify(res.json.data.result.ability).includes('100 万'));
   assert.ok(res.json.data.result.limitations.some((x) => x.includes('没有找到可逐字核验')));
 });
 
@@ -285,7 +334,7 @@ it('匹配纠错只追加用户确认证据，可重跑并保留旧报告；跨�
   assert.equal(newer.result.corrections_used.length, 1);
   assert.equal(newer.result.corrections_used[0].user_text, body.user_text);
   const old = await get(`/api/v1/ai/reports/${matchReportId}`);
-  assert.equal(old.json.data.result.priority.conclusion, '暂缓');
+  assert.equal(old.json.data.result.priority.conclusion, '待确认');
   assert.equal(old.json.data.result.corrections_used.length, 0);
   assert.equal(old.json.data.corrections.length, 1);
   const history = await get(`/api/v1/ai/match-reports?application_id=${matchAppId}`);
@@ -404,3 +453,145 @@ it('AI 失败会保留失败状态，重试成功后可用；无候选时返回�
 function REsuMEFallback() {
   return `李雷\n数据分析实习生\n熟悉 SQL 与数据可视化。\n2026 年在青禾网络担任数据分析实习生，负责报表和用户研究。`;
 }
+
+const REMOTE_RESUME = `林舟
+现居上海，仅接受远程办公。
+尚未取得中国境内工作许可。
+熟悉 SQL 基础语法，曾用 SQL 清洗课程调查数据，向组员解释数据口径。
+完成过用户访谈和漏斗复盘，产出一份分析报告。`;
+
+it('P0 硬门槛兜底：远程冲突与无工作许可会阻断优先投递', async () => {
+  await uploadAndAnalyze(REMOTE_RESUME, '林舟-远程.txt');
+  const created = await createApp({
+    company_name: '验收冲突公司', job_title: '数据分析专员', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '必须在上海线下办公，必须持有中国境内有效工作许可。负责用 SQL 分析会员转化漏斗，要求独立制作 Tableau 仪表盘并汇报业务结果。零售行业相关经历者优先。',
+    job_url: 'https://example.com/jobs/tounar-audit-conflict'
+  }, 'career-policy-conflict');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  const result = res.json.data.result;
+  const location = result.hard_gates.find((g) => g.category === 'location');
+  const permit = result.hard_gates.find((g) => g.category === 'work_auth');
+  assert.ok(location, JSON.stringify(result.hard_gates));
+  assert.ok(permit, JSON.stringify(result.hard_gates));
+  assert.equal(location.result, '不满足', JSON.stringify(location));
+  assert.equal(permit.result, '不满足', JSON.stringify(permit));
+  assert.equal(location.blocking, true);
+  assert.equal(permit.blocking, true);
+  assert.equal(result.priority.conclusion, '暂缓');
+  assert.match(result.priority.basis, /线下办公|工作许可/);
+  assert.match(result.overall_advice, /先处理硬性门槛/);
+  assert.doesNotMatch(result.overall_advice, /立即|建议优先/);
+  assert.match(result.overall_advice, /暂不要按优先投递推进/);
+  const gateDim = result.dimensions.find((d) => d.key === 'hard_gate');
+  assert.equal(gateDim.conclusion, '不匹配');
+  assert.ok(gateDim.gaps.some((g) => g.includes('工作许可')));
+  assert.ok(gateDim.gaps.some((g) => g.includes('线下')));
+});
+
+it('P0 硬门槛兜底：软要求、境外许可和不同领域年限不能被误判为满足', async () => {
+  const soft = await createApp({
+    company_name: '软要求公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '具备相关证书优先，零售行业相关经历者优先，3 年以上经验优先。工作地点上海。负责 SQL 分析。',
+    job_url: 'https://example.com/jobs/tounar-audit-soft'
+  }, 'career-policy-soft');
+  assert.equal(soft.status, 201, soft.text);
+  const softMatch = await post('/api/v1/ai/match', { application_id: soft.json.data.id });
+  assert.equal(softMatch.status, 200, softMatch.text);
+  assert.equal(softMatch.json.data.result.hard_gates.length, 0);
+  assert.ok(!softMatch.json.data.result.hard_gates.some((g) => g.category === 'location'));
+
+  const foreignResume = await uploadAndAnalyze(`林舟。现居上海。持有美国工作许可。熟悉 SQL。`, '林舟-美国许可.txt');
+  assert.ok(foreignResume.profile);
+  const permitApp = await createApp({
+    company_name: '不同许可公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '必须持有中国境内有效工作许可。负责 SQL 分析。',
+    job_url: 'https://example.com/jobs/tounar-audit-foreign-permit'
+  }, 'career-policy-foreign-permit');
+  assert.equal(permitApp.status, 201, permitApp.text);
+  const permitMatch = await post('/api/v1/ai/match', { application_id: permitApp.json.data.id });
+  assert.equal(permitMatch.status, 200, permitMatch.text);
+  const permitGate = permitMatch.json.data.result.hard_gates.find((g) => g.category === 'work_auth');
+  assert.ok(['信息不足', '需要用户确认'].includes(permitGate.result), JSON.stringify(permitGate));
+  assert.notEqual(permitGate.result, '满足');
+  assert.notEqual(permitMatch.json.data.result.priority.conclusion, '优先投');
+
+  await uploadAndAnalyze(`林舟。5 年销售经验，熟悉 SQL，做过销售报表。`, '林舟-销售.txt');
+  const differentYears = await createApp({
+    company_name: '不同经验公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '3 年以上数据产品经验。负责 SQL 分析。',
+    job_url: 'https://example.com/jobs/tounar-audit-different-years'
+  }, 'career-policy-different-years');
+  assert.equal(differentYears.status, 201, differentYears.text);
+  const yearsMatch = await post('/api/v1/ai/match', { application_id: differentYears.json.data.id });
+  assert.equal(yearsMatch.status, 200, yearsMatch.text);
+  const yearsGate = yearsMatch.json.data.result.hard_gates.find((g) => g.category === 'years');
+  assert.ok(['信息不足', '需要用户确认'].includes(yearsGate.result), JSON.stringify(yearsGate));
+  assert.notEqual(yearsGate.result, '满足');
+});
+
+it('P0 硬门槛全部满足时，顶部结论与六维门槛保持同一份结果', async () => {
+  await uploadAndAnalyze(`林舟。本科毕业。5 年数据产品经验。现居上海，可接受线下办公。持有中国境内有效工作许可。熟悉 SQL 和 Tableau。`, '林舟-满足.txt');
+  const created = await createApp({
+    company_name: '全部满足公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '必须持有中国境内有效工作许可。必须在上海线下办公。3 年以上数据产品经验。本科及以上学历。负责 SQL 分析。',
+    job_url: 'https://example.com/jobs/tounar-audit-all-match'
+  }, 'career-policy-all-match');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  const result = res.json.data.result;
+  assert.ok(result.hard_gates.length >= 4);
+  assert.ok(result.hard_gates.every((g) => g.result === '满足'), JSON.stringify(result.hard_gates));
+  assert.equal(result.dimensions.find((d) => d.key === 'hard_gate').conclusion, '匹配');
+  assert.ok(!/不满足|暂缓|先处理硬性门槛/.test(result.overall_advice), result.overall_advice);
+});
+
+it('P0 模型无用户证据的“不满足”不能进入阻断建议', async () => {
+  await uploadAndAnalyze(`林舟。熟悉 SQL，做过用户访谈和漏斗分析，曾向组员解释数据口径。`, '林舟-无许可.txt');
+  const created = await createApp({
+    company_name: '无证据阻断公司', job_title: '数据产品经理', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '必须持有中国境内有效工作许可。负责 SQL 分析。',
+    job_url: 'https://example.com/jobs/tounar-audit-no-evidence-block'
+  }, 'career-policy-no-evidence-block');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  const result = res.json.data.result;
+  const gate = result.hard_gates.find((g) => g.category === 'work_auth');
+  assert.ok(gate, JSON.stringify(result.hard_gates));
+  assert.equal(gate.result, '信息不足');
+  assert.equal(gate.blocking, false);
+  assert.notEqual(result.priority.conclusion, '优先投');
+  assert.doesNotMatch(result.priority.basis, /没有阻断/);
+  assert.doesNotMatch(result.overall_advice, /立即/);
+  assert.match(result.overall_advice, /不要按优先投递推进/);
+});
+
+it('P0 优势与顶部依据必须由用户侧证据支持，虚构收益被移出事实结论', async () => {
+  await uploadAndAnalyze(`林舟。熟悉 SQL，曾用 SQL 清洗课程调查数据。完成过用户访谈。`, '林舟-SQL.txt');
+  const created = await createApp({
+    company_name: '证据混合公司', job_title: '数据分析专员', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '负责用 SQL 分析业务数据。',
+    job_url: 'https://example.com/jobs/tounar-audit-mixed-evidence'
+  }, 'career-policy-mixed-evidence');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  const result = res.json.data.result;
+  assert.doesNotMatch(JSON.stringify(result.strengths), /Tableau|100\s*万|营收/);
+  assert.doesNotMatch(JSON.stringify(result.gaps), /100\s*万|营收/);
+  assert.doesNotMatch(JSON.stringify(result.ability), /Tableau|100\s*万|营收/);
+  assert.doesNotMatch(JSON.stringify(result.priority), /100\s*万|营收/);
+  const skills = result.dimensions.find((d) => d.key === 'skills');
+  assert.notEqual(skills.user_evidence, '精通 Tableau');
+  assert.ok(skills.evidence.some((e) => e.source === 'resume' && e.quote.includes('SQL')));
+});

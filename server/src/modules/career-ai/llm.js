@@ -265,78 +265,244 @@ const MATCH_SYSTEM = `你是严谨的单岗位求职匹配分析助手。用户�
 6. 能力结论与投递优先级是两件事，可以不同。弱材料不能写成肯定匹配；资料矛盾或需本人表态写“需要用户确认”。
 7. 不得输出任何百分比、分数、录用概率或权重。
 8. 六维的具体问法：硬性门槛只引用上一节检查项；技能工具区分“提到工具”和“用工具完成过项目”，并对照 JD 要求的熟练程度；经历项目对照职责、承担范围和交付物；行业业务说明哪些经验可迁移或不可迁移；偏好地点把“本人偏好”与“雇主强制要求”分开；成果量化只引用原文指标或可验证交付物，没有数字时不得补造数字。
-9. 优势必须能回到某个维度、JD 原文和用户证据。对于“未发现案例”，要写成“查过的简历版本中未发现”，不能写成“用户不会”。`;
+9. 优势必须能回到某个维度、JD 原文和用户证据。对于“未发现案例”，要写成“查过的简历版本中未发现”，不能写成“用户不会”。
+10. 工作许可、线下办公、学历、最低年限、指定证书等门槛：只有对应用户侧原文才能支持“满足/不满足”；没有原文写“信息不足”。“仅接受远程”与强制线下冲突可写“不满足”；“未取得工作许可”可写“不满足”；境外许可不能冒充中国境内许可。
+11. 优势、缺口、用户事实中的技能名和数字必须能在对应 JD、简历或用户确认补充中找到；没有证据的营收、百分比、技能和成果不要输出。
+12. 顶部总体建议必须服从门槛结论：任一硬门槛“不满足”只能建议暂缓；门槛“信息不足/需要用户确认”不能建议优先投递或适合投递。`;
 
-function jdLineFor(jdText, pattern) {
-  return String(jdText || '').split(/\n+/).map((line) => line.replace(/^\s*\d{1,2}[、.．）)]\s*/, '')).find((line) => pattern.test(line)) || '';
+const CITY_RE = /(上海|北京|深圳|广州|杭州|成都|南京|武汉|苏州|西安|厦门|长沙|青岛|天津|重庆)/;
+const PERMIT_RE = /(工作许可|就业资格|工作签证|居留许可|劳工证|执业许可)/;
+const CREDENTIAL_RE = /(证书|资格|执照|许可证|许可|签证)/;
+const SOFT_RE = /优先|加分|更佳|非必须/;
+const SOURCE_LABELS = { jd: 'JD 原文', resume: '简历原文', user_confirmed: '用户确认补充' };
+
+function sourceText(...values) {
+  return values.filter(Boolean).map((v) => String(v)).join('\n');
 }
+function sourceLines(textValue) {
+  return String(textValue || '').split(/\r?\n+/).map((line) => line.trim()).filter(Boolean);
+}
+function lineMatching(textValue, pattern) {
+  return sourceLines(textValue).find((line) => pattern.test(line)) || '';
+}
+function jdLineFor(jdText, pattern) {
+  return sourceLines(jdText).map((line) => line.replace(/^\s*\d{1,2}[、.．）)]\s*/, '')).find((line) => pattern.test(line)) || '';
+}
+function gateCategory(requirement, evidence = '') {
+  const classify = (s) => {
+    if (PERMIT_RE.test(s)) return 'work_auth';
+    if (/(线下|现场|坐班|到岗|远程办公|办公地点|工作地点|\bbase\b)/i.test(s)) return 'location';
+    if (/(学历|本科|硕士|博士)/.test(s)) return 'degree';
+    if (/(\d+\s*年|至少|最低).{0,20}(经验|经历)/.test(s)) return 'years';
+    if (CREDENTIAL_RE.test(s)) return 'license';
+    return '';
+  };
+  return classify(String(requirement || '')) || classify(String(evidence || '')) || 'other';
+}
+function isSoftRequirement(requirement, evidence = '') {
+  const s = `${requirement || ''} ${evidence || ''}`;
+  if (!SOFT_RE.test(s)) return false;
+  const req = simplify(requirement);
+  const ev = simplify(evidence);
+  const index = req ? ev.indexOf(req) : -1;
+  if (index >= 0) {
+    const after = ev.slice(index + req.length, index + req.length + 8);
+    const suffix = ev.slice(index);
+    const before = ev.slice(Math.max(0, index - 14), index);
+    if (/^(?:优先|加分|更佳|非必须)/.test(after)) return true;
+    if (/^.{0,12}(?:优先|加分|更佳|非必须)/.test(suffix)
+      && !/必须|须|要求|需要|需|及以上|最低|至少|以上|不接受远程/.test(requirement)
+      && !/必须|须|要求|需要|需|最低|至少/.test(before)) return true;
+    if (!SOFT_RE.test(requirement) && /必须|须|要求|需要|需|及以上|最低|至少|以上|不接受远程/.test(requirement)) return false;
+    if (/必须|须|要求|需要|需|最低|至少/.test(before)) return false;
+    // 同一行后面的“住宿优先”等无关软条件不应抹掉前面的硬性要求。
+    return false;
+  }
+  return !/必须|须|及以上|最低|至少|以上|不接受远程/.test(requirement);
+}
+function claimTextGrounded(value, { userText = '', jdText = '', allowJd = false } = {}) {
+  const claim = text(value, 800);
+  if (!claim) return false;
+  const hay = simplify(`${userText}\n${allowJd ? jdText : ''}`);
+  const numbers = claim.match(/\d+(?:\.\d+)?\s*(?:万|亿|%|小时|天|年|个月|人|个|元|次|倍)?/g) || [];
+  for (const token of numbers) if (!hay.includes(simplify(token))) return false;
+  const latin = claim.match(/[A-Za-z][A-Za-z0-9+#._/-]{1,}/g) || [];
+  for (const token of latin) {
+    if (/^(?:jd|ai|pdf|docx)$/i.test(token)) continue;
+    if (!hay.includes(simplify(token))) return false;
+  }
+  return true;
+}
+function uniqueEvidence(rows) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    if (!row?.quote) return false;
+    const key = `${row.source || ''}\u0000${simplify(row.quote)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function userSourceLines(resumeText, confirmedText) {
+  return sourceLines(sourceText(resumeText, confirmedText));
+}
+function evidenceResult(result, userInfo, resumeEvidence, basis, category, extra = {}) {
+  return {
+    result, user_info: userInfo, resume_evidence: resumeEvidence || '', basis,
+    blocking: result === '不满足', category, ...extra
+  };
+}
+
+/* 用 JD 原文发现门槛；这里只负责“发现”，具体满足/不满足统一由 evaluateGate 核验。 */
 function inferredHardGates(jdText, resumeText, existing = []) {
   const gates = [];
   const seen = new Set(existing.map((g) => simplify(g.requirement)));
-  const soft = (line) => /优先|加分|更佳|非必须/.test(line);
-  const add = (requirement, result, userInfo, resumeEvidence = '', basis = '', evidence = requirement) => {
+  const hasCategory = (category, matcher = () => true) => existing.some((g) => gateCategory(g.requirement, g.jd_evidence) === category && matcher(g));
+  const add = (requirement, evidence, category) => {
     if (!requirement || seen.has(simplify(requirement))) return;
     seen.add(simplify(requirement));
     gates.push({
-      requirement, jd_evidence: evidence, user_info: userInfo,
-      resume_evidence: resumeEvidence, result, basis, blocking: result === '不满足'
+      requirement, jd_evidence: evidence || requirement, user_info: '', resume_evidence: '',
+      result: '信息不足', basis: '', blocking: false, category
     });
   };
-  const degreeLine = jdLineFor(jdText, /(本科|硕士|博士)(?:及以上)?学历|学历要求/);
-  if (degreeLine && !soft(degreeLine)) {
+  const degreeLine = jdLineFor(jdText, /(本科|硕士|博士)(?:及以上)?学历(?!\s*优先)|学历要求(?!\s*优先)/);
+  if (degreeLine && !hasCategory('degree')) {
     const degree = /博士/.test(degreeLine) ? '博士' : /硕士/.test(degreeLine) ? '硕士' : '本科';
-    const exists = existing.some((g) => simplify(g.requirement).includes(simplify(degree)) && simplify(g.requirement).includes('学历'));
-    if (!exists) {
-      const resumeLine = String(resumeText || '').split(/\n+/).find((line) => line.includes(degree));
-      add(`${degree}及以上学历`, resumeLine ? '满足' : '信息不足',
-        resumeLine ? `简历提到：${resumeLine.trim().slice(0, 120)}` : '简历没有可核验的学历信息',
-        resumeLine ? resumeLine.trim().slice(0, 120) : '',
-        'JD 原文明确列出学历条件；只按简历原文核对。', degreeLine);
-    }
+    add(`${degree}及以上学历`, degreeLine, 'degree');
   }
-  const yearsLine = jdLineFor(jdText, /\d+\s*年(?:以上)?[^。；\n]{0,30}(?:经验|经历)|(?:至少|最低)\s*\d+\s*年/);
-  if (yearsLine && !soft(yearsLine)) {
-    const required = Number((yearsLine.match(/(\d+)\s*年/) || [])[1] || 0);
-    const exists = existing.some((g) => required > 0 && simplify(g.requirement).includes(String(required)) && /年|经验/.test(g.requirement));
-    if (!exists) {
-      const resumeLines = String(resumeText || '').split(/\n+/);
-      const yearLine = resumeLines.find((line) => required > 0 && new RegExp(`${required}\\s*年[^。；\\n]{0,30}(?:经验|经历)`).test(line));
-      const requirement = (yearsLine.match(/\d+\s*年(?:以上)?[^，。；\n]{0,24}(?:经验|经历)/) || [])[0] || yearsLine;
-      add(requirement, yearLine ? '满足' : '信息不足',
-        yearLine ? `简历提到：${yearLine.trim().slice(0, 120)}` : '简历没有可核验的完整年限',
-        yearLine ? yearLine.trim().slice(0, 120) : '',
-        'JD 原文明确列出最低年限；年限按简历原文核对，缺失时不推断为满足。', yearsLine);
-    }
+  const yearsLine = jdLineFor(jdText, /\d+\s*年(?:以上)?[^，。；\n]{0,24}(?:经验|经历)(?!\s*优先)|(?:至少|最低)\s*\d+\s*年/);
+  if (yearsLine && !hasCategory('years')) {
+    const requirement = (yearsLine.match(/\d+\s*年(?:以上)?[^，。；\n]{0,24}(?:经验|经历)/) || [])[0] || yearsLine;
+    add(requirement, yearsLine, 'years');
   }
-  const locationLine = jdLineFor(jdText, /(工作地点|办公地点|base)[：:\s]*(上海|北京|深圳|广州|杭州|成都|南京|武汉|苏州|西安|厦门|长沙|青岛|天津|重庆)|(?:上海|北京|深圳|广州|杭州).{0,8}(?:线下|现场|坐班|到岗)/i);
-  if (locationLine && !soft(locationLine)) {
-    const city = (locationLine.match(/(上海|北京|深圳|广州|杭州|成都|南京|武汉|苏州|西安|厦门|长沙|青岛|天津|重庆)/) || [])[1];
+  const locationLine = jdLineFor(jdText, /(?:必须|须|要求|需要|需|不接受远程).{0,16}(?:线下|现场|坐班|到岗)|(?:线下|现场|坐班|到岗).{0,10}(?:必须|要求|需要|需)/);
+  if (locationLine && !hasCategory('location')) {
+    const city = (locationLine.match(CITY_RE) || [])[1];
     const onsite = /线下|现场|坐班|到岗/.test(locationLine);
-    const exists = existing.some((g) => {
-      const requirement = simplify(g.requirement);
-      return city && requirement.includes(simplify(city)) && (!onsite || /线下|现场|坐班|到岗/.test(g.requirement));
-    });
-    if (!exists) {
-      const resumeLine = city ? String(resumeText || '').split(/\n+/)
-        .find((line) => line.includes(city) && /现居|目前|所在地|现住|base|可接受|愿意|能够|常住/i.test(line)) : '';
-      add(`${city || ''}${onsite ? '线下办公' : '工作地点'}`, resumeLine ? '满足' : '需要用户确认',
-        resumeLine ? `简历提到：${resumeLine.trim().slice(0, 120)}` : `需要本人确认${onsite ? '能否线下办公' : '工作地点'}${city ? `（${city}）` : ''}`,
-        resumeLine ? resumeLine.trim().slice(0, 120) : '',
-        '只把 JD 明确写出的地点/办公方式作为门槛；简历没有确认时交还用户确认。', locationLine);
-    }
+    const softLocation = /(?:线下|现场|坐班|到岗)[^，。；\n]{0,4}(?:优先|加分)|(?:优先|加分)[^，。；\n]{0,4}(?:线下|现场|坐班|到岗)/.test(locationLine);
+    if (onsite && !softLocation) add(`${city || ''}线下办公`, locationLine, 'location');
   }
-  const licenseLine = jdLineFor(jdText, /(?:必须|须|要求).{0,16}(?:证书|资格|执照|工作许可|签证)/);
-  if (licenseLine && !soft(licenseLine)) {
-    const exists = existing.some((g) => /证书|资格|执照|许可|签证/.test(g.requirement));
-    if (!exists) {
-      const resumeLine = String(resumeText || '').split(/\n+/).find((line) => /(证书|资格|执照|许可|签证)/.test(line));
-      add(licenseLine, resumeLine ? '满足' : '信息不足',
-        resumeLine ? `简历提到：${resumeLine.trim().slice(0, 120)}` : '简历没有可核验的许可或证书信息',
-        resumeLine ? resumeLine.trim().slice(0, 120) : '',
-        'JD 原文明确列出许可/证书条件；没有证据时不推断为满足。', licenseLine);
+  const licenseLine = jdLineFor(jdText, /(?:必须|须|要求).{0,20}(?:证书|资格|执照|工作许可|签证|就业资格)/);
+  if (licenseLine && !/(?:证书|资格|执照|许可|签证)[^，。；\n]{0,4}(?:优先|加分)/.test(licenseLine)) {
+    const category = gateCategory(licenseLine, licenseLine);
+    if (!hasCategory(category)) {
+      const requirement = (licenseLine.match(/(?:必须|须|要求).{0,20}(?:证书|资格|执照|工作许可|签证|就业资格)[^，。；\n]*/) || [])[0] || licenseLine;
+      add(requirement, licenseLine, category);
     }
   }
   return gates;
+}
+
+function parseDegreeRank(value) {
+  if (/博士/.test(value)) return 3;
+  if (/硕士/.test(value)) return 2;
+  if (/本科/.test(value)) return 1;
+  if (/大专|专科/.test(value)) return 0;
+  return null;
+}
+function gateYearsDomain(requirement, evidence) {
+  const source = `${requirement || ''} ${evidence || ''}`;
+  const m = source.match(/\d+\s*年(?:以上)?([^，。；\n]{0,24}?)(?:工作)?(?:经验|经历)/);
+  return (m?.[1] || '').replace(/相关|以上|左右|的/g, '').trim();
+}
+function evaluateGate(gate, sources) {
+  const requirement = gate.requirement || '';
+  const jdEvidence = gate.jd_evidence || '';
+  const combinedJD = `${requirement}\n${jdEvidence}`;
+  const category = gate.category || gateCategory(requirement, jdEvidence);
+  const userLines = userSourceLines(sources.resumeText, sources.confirmedText);
+  const userText = userLines.join('\n');
+  const modelResult = GATE_RESULTS.includes(gate.result) ? gate.result : '信息不足';
+  const modelEvidence = gate.resume_evidence && (
+    simplify(sources.resumeText).includes(simplify(gate.resume_evidence))
+    || simplify(sources.confirmedText).includes(simplify(gate.resume_evidence))
+  ) ? gate.resume_evidence : '';
+
+  if (category === 'work_auth') {
+    const line = lineMatching(userText, PERMIT_RE);
+    if (!line) {
+      return evidenceResult('信息不足', '简历没有可核验的工作许可/就业资格信息', '', 'JD 明确要求工作许可；简历未提供对应许可原文。', category);
+    }
+    const negative = /未取得|没有|无|尚未|不具备|暂无|未持有/.test(line);
+    const positive = /(持有|已取得|取得|拥有|具备|有)/.test(line) && !negative;
+    const needsChina = /中国|境内/.test(combinedJD);
+    const foreign = /美国|加拿大|英国|澳大利亚|新加坡|境外|其他国家/.test(line) && !/中国|境内/.test(line);
+    if (negative) return evidenceResult('不满足', `简历原文：${line}`, line, '简历明确表示未取得对应工作许可。', category);
+    if (needsChina && foreign) return evidenceResult('信息不足', `简历原文：${line}`, line, '简历提到境外许可，但没有中国境内有效工作许可原文。', category);
+    if (positive) return evidenceResult('满足', `简历原文：${line}`, line, '简历原文明确持有对应工作许可。', category);
+    return evidenceResult('信息不足', `简历提到：${line}`, line, '简历提到许可信息，但未说明是否持有 JD 要求的许可。', category);
+  }
+
+  if (category === 'location') {
+    const mandatory = /(必须|须|要求|需要|需|不接受远程).{0,16}(线下|现场|坐班|到岗)|(线下|现场|坐班|到岗)/.test(combinedJD);
+    if (!mandatory) return null; // 普通“工作地点上海”不升级为硬门槛。
+    const city = (combinedJD.match(CITY_RE) || [])[1];
+    const remoteOnly = lineMatching(userText, /(?:仅|只)(?:接受|可|能)?远程|不接受线下|无法(?:线下|到岗|现场)|只远程|仅远程/);
+    if (remoteOnly) return evidenceResult('不满足', `简历原文：${remoteOnly}`, remoteOnly, 'JD 要求线下办公，但简历明确表示仅接受远程/无法线下。', category);
+    const onsiteLine = lineMatching(userText, /(可接受|接受|可以|能够|能).{0,6}(线下|现场|到岗|坐班)|(线下|现场|到岗|坐班).{0,6}(可接受|接受|可以|能够|能)/);
+    const cityLine = city ? lineMatching(userText, new RegExp(city)) : '';
+    if (!onsiteLine) {
+      if (cityLine) return evidenceResult('信息不足', `简历只写到：${cityLine}；未说明是否接受线下办公`, cityLine, '现居城市不等于接受线下办公，需本人确认。', category);
+      return evidenceResult('信息不足', '简历没有可核验的线下办公意愿', '', 'JD 要求线下办公；简历未提供接受线下办公的原文。', category);
+    }
+    if (city && !cityLine) {
+      return evidenceResult('需要用户确认', `简历原文：${onsiteLine}；未确认当前所在城市`, onsiteLine, `简历接受线下，但没有确认能在${city}办公。`, category);
+    }
+    if (city && cityLine && !new RegExp(city).test(onsiteLine) && !new RegExp(city).test(cityLine)) {
+      return evidenceResult('需要用户确认', `简历原文：${onsiteLine}`, onsiteLine, `简历接受线下，但未确认能在${city}办公。`, category);
+    }
+    return evidenceResult('满足', `简历原文：${onsiteLine}`, onsiteLine, '简历明确接受线下办公，与 JD 要求一致。', category);
+  }
+
+  if (category === 'degree') {
+    const required = parseDegreeRank(combinedJD);
+    if (required == null) return evidenceResult('信息不足', 'JD 没有可解析的学历要求', '', '无法解析学历门槛。', category);
+    const line = lineMatching(userText, /(本科|硕士|博士|大专|专科)/);
+    const actual = parseDegreeRank(line);
+    if (actual == null) return evidenceResult('信息不足', '简历没有可核验的学历信息', '', 'JD 明确要求学历；简历未提供对应学历原文。', category);
+    if (actual >= required) return evidenceResult('满足', `简历原文：${line}`, line, '简历学历层级满足 JD 要求。', category);
+    return evidenceResult('不满足', `简历原文：${line}`, line, '简历学历层级低于 JD 明确要求。', category);
+  }
+
+  if (category === 'years') {
+    const required = Number((combinedJD.match(/(\d+)\s*年/) || [])[1] || 0);
+    const domain = gateYearsDomain(requirement, jdEvidence);
+    const yearLines = userLines.map((line) => ({ line, years: Number((line.match(/(\d+)\s*年/) || [])[1] || 0) }))
+      .filter((x) => x.years > 0 && /(经验|经历)/.test(x.line));
+    if (!yearLines.length) return evidenceResult('信息不足', '简历没有可核验的完整年限', '', 'JD 明确列出最低年限；简历未提供年限原文。', category);
+    const matching = yearLines.find((x) => x.years >= required && (!domain || x.line.includes(domain)));
+    if (matching) return evidenceResult('满足', `简历原文：${matching.line}`, matching.line, '简历年限和对应领域满足 JD 要求。', category);
+    const enoughDifferent = yearLines.find((x) => x.years >= required);
+    if (enoughDifferent) {
+      return evidenceResult('信息不足', `简历原文：${enoughDifferent.line}；但未提供「${domain || '对应领域'}」经历`, enoughDifferent.line,
+        '有足够年限，但简历没有提供与 JD 对应领域的经历原文，不能直接判满足。', category);
+    }
+    const sameDomainLower = yearLines.find((x) => domain && x.line.includes(domain));
+    if (sameDomainLower) return evidenceResult('不满足', `简历原文：${sameDomainLower.line}`, sameDomainLower.line, '简历对应领域年限低于 JD 要求。', category);
+    return evidenceResult('信息不足', `简历原文：${yearLines[0].line}`, yearLines[0].line, '简历有工作年限，但未提供与 JD 对应领域的年限。', category);
+  }
+
+  if (category === 'license') {
+    const line = lineMatching(userText, CREDENTIAL_RE);
+    if (!line) return evidenceResult('信息不足', '简历没有可核验的证书/资格信息', '', 'JD 明确列出证书/资格门槛；简历未提供原文。', category);
+    const negative = /未取得|没有|无|尚未|不具备|暂无|未持有/.test(line);
+    if (negative) return evidenceResult('不满足', `简历原文：${line}`, line, '简历明确表示未取得该证书/资格。', category);
+    const requiredToken = (combinedJD.match(/([\u4e00-\u9fa5]{2,12}(?:证书|资格|执照|许可))/))?.[1] || '';
+    const positive = /(持有|已取得|取得|拥有|具备|有)/.test(line);
+    if (positive && (!requiredToken || line.includes(requiredToken))) {
+      return evidenceResult('满足', `简历原文：${line}`, line, '简历原文明确持有对应证书/资格。', category);
+    }
+    return evidenceResult('信息不足', `简历原文：${line}`, line, '简历提到其他证书/资格，但没有 JD 要求的对应原文。', category);
+  }
+
+  // 非固定类型：只有用户侧证据才允许支持“满足/不满足”，没有证据时降为信息不足。
+  const evidence = modelEvidence;
+  if (!evidence && ['满足', '不满足'].includes(modelResult)) {
+    return evidenceResult('信息不足', gate.user_info || '简历没有可核验的对应证据', '', '模型结论没有对应用户侧证据，不能作为硬门槛判断。', category);
+  }
+  if (!evidence) return evidenceResult(modelResult === '需要用户确认' ? modelResult : '信息不足', gate.user_info || '资料不足', '', '没有可核验的用户侧证据。', category);
+  return evidenceResult(modelResult, gate.user_info || `简历原文：${evidence}`, evidence, gate.basis || '按简历原文核验。', category);
 }
 
 function normalizeMatchEvidence(items, sources) {
@@ -380,31 +546,30 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
   const result = await askJson(MATCH_SYSTEM, JSON.stringify(payload));
   const sources = { resumeText: String(resumeText || ''), jdText, confirmedText };
   const validDimensionKeys = new Set(MATCH_DIMENSIONS.map(([key]) => key));
-  let hardGates = (Array.isArray(result.hard_gates) ? result.hard_gates : []).map((gate) => {
+  const normalizeGate = (gate) => {
     const requirement = text(gate?.requirement, 300);
     const jdEvidence = text(gate?.jd_evidence, 300);
     const jdGrounded = jdEvidence.length >= 2 && simplify(jdText).includes(simplify(jdEvidence));
-    let gateResult = GATE_RESULTS.includes(gate?.result) ? gate.result : '信息不足';
-    // JD 没有逐字依据的“门槛”不是门槛，整条丢弃，避免把模型补充的要求当成雇主硬条件。
-    if (!requirement || !jdGrounded) return null;
-    const resumeEvidence = text(gate?.resume_evidence, 300);
-    const resumeGrounded = resumeEvidence.length >= 2
-      && (simplify(sources.resumeText).includes(simplify(resumeEvidence))
-        || simplify(sources.confirmedText).includes(simplify(resumeEvidence)));
-    if (gateResult === '满足' && !resumeGrounded) gateResult = '信息不足';
-    return {
-      requirement,
-      jd_evidence: jdGrounded ? jdEvidence : '',
-      user_info: text(gate?.user_info, 500),
-      resume_evidence: resumeGrounded ? resumeEvidence : '',
-      result: gateResult,
-      basis: text(gate?.basis, 500),
-      blocking: gateResult === '不满足'
-    };
-  }).filter(Boolean).slice(0, 10);
-  // 模型漏掉“本科/最低年限/指定城市线下”等明确门槛时，用 JD 原文线索补足；
-  // 只做门槛发现，不从简历缺失推断不满足，仍然走信息不足/需要用户确认。
-  hardGates = [...hardGates, ...inferredHardGates(jdText, resumeText, hardGates)].slice(0, 10);
+    if (!requirement || !jdGrounded || isSoftRequirement(requirement, jdEvidence)) return null;
+    const evaluated = evaluateGate({
+      requirement, jd_evidence: jdEvidence,
+      resume_evidence: text(gate?.resume_evidence, 300),
+      user_info: text(gate?.user_info, 500), basis: text(gate?.basis, 500),
+      result: GATE_RESULTS.includes(gate?.result) ? gate.result : '信息不足',
+      category: gate.category || gateCategory(requirement, jdEvidence)
+    }, sources);
+    return evaluated ? { requirement, jd_evidence: jdEvidence, ...evaluated } : null;
+  };
+  let hardGates = (Array.isArray(result.hard_gates) ? result.hard_gates : [])
+    .map(normalizeGate).filter(Boolean).slice(0, 10);
+  // 模型漏掉“本科/最低年限/指定城市线下/工作许可”等明确门槛时，用 JD 原文线索补足；
+  // 兜底只发现门槛，满足/不满足统一走 evaluateGate，并由用户侧证据决定。
+  const inferred = inferredHardGates(jdText, resumeText, hardGates)
+    .map(normalizeGate).filter(Boolean);
+  hardGates = [...hardGates, ...inferred].filter((gate, index, arr) => {
+    const key = `${gate.category}\u0000${simplify(gate.requirement)}`;
+    return arr.findIndex((x) => `${x.category}\u0000${simplify(x.requirement)}` === key) === index;
+  }).slice(0, 10);
   const byKey = new Map();
   for (const item of Array.isArray(result.dimensions) ? result.dimensions : []) {
     const key = String(item?.key || '');
@@ -414,27 +579,42 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
   let dimensions = MATCH_DIMENSIONS.map(([key, name]) => {
     const item = byKey.get(key);
     const evidenceRows = normalizeMatchEvidence(item?.evidence, sources);
+    const userEvidenceRows = evidenceRows.filter((e) => e.source === 'resume' || e.source === 'user_confirmed');
     let conclusion = MATCH_LEVELS.includes(item?.conclusion) ? item.conclusion : '无法判断';
-    if (!evidenceRows.length) conclusion = '无法判断';
+    if (!evidenceRows.length || (key !== 'hard_gate' && !userEvidenceRows.length)) conclusion = '无法判断';
+    const modelUserEvidence = text(item?.user_evidence, 800);
+    const userEvidence = userEvidenceRows.length
+      ? (claimTextGrounded(modelUserEvidence, { userText: sourceText(resumeText, confirmedText) })
+        ? modelUserEvidence : userEvidenceRows.map((e) => e.quote).join('；'))
+      : '资料不足';
+    const strengths = conclusion === '无法判断' ? []
+      : lines(item?.strengths, 6).filter((lineValue) => claimTextGrounded(lineValue, {
+        userText: sourceText(resumeText, confirmedText)
+      }));
+    const gaps = lines(item?.gaps, 6).filter((lineValue) => claimTextGrounded(lineValue, {
+      userText: sourceText(resumeText, confirmedText), jdText, allowJd: true
+    }));
     return {
       key,
       name,
       requirement: text(item?.requirement, 600) || 'JD 未提供足够信息',
-      user_evidence: text(item?.user_evidence, 800) || '资料不足',
+      user_evidence: userEvidence,
       conclusion,
-      strengths: lines(item?.strengths, 6),
-      gaps: lines(item?.gaps, 6),
+      strengths,
+      gaps,
       evidence: evidenceRows,
       next_step: text(item?.next_step, 400)
     };
   });
   const gateDimensionIndex = dimensions.findIndex((d) => d.key === 'hard_gate');
   const gateFails = hardGates.filter((g) => g.result === '不满足');
-  const gateNeeds = hardGates.filter((g) => ['需要用户确认', '信息不足'].includes(g.result));
+  const gateNeeds = hardGates.filter((g) => g.result === '需要用户确认');
+  const gateInfo = hardGates.filter((g) => g.result === '信息不足');
+  const gateUnresolved = [...gateNeeds, ...gateInfo];
   let gateConclusion = '无法判断';
   if (hardGates.length) {
     if (gateFails.length) gateConclusion = '不匹配';
-    else if (gateNeeds.length) gateConclusion = '无法判断';
+    else if (gateUnresolved.length) gateConclusion = '无法判断';
     else gateConclusion = '匹配';
   }
   const gateEvidence = hardGates.flatMap((g) => [
@@ -447,27 +627,39 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
     requirement: hardGates.length ? hardGates.map((g) => g.requirement).join('；') : 'JD 未列明硬性门槛',
     user_evidence: hardGates.length ? hardGates.map((g) => `${g.requirement}：${g.user_info || '—'}（${g.result}）`).join('；') : 'JD 没有写明工作许可、最低年限、指定城市线下办公等硬性条件。',
     conclusion: gateConclusion,
-    strengths: hardGates.filter((g) => g.result === '满足').map((g) => `${g.requirement}：${g.user_info || '已满足'}`),
+    strengths: hardGates.filter((g) => g.result === '满足').map((g) => `${g.requirement}：${g.user_info || '已满足'}`)
+      .filter((lineValue) => claimTextGrounded(lineValue, { userText: sourceText(resumeText, confirmedText) })),
     gaps: [...gateFails.map((g) => `${g.requirement}：${g.basis || '明确不满足'}`),
-      ...gateNeeds.map((g) => `${g.requirement}：${g.result}`)],
+      ...gateUnresolved.map((g) => `${g.requirement}：${g.result}`)]
+      .filter((lineValue) => claimTextGrounded(lineValue, { userText: sourceText(resumeText, confirmedText), jdText, allowJd: true })),
     evidence: gateEvidence,
     next_step: gateFails.length ? '这条门槛会影响投递；先与招聘方确认是否可豁免。'
-      : gateNeeds.length ? '补齐或向招聘方确认这条门槛后再决定投递优先级。'
+      : gateUnresolved.length ? '补齐或向招聘方确认这条门槛后再决定投递优先级。'
         : hardGates.length ? '门槛信息已核对；仍需以招聘方最新要求为准。' : '补充 JD 或向招聘方确认门槛。'
   };
   if (gateDimensionIndex >= 0) dimensions[gateDimensionIndex] = gateDimension;
   else dimensions = [gateDimension, ...dimensions.filter((d) => d.key !== 'hard_gate')];
 
   const dimStrengths = dimensions.flatMap((d) => d.strengths.map((item) => ({
-    dimension: d.name, key: d.key, text: item, evidence: d.evidence,
+    dimension: d.name, key: d.key, dimension_key: d.key, text: item,
+    evidence: d.evidence,
+    user_evidence: d.evidence.filter((e) => e.source === 'resume' || e.source === 'user_confirmed'),
     kind: '有证据的优势'
   })));
   const dimGaps = dimensions.flatMap((d) => d.gaps.map((item) => ({
-    dimension: d.name, key: d.key, text: item, requirement: d.requirement,
-    evidence: d.evidence, next_step: d.next_step,
-    kind: d.conclusion === '无法判断' || !d.user_evidence || d.user_evidence === '—' ? '资料不足' : '明确差距'
+    dimension: d.name, key: d.key, dimension_key: d.key, text: item, requirement: d.requirement,
+    evidence: d.evidence,
+    user_evidence: d.evidence.filter((e) => e.source === 'resume' || e.source === 'user_confirmed'),
+    next_step: d.next_step,
+    kind: d.conclusion === '无法判断' || d.user_evidence === '资料不足' ? '资料不足' : '明确差距'
   })));
-  const evidencedDimensions = dimensions.filter((d) => d.evidence.length > 0 && d.conclusion !== '无法判断');
+  const userTextAll = sourceText(resumeText, confirmedText);
+  const evidencedDimensions = dimensions.filter((d) => d.key !== 'hard_gate'
+    && d.conclusion !== '无法判断'
+    && d.evidence.some((e) => e.source === 'resume' || e.source === 'user_confirmed'));
+  const verifiedUserQuotes = [...new Set(dimensions.flatMap((d) => d.evidence
+    .filter((e) => e.source === 'resume' || e.source === 'user_confirmed')
+    .map((e) => e.quote)))].slice(0, 4);
   const ability = {
     conclusion: MATCH_LEVELS.includes(result.ability?.conclusion) ? result.ability.conclusion : '无法判断',
     summary: text(result.ability?.summary, 500),
@@ -475,35 +667,53 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
   };
   if (!evidencedDimensions.length) {
     ability.conclusion = '无法判断';
-    ability.summary = '当前没有找到可逐字核验的能力证据，不能给出肯定匹配结论。';
+    ability.summary = '当前没有找到可逐字核验的用户侧能力证据，不能给出肯定匹配结论。';
     ability.basis = '简历或用户确认补充中没有可与 JD 要求逐字对照的证据。';
+  } else {
+    if (!claimTextGrounded(ability.summary, { userText: userTextAll })) {
+      ability.summary = `已核验的用户侧证据覆盖：${evidencedDimensions.map((d) => d.name).join('、')}；未核验的模型表述已移除。`;
+    }
+    if (!claimTextGrounded(ability.basis, { userText: userTextAll })) {
+      ability.basis = `简历/用户确认原文：${verifiedUserQuotes.join('；') || '暂无可核验引文'}`;
+    }
   }
   const priority = {
     conclusion: PRIORITY_LEVELS.includes(result.priority?.conclusion) ? result.priority.conclusion : '待确认',
     summary: text(result.priority?.summary, 500),
     basis: text(result.priority?.basis, 600)
   };
+  let overallAdvice = text(result.overall_advice, 600);
   if (gateFails.length) {
     priority.conclusion = '暂缓';
     priority.summary = `存在硬性门槛不满足：${gateFails.map((g) => g.requirement).join('；')}`;
-  } else if (gateNeeds.length && ['优先投', '适合投'].includes(priority.conclusion)) {
-    priority.conclusion = '待确认';
-    priority.summary = `门槛信息需要确认：${gateNeeds.map((g) => g.requirement).join('；')}`;
+    priority.basis = `硬门槛原文核验：${gateFails.map((g) => `${g.requirement}（${g.resume_evidence || g.basis}）`).join('；')}`;
+    overallAdvice = `先处理硬性门槛：${gateFails.map((g) => g.requirement).join('；')}。在这些条件满足前，暂不要按优先投递推进。`;
+  } else if (gateUnresolved.length) {
+    if (['优先投', '适合投'].includes(priority.conclusion)) priority.conclusion = '待确认';
+    priority.summary = `硬性门槛需要确认或补充：${gateUnresolved.map((g) => g.requirement).join('；')}`;
+    priority.basis = `硬门槛尚未核验：${gateUnresolved.map((g) => `${g.requirement}（${g.result}）`).join('；')}；不能据此建议优先投递。`;
+    overallAdvice = `先确认或补齐硬性门槛：${gateUnresolved.map((g) => g.requirement).join('；')}。在确认前不要按优先投递推进。`;
   } else if (ability.conclusion === '无法判断' && ['优先投', '适合投'].includes(priority.conclusion)) {
     priority.conclusion = '待确认';
-    priority.summary = '能力材料不足，先补齐与 JD 对应的证据，再判断投递优先级。';
+    priority.summary = '能力材料不足，先补齐与 JD 对应的用户侧证据，再判断投递优先级。';
+    overallAdvice = '先补齐与岗位要求对应的简历或用户确认证据，再判断投递优先级。';
+  } else {
+    if (!claimTextGrounded(priority.summary, { userText: userTextAll })) priority.summary = '当前证据支持继续了解岗位，但偏好与条件仍需结合本人确认。';
+    if (!claimTextGrounded(priority.basis, { userText: userTextAll })) priority.basis = `已核验用户侧原文：${verifiedUserQuotes.join('；') || '暂无'}`;
+    if (!claimTextGrounded(overallAdvice, { userText: userTextAll })) {
+      overallAdvice = '基于已核验的简历证据与硬门槛结果，建议按当前匹配结论准备材料，再结合本人偏好决定投递。';
+    }
   }
   const limitations = lines(result.limitations, 8);
-  let overallAdvice = text(result.overall_advice, 600);
-  if (gateFails.length && !gateFails.some((g) => overallAdvice.includes(g.requirement))) {
-    overallAdvice = `存在硬性门槛不满足：${gateFails.map((g) => g.requirement).join('；')}。${overallAdvice}`.slice(0, 700);
+  if (!claimTextGrounded(ability.summary, { userText: userTextAll })) {
+    limitations.push('模型的部分能力表述缺少用户侧原文，已从事实结论中移除。');
   }
   if (jdText.trim().length < 80) limitations.push('JD 文本较短，岗位要求可能不完整；相关结论只基于已采集内容。');
   if (!dimensions.some((d) => d.evidence.some((e) => e.source === 'resume' || e.source === 'user_confirmed'))) {
     limitations.push('本次没有找到可逐字核验的简历证据，能力相关结论已降为无法判断。');
   }
   return {
-    report_version: 'match-v1',
+    report_version: 'match-v2',
     analyzed_at: new Date().toISOString(),
     ability,
     priority,
@@ -524,30 +734,35 @@ const INTERVIEW_SYSTEM = `你是面试准备助手。根据给定岗位、JD、�
 只输出 JSON：{"questions":[{"question":"面试问题","basis":"对应的 JD 要求或报告依据","dimension":"hard_gate|skills|experience|industry|preference|achievements"}]}
 不得编造用户经历；不得生成与岗位无关的泛泛问题；最多 8 个问题。`;
 
-export async function generateInterviewQuestions({ profile, job, report }) {
+export async function generateInterviewQuestions({ profile, job, report, resumeText = '', confirmedText = '' }) {
+  const jd = String(job.jd_text || job.jd_summary || '').slice(0, 7000);
   const answer = await askJson(INTERVIEW_SYSTEM, JSON.stringify({
     resume_profile: profile,
     job: {
       company_name: job.company_name, job_title: job.job_title,
-      jd: String(job.jd_text || job.jd_summary || '').slice(0, 7000)
+      jd
     },
     match_report: {
       ability: report.ability, priority: report.priority,
       gaps: report.gaps?.slice(0, 12),
       dimensions: report.dimensions?.map((d) => ({
         key: d.key, name: d.name, conclusion: d.conclusion,
-        requirement: d.requirement, user_evidence: d.user_evidence, gaps: d.gaps
+        requirement: d.requirement, user_evidence: d.user_evidence, gaps: d.gaps,
+        evidence: d.evidence
       }))
     }
   }));
   const validKeys = new Set(MATCH_DIMENSIONS.map(([key]) => key));
+  const userText = sourceText(resumeText, confirmedText);
   return {
     questions: (Array.isArray(answer.questions) ? answer.questions : []).map((item) => {
       const question = text(item?.question, 300);
+      const basis = text(item?.basis, 400);
       if (!question) return null;
+      if (!claimTextGrounded(question, { userText, jdText: jd, allowJd: true })) return null;
+      if (basis && !claimTextGrounded(basis, { userText, jdText: jd, allowJd: true })) return null;
       return {
-        question,
-        basis: text(item?.basis, 400),
+        question, basis,
         dimension: validKeys.has(item?.dimension) ? item.dimension : 'experience'
       };
     }).filter(Boolean).slice(0, 8)

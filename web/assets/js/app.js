@@ -26,7 +26,7 @@ function route() {
   const params = new URLSearchParams(location.search);
   return {
     name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
-    apps: params.get('apps'), view: params.get('view'), section: params.get('section')
+    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), autorun: params.get('autorun')
   };
 }
 
@@ -77,7 +77,7 @@ export async function enterApp(panel = null) {
   if (activePanel === 'career') {
     await renderCareer(main, {
       gen, apps: currentRoute.apps, applicationId: currentRoute.applicationId,
-      section: currentRoute.section
+      section: currentRoute.section, autorun: currentRoute.autorun
     });
     if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
@@ -205,37 +205,86 @@ function buildShell({ panel, view, section, gen }) {
     'aria-controls': 'tn-sidebar', 'aria-expanded': 'false', 'aria-label': '打开导航菜单',
     onclick: () => toggleMobileNav(true)
   }, h('span', { class: 'tn-menu-lines', 'aria-hidden': 'true' }));
-  const title = nav === 'reviews' ? '待确认' : nav === 'match' ? '匹配分析' : nav === 'resume' ? '简历库'
-    : nav === 'viewed' ? '看过没投' : nav === 'archived' ? '已归档'
-      : nav === 'mail-admin' ? '设置与工具' : nav === 'tools' ? '设置与工具' : '投递台账';
+  const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
+    : view === 'viewed' ? '看过没投' : view === 'archived' ? '已归档'
+      : view === 'mail-admin' ? '设置与工具' : view === 'tools' ? '设置与工具' : '投递台账';
   const titleTag = nav === 'mail-admin' ? 'div' : 'h1';
+  const pageTitleEl = h(titleTag, { class: 'tn-topbar-title', 'data-test': 'page-title', text: titleFor(nav) });
   const topbar = h('header', { class: 'tn-topbar' },
     h('div', { class: 'tn-topbar-left' }, menuButton,
-      h('div', {}, h('div', { class: 'tn-topbar-kicker', text: 'TOUNAR · 帮你理' }),
-        h(titleTag, { class: 'tn-topbar-title', 'data-test': 'page-title', text: title }))),
+      h('div', {}, h('div', { class: 'tn-topbar-kicker', text: 'TOUNAR · 帮你理' }), pageTitleEl)),
     h('div', { class: 'tn-topbar-note', text: '台账与求职进展' })
   );
   const main = h('div', { class: 'tn-main', id: 'tn-main' });
   const workspace = h('div', { class: 'tn-workspace' }, topbar, main);
   const shell = h('div', { class: 'tn-shell' }, sidebar, h('div', { class: 'tn-nav-scrim', onclick: () => toggleMobileNav(false) }), workspace);
+  const mobileQuery = window.matchMedia('(max-width: 900px)');
 
+  function syncMobileFocus() {
+    const mobile = mobileQuery.matches;
+    const open = shell.classList.contains('nav-open');
+    if (!mobile) {
+      sidebar.inert = false;
+      workspace.inert = false;
+      sidebar.removeAttribute('aria-hidden');
+      return;
+    }
+    sidebar.inert = !open;
+    workspace.inert = open;
+    if (open) sidebar.removeAttribute('aria-hidden');
+    else sidebar.setAttribute('aria-hidden', 'true');
+  }
   function toggleMobileNav(open) {
+    const hadFocus = sidebar === document.activeElement || sidebar.contains(document.activeElement);
     shell.classList.toggle('nav-open', open);
     menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    syncMobileFocus();
     if (open) {
       sidebar.setAttribute('tabindex', '-1');
       sidebar.focus({ preventScroll: true });
-    } else if (document.activeElement === sidebar || sidebar.contains(document.activeElement)) {
+    } else if (hadFocus) {
       menuButton.focus({ preventScroll: true });
     }
   }
   function closeMobileNav() {
     if (shell.classList.contains('nav-open')) toggleMobileNav(false);
   }
+  function setViewChrome(view) {
+    if (!view) return;
+    const activeTest = { applied: 'nav-ledger', viewed: 'nav-viewed', archived: 'nav-archived', reviews: 'nav-reviews' }[view];
+    for (const test of ['nav-ledger', 'nav-viewed', 'nav-archived', 'nav-reviews']) {
+      const node = sidebar.querySelector(`[data-test="${test}"]`);
+      if (!node) continue;
+      const isActive = test === activeTest;
+      node.classList.toggle('active', isActive);
+      if (isActive) node.setAttribute('aria-current', 'page');
+      else node.removeAttribute('aria-current');
+    }
+    for (const test of ['nav-match', 'nav-resume', 'open-mail-admin']) {
+      const node = sidebar.querySelector(`[data-test="${test}"]`);
+      if (!node) continue;
+      node.classList.remove('active');
+      node.removeAttribute('aria-current');
+    }
+    pageTitleEl.textContent = titleFor(view);
+  }
   const onKey = (e) => {
-    if (e.key === 'Escape' && shell.classList.contains('nav-open')) { e.preventDefault(); toggleMobileNav(false); }
+    if (e.key === 'Escape' && shell.classList.contains('nav-open')) { e.preventDefault(); toggleMobileNav(false); return; }
+    if (e.key !== 'Tab' || !mobileQuery.matches || !shell.classList.contains('nav-open')) return;
+    const focusables = [...sidebar.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]')]
+      .filter((node) => !node.hidden && node.getClientRects().length);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (!sidebar.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
+  const onView = (event) => { if (!isStale(gen) && shell.isConnected) setViewChrome(event.detail?.view); };
   document.addEventListener('keydown', onKey);
+  window.addEventListener('tounar:view', onView);
+  mobileQuery.addEventListener('change', syncMobileFocus);
+  syncMobileFocus();
   // 侧栏计数使用与台账相同的服务端口径；加载失败保持未知，绝不显示假 0。
   function applyCounts(next) {
     if (!next) return;

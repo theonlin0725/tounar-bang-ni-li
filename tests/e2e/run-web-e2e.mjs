@@ -320,11 +320,19 @@ try {
   check('W-12 「看过没投」tab 展示插件强证据浏览（不计入累计投递）',
     (await viewedRow.count()) === 1 && (await page.textContent('[data-test=stat-total]')).trim() === '2',
     'viewed=1，total=2');
+  check('W-12a 旧页签切换同步侧栏选中态、标题和 aria-current',
+    (await page.locator('[data-test=nav-viewed].active').count()) === 1
+      && (await page.locator('[data-test=nav-viewed]').getAttribute('aria-current')) === 'page'
+      && (await page.locator('[data-test=nav-ledger].active').count()) === 0
+      && (await page.textContent('[data-test=page-title]')).trim() === '看过没投');
 
   /* ================= 5. 待确认：真实 409 竞态 + 正常确认 ================= */
   await page.click('[data-test=tab-reviews]');
   await page.waitForSelector('[data-test=review-card]');
   await waitFor(async () => (await page.locator('[data-test=review-card]').count()) >= 2, { label: '两张复核卡片' });
+  check('W-13d 待确认页签同步侧栏一级入口和页标题',
+    (await page.locator('[data-test=nav-reviews].active').count()) === 1
+      && (await page.textContent('[data-test=page-title]')).trim() === '待确认');
 
   let review1Id = null;
   let review2Id = null;
@@ -433,6 +441,9 @@ try {
   /* ================= 6. 提醒设置（保存 + 预览） ================= */
   await page.click('[data-test=open-settings-reminder]');
   await page.waitForSelector('[data-test=pref-mode]');
+  check('W-16c 设置弹窗打开后焦点在弹窗内', await page.evaluate(() => !!document.activeElement?.closest('[data-test=settings-modal]')));
+  for (let i = 0; i < 8; i += 1) await page.keyboard.press('Tab');
+  check('W-16d 设置弹窗 Tab 循环不逃到背景', await page.evaluate(() => !!document.activeElement?.closest('[data-test=settings-modal]')));
   await page.selectOption('[data-test=pref-frequency]', 'daily');
   await page.click('[data-test=pref-save]');
   await waitToast(page, '提醒设置已保存');

@@ -181,7 +181,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     }
     const open = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'compare-open', text: `对比选中（${ids.length}）`, disabled: ids.length < 2, onclick: () => {
       if (compareState.ids.size < 2) return;
-      location.href = '/?panel=career&apps=' + encodeURIComponent([...compareState.ids].slice(0, 6).join(','));
+      location.href = '/?panel=career&autorun=compare&apps=' + encodeURIComponent([...compareState.ids].slice(0, 6).join(','));
     } });
     compareBarEl.append(h('div', { class: 'tn-compare-inner' },
       h('strong', { text: 'AI 岗位对比' }),
@@ -338,6 +338,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
         toast('状态已更新', 'ok');
         if (state.view === 'viewed' && target !== 'pending' && target !== 'closed') {
           state.view = 'applied'; state.cursor = null; state.cursorStack = []; state.items = [];
+          notifyView('applied');
           buildTabs();
         }
         await doLoad();
@@ -537,6 +538,20 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   }
 
   /* ---------- 交互 ---------- */
+  function notifyView(id) {
+    const url = new URL(location.href);
+    if (id === 'reviews') {
+      url.searchParams.set('panel', 'reviews'); url.searchParams.delete('view');
+    } else if (id === 'applied') {
+      url.searchParams.delete('panel'); url.searchParams.delete('view');
+    } else {
+      url.searchParams.set('panel', 'ledger'); url.searchParams.set('view', id);
+    }
+    url.searchParams.delete('app'); url.searchParams.delete('apps');
+    history.replaceState({}, '', `${url.pathname}${url.search}`);
+    window.dispatchEvent(new CustomEvent('tounar:view', { detail: { view: id } }));
+  }
+
   function switchView(id) {
     if (state.view === id) return;
     state.view = id;
@@ -544,6 +559,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     state.cursorStack = [];
     state.items = [];
     state.error = null;
+    notifyView(id);
     buildTabs();
     updateCompareBar();
     if (id === 'reviews') {

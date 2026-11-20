@@ -208,6 +208,26 @@ try {
     && (await page.locator('[data-test^=match-dimension-]').count()) === 6);
   check('单岗位报告展示证据来源与下一步行动', matchText.includes('证据来源') && matchText.includes('优化当前岗位简历') && matchText.includes('生成面试问题'));
   const firstReportId = await page.locator('[data-test=match-report]').getAttribute('data-report-id');
+  await page.click('[data-test=match-resume-opt]');
+  await page.waitForSelector('[data-test=match-resume-suggestion-card]');
+  const suggestionText = await page.locator('[data-test=match-resume-suggestions-wrap]').innerText();
+  check('简历优化逐条显示原简历段落、JD 要求和可编辑建议',
+    suggestionText.includes('原简历段落') && suggestionText.includes('对应 JD 要求')
+      && (await page.locator('[data-test=match-resume-suggestion]').count()) >= 1
+      && (await page.locator('[data-test=match-resume-suggestion]').first().isEditable()));
+  await page.click('[data-test=match-detail]');
+  await page.waitForSelector('[data-test=detail-drawer]');
+  check('查看岗位详情打开的是报告对应岗位，关闭后报告仍在',
+    (await page.locator('[data-test=detail-company]').innerText()).includes('青禾网络'));
+  await page.click('[data-test=detail-drawer] .tn-drawer-close');
+  await page.waitForSelector('[data-test=detail-drawer]', { state: 'detached' });
+  check('关闭详情后仍停留在原匹配报告', (await page.locator('[data-test=match-report]').count()) === 1);
+  await page.click('[data-test=match-supplement]');
+  await page.waitForSelector('[data-test=match-correction-modal]');
+  await page.click('[data-test=match-correction-cancel]');
+  await page.waitForSelector('[data-test=match-correction-modal]', { state: 'detached' });
+  const cancelCheck = await server.request(`/api/v1/ai/reports/${encodeURIComponent(firstReportId)}/corrections`, { cookie: login.cookie });
+  check('补充/纠错取消不落库', cancelCheck.status === 200 && cancelCheck.json.data.length === 0);
   const modelCallsBeforeReload = fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length;
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForSelector('[data-test=match-report]');
@@ -245,17 +265,37 @@ try {
   check('重跑生成新报告，旧报告仍可查看', secondReportId && secondReportId !== firstReportId
     && (await page.locator('[data-test=match-history] option').count()) >= 2);
 
+  await page.route(`**/api/v1/ai/reports/${encodeURIComponent(firstReportId)}`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    await route.continue();
+  });
+  await page.selectOption('[data-test=match-history]', firstReportId);
+  await page.selectOption('[data-test=match-history]', secondReportId);
+  await page.waitForTimeout(900);
+  check('同岗位历史报告先点 A 后点 B，较早请求不能覆盖 B',
+    (await page.locator('[data-test=match-report]').getAttribute('data-report-id')) === secondReportId);
+  await page.unroute(`**/api/v1/ai/reports/${encodeURIComponent(firstReportId)}`);
+
   await page.click('[data-test=match-interview]');
   await page.waitForSelector('[data-test=match-interview-questions]', { timeout: 20000 });
   check('面试问题在当前报告内生成并显示依据', (await page.locator('[data-test=match-interview-questions]').innerText()).includes('依据：'));
 
   await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(150);
+  check('移动端关闭态侧栏不可键盘访问', await page.locator('#tn-sidebar').evaluate((el) => el.inert) === true);
   await page.click('[data-test=sidebar-open]');
   await page.waitForTimeout(300);
   check('移动端菜单按钮打开可关闭侧栏', await page.locator('.tn-shell.nav-open').count() === 1);
+  check('移动端打开态隔离背景并把焦点移入侧栏', await page.locator('.tn-workspace').evaluate((el) => el.inert) === true
+    && await page.evaluate(() => document.querySelector('#tn-sidebar')?.contains(document.activeElement)) === true);
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  check('移动端 Tab/Shift+Tab 不逃出抽屉', await page.evaluate(() => document.querySelector('#tn-sidebar')?.contains(document.activeElement)) === true);
   await page.screenshot({ path: path.join(out, 'match-mobile-390-nav.png'), fullPage: false });
   await page.keyboard.press('Escape');
-  check('Esc 关闭侧栏并把焦点还给菜单按钮', await page.locator('.tn-shell.nav-open').count() === 0
+  check('Esc 关闭侧栏、恢复背景并把焦点还给菜单按钮', await page.locator('.tn-shell.nav-open').count() === 0
+    && await page.locator('#tn-sidebar').evaluate((el) => el.inert) === true
+    && await page.locator('.tn-workspace').evaluate((el) => el.inert) === false
     && await page.evaluate(() => document.activeElement?.getAttribute('data-test')) === 'sidebar-open');
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(out, 'match-mobile-390-report.png'), fullPage: true });
@@ -266,10 +306,53 @@ try {
   check('移动端无页面级横向溢出，能力/优先级与六维卡片单列',
     mobileOverflow.scrollWidth <= mobileOverflow.innerWidth + 1 && mobileOverflow.coreColumns === 1, JSON.stringify(mobileOverflow));
   await page.setViewportSize({ width: 1280, height: 1000 });
+  const compareCallCount = () => fakeCalls.filter((c) => c.system.includes('岗位比较助手')).length;
+  const compareBefore = compareCallCount();
+  const compareIds = [applied.json.data.id, pending.application_id].map(encodeURIComponent).join(',');
+  await page.goto(`/?panel=career&apps=${compareIds}`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=compare-section]');
+  await page.waitForTimeout(500);
+  check('直接访问旧对比深链不自动重跑模型', compareCallCount() === compareBefore);
+  await page.goto(`/?panel=career&apps=${compareIds}&autorun=compare`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=compare-report]', { timeout: 20000 });
+  check('从台账主动“对比选中”只自动运行一次并消费 autorun', compareCallCount() === compareBefore + 1
+    && !page.url().includes('autorun='));
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=compare-section]');
+  await page.waitForTimeout(500);
+  check('刷新已消费的对比链接不重复请求模型', compareCallCount() === compareBefore + 1);
   await page.goto('/?panel=career&section=resume', { waitUntil: 'networkidle' });
   check('简历库侧栏入口复用原简历上传与画像视图', (await page.locator('[data-test=nav-resume].active').count()) === 1
     && (await page.locator('[data-test=page-title]').innerText()).includes('简历库')
     && (await page.locator('[data-test=resume-section]').count()) === 1);
+
+  for (let i = 0; i < 101; i += 1) {
+    const bulk = await server.request('/api/v1/applications/manual', {
+      method: 'POST', cookie: login.cookie,
+      headers: { 'Idempotency-Key': `career-bulk-${i}` },
+      body: {
+        company_name: `批量公司${String(i).padStart(3, '0')}`,
+        job_title: '数据产品经理',
+        has_applied: true, status: 'applied', applied_date: '2026-10-01',
+        jd_summary: '负责数据分析和用户研究。',
+        job_url: `https://jobs.example.com/career-bulk/${i}`
+      }
+    });
+    if (bulk.status !== 201) throw new Error(`bulk seed ${i}: ${bulk.status} ${bulk.text.slice(0, 120)}`);
+  }
+  await page.goto('/?panel=career&section=match', { waitUntil: 'networkidle' });
+  await page.waitForSelector('[data-test=match-app-search]');
+  await page.waitForSelector('[data-test=match-app-more]');
+  check('单岗选择加载第一页并保留分页入口', (await page.locator('[data-test=match-app-more]').count()) === 1);
+  await page.fill('[data-test=match-app-search]', '批量公司100');
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-test=match-application] option')].some((o) => o.textContent.includes('批量公司100')), null, { timeout: 20000 });
+  const bulkOption = await page.locator('[data-test=match-application] option', { hasText: '批量公司100' }).getAttribute('value');
+  await page.selectOption('[data-test=match-application]', bulkOption);
+  check('搜索能找到第一页之外的台账岗位', (await page.locator('[data-test=match-application]').inputValue()) === bulkOption);
+  const modelCallsBeforeBulk = fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length;
+  await page.waitForTimeout(300);
+  check('选择搜索结果不自动触发模型', fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === modelCallsBeforeBulk);
+
   check('AI 分析没有改变岗位状态', (await server.request(`/api/v1/applications/${pending.application_id}`, { cookie: login.cookie })).json.data.status === 'pending');
   check('页面无未捕获异常', errors.length === 0, errors.join('; '));
   await page.screenshot({ path: path.join(out, 'career-ai.png'), fullPage: true });

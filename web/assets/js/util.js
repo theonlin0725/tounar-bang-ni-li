@@ -121,13 +121,29 @@ export function openModal({ title, subtitle, body, footer, tabs, activeTab, narr
   else clear(layer);
   layer.hidden = false;
   const modal = h('div', { class: `tn-modal${narrow ? ' tn-modal-narrow' : ''}`, role: 'dialog', 'aria-modal': 'true', ...(testid ? { 'data-test': testid } : {}) });
+  const previousFocus = document.activeElement;
   let close = () => {
     if (stacked) layer.remove();
     else { layer.hidden = true; clear(layer); }
     document.removeEventListener('keydown', onKey);
+    if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === 'function') {
+      previousFocus.focus({ preventScroll: true });
+    }
     if (onClose) onClose();
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const focusables = () => [...modal.querySelectorAll(focusableSelector)].filter((node) => !node.hidden && node.getClientRects().length);
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key !== 'Tab') return;
+    const nodes = focusables();
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
   document.addEventListener('keydown', onKey);
   const head = h('div', { class: 'tn-modal-head' },
     h('div', {}, h('h2', { text: title }), subtitle ? h('div', { class: 'tn-modal-sub', text: subtitle }) : null),
@@ -148,8 +164,8 @@ export function openModal({ title, subtitle, body, footer, tabs, activeTab, narr
   modal.append(bodyNode);
   if (footer) modal.append(h('div', { class: 'tn-modal-foot' }, footer));
   layer.append(h('div', { class: 'tn-modal-mask', onclick: close }), modal);
-  const focusable = modal.querySelector('input, select, textarea, button.tn-btn-primary');
-  if (focusable) focusable.focus();
+  const firstFocusable = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button.tn-btn-primary:not([disabled])') || focusables()[0];
+  if (firstFocusable) firstFocusable.focus({ preventScroll: true });
   return { close, body: bodyNode };
 }
 

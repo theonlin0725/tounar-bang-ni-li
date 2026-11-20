@@ -2,7 +2,7 @@
  * 所有数据来自当前账号 API；前端不拼模型请求、不读取其他用户数据。 */
 import { api, errorText } from '../api.js';
 import { isStale } from '../app.js?v=20261120-1';
-import { h, clear, toast, fmtDateTime, openModal, idemKey } from '../util.js';
+import { h, clear, toast, fmtDateTime, openModal, idemKey, debounce } from '../util.js';
 import { openDetail } from './detail.js?v=20261120-1';
 
 const MATCH_LABELS = { high: '相对匹配高', medium: '相对匹配中', low: '相对匹配低', insufficient: '资料不足' };
@@ -62,7 +62,7 @@ function external(url, label = '打开原岗位') {
   return h('a', { class: 'tn-btn tn-btn-sm', href: url, target: '_blank', rel: 'noopener noreferrer', text: label });
 }
 
-export async function renderCareer(container, { gen, apps = null, applicationId = null, section = null } = {}) {
+export async function renderCareer(container, { gen, apps = null, applicationId = null, section = null, autorun = null } = {}) {
   const selectedIds = String(apps || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 6);
   const root = h('div', { class: 'tn-career', 'data-test': 'career-view' });
   container.append(root);
@@ -73,14 +73,27 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
   let comparison = null;
   let recommendation = null;
   let selectedApps = [];
+  let autoCompareStarted = false;
   let matchApps = [];
   let matchAppId = applicationId || null;
   let match = null;
+  let matchAppQuery = '';
+  let matchAppCursors = { applied: null, viewed: null };
+  let matchAppHasMore = { applied: false, viewed: false };
+  let matchAppLoading = false;
+  let matchAppReqSeq = 0;
   let matchHistory = [];
+  let matchHistoryReqSeq = 0;
+  let matchReportReqSeq = 0;
   let matchBusy = false;
   let interview = null;
   let resumeSuggestionsOpen = false;
   const active = () => !isStale(gen) && root.isConnected;
+  if (autorun === 'compare') {
+    const url = new URL(location.href);
+    url.searchParams.delete('autorun');
+    history.replaceState({}, '', `${url.pathname}${url.search}`);
+  }
 
   root.append(h('div', { class: 'tn-career-head' },
     h('div', { class: 'tn-grow' },
@@ -101,37 +114,86 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
     for (const b of root.querySelectorAll('button')) b.disabled = value;
   }
 
+  function mergeMatchApps(items) {
+    const map = new Map(matchApps.map((item) => [item.id, item]));
+    for (const item of items || []) if (item?.id) map.set(item.id, { ...(map.get(item.id) || {}), ...item });
+    matchApps = [...map.values()];
+  }
+
+  async function loadMatchApps({ reset = false, more = false } = {}) {
+    if (!active()) return;
+    if (!reset && !more) return;
+    const seq = ++matchAppReqSeq;
+    if (reset) {
+      matchApps = [];
+      matchAppCursors = { applied: null, viewed: null };
+      matchAppHasMore = { applied: true, viewed: true };
+    } else if (!matchAppHasMore.applied && !matchAppHasMore.viewed) return;
+    matchAppLoading = true;
+    renderMatch();
+    try {
+      const views = reset ? ['applied', 'viewed'] : ['applied', 'viewed'];
+      const results = await Promise.all(views.map(async (view) => {
+        if (!reset && !matchAppHasMore[view]) return null;
+        const params = new URLSearchParams({ view, limit: '50' });
+        if (matchAppQuery) params.set('q', matchAppQuery);
+        if (!reset && matchAppCursors[view]) params.set('cursor', matchAppCursors[view]);
+        try {
+          const response = await api.get(`/api/v1/ledger?${params.toString()}`);
+          return { view, data: response.data };
+        } catch { return { view, error: true }; }
+      }));
+      if (!active() || seq !== matchAppReqSeq) return;
+      for (const result of results) {
+        if (!result) continue;
+        if (result.error) {
+          match = { ...(match || {}), historyError: '岗位列表加载失败，请重试' };
+          continue;
+        }
+        mergeMatchApps(result.data.items || []);
+        matchAppCursors[result.view] = result.data.page?.next_cursor || null;
+        matchAppHasMore[result.view] = !!result.data.page?.has_more;
+      }
+      if (reset && !matchAppQuery && applicationId && !matchApps.some((item) => item.id === applicationId)) {
+        try {
+          const detail = (await api.get(`/api/v1/applications/${encodeURIComponent(applicationId)}`)).data;
+          if (active() && seq === matchAppReqSeq) matchApps = [detail, ...matchApps];
+        } catch { /* 选择失效时保留空选择 */ }
+      }
+      if (matchAppId && !matchApps.some((item) => item.id === matchAppId)) matchAppId = '';
+      if (active() && seq === matchAppReqSeq) renderMatch();
+    } finally {
+      if (active() && seq === matchAppReqSeq) {
+        matchAppLoading = false;
+        renderMatch();
+      }
+    }
+  }
+
   async function load() {
     try {
-      const [statusRes, currentRes, listRes, appliedRes, viewedRes] = await Promise.all([
-        api.get('/api/v1/ai/status'), api.get('/api/v1/resumes/current'), api.get('/api/v1/resumes'),
-        api.get('/api/v1/ledger?view=applied&limit=100'), api.get('/api/v1/ledger?view=viewed&limit=100')
+      const [statusRes, currentRes, listRes] = await Promise.all([
+        api.get('/api/v1/ai/status'), api.get('/api/v1/resumes/current'), api.get('/api/v1/resumes')
       ]);
       if (!active()) return;
       status = statusRes.data;
       resume = currentRes.data;
       versions = listRes.data || [];
-      const seen = new Set();
-      matchApps = [...(appliedRes.data.items || []), ...(viewedRes.data.items || [])].filter((item) => {
-        if (!item?.id || seen.has(item.id)) return false;
-        seen.add(item.id); return true;
-      });
-      if (matchAppId && !matchApps.some((item) => item.id === matchAppId)) {
-        try {
-          const detail = (await api.get(`/api/v1/applications/${encodeURIComponent(matchAppId)}`)).data;
-          if (active()) matchApps.unshift(detail);
-        } catch { /* 选择失效时保留空选择 */ }
-      }
       const details = await Promise.all(selectedIds.map(async (id) => {
         try { return (await api.get(`/api/v1/applications/${encodeURIComponent(id)}`)).data; } catch { return null; }
       }));
       selectedApps = details.filter(Boolean);
       renderNotice();
-      renderMatch();
+      await loadMatchApps({ reset: true });
+      if (!active()) return;
       renderResume();
       renderCompare();
       renderRecommend();
       if (matchAppId) loadMatchHistory();
+      if (autorun === 'compare' && !autoCompareStarted && selectedIds.length >= 2 && resume?.status === 'ready') {
+        autoCompareStarted = true;
+        runCompare();
+      }
       if (section === 'resume') requestAnimationFrame(() => resumeSection.scrollIntoView({ block: 'start', behavior: 'smooth' }));
     } catch (err) {
       if (active()) { clear(aiNotice); aiNotice.append(h('div', { class: 'tn-inline-msg err', text: '无法加载 AI 状态：' + errorMessage(err) })); }
@@ -178,16 +240,35 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
   }
 
   function renderMatch() {
+    const wasSearchFocused = document.activeElement?.getAttribute('data-test') === 'match-app-search';
+    const searchCaret = wasSearchFocused ? document.activeElement.selectionStart : null;
     clear(matchSection);
     const selected = matchApps.find((item) => item.id === matchAppId);
     const report = match?.report || null;
     matchSection.append(h('div', { class: 'tn-ai-section-head' },
       h('div', {}, h('h2', { text: '单岗位匹配分析' }),
-        h('p', { class: 'tn-small tn-muted', style: { margin: '4px 0 0' }, text: '针对一个真实岗位和当前简历，分开看“能不能做”和“要不要优先投”；每个结论都能回到 JD 与简历证据。' })),
-      report ? h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '重新运行匹配分析', 'data-test': 'match-rerun', disabled: matchBusy || !resume || resume.status !== 'ready', onclick: () => runMatch({ parent: report.id }) }) : null
+        h('p', { class: 'tn-small tn-muted', style: { margin: '4px 0 0' }, text: '针对一个真实岗位和当前简历，分开看“能不能做”和“要不要优先投”；每个结论都能回到 JD 与简历证据。' }))
     ));
-    const select = h('select', { class: 'tn-select tn-match-select', 'data-test': 'match-application', disabled: matchBusy });
-    select.append(h('option', { value: '', text: matchApps.length ? '选择一个台账岗位…' : '台账里还没有岗位' }));
+    const search = h('input', {
+      class: 'tn-input tn-match-search', type: 'search', value: matchAppQuery,
+      placeholder: '搜索公司 / 岗位 / 城市 / 批次', 'data-test': 'match-app-search',
+      'aria-label': '搜索台账岗位'
+    });
+    search.addEventListener('input', debounce(() => {
+      const nextQuery = search.value.trim();
+      if (nextQuery === matchAppQuery) return;
+      matchAppQuery = nextQuery;
+      if (!matchApps.some((item) => item.id === matchAppId)) matchAppId = '';
+      match = null;
+      interview = null;
+      matchHistory = [];
+      ++matchHistoryReqSeq;
+      ++matchReportReqSeq;
+      renderMatch();
+      loadMatchApps({ reset: true });
+    }, 300));
+    const select = h('select', { class: 'tn-select tn-match-select', 'data-test': 'match-application', disabled: matchBusy || matchAppLoading });
+    select.append(h('option', { value: '', text: matchAppLoading ? '正在搜索台账…' : matchApps.length ? '选择一个台账岗位…' : '没有匹配的岗位' }));
     for (const item of matchApps) {
       select.append(h('option', {
         value: item.id,
@@ -200,17 +281,30 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       match = null;
       interview = null;
       matchHistory = [];
+      ++matchHistoryReqSeq;
+      ++matchReportReqSeq;
       renderMatch();
       if (matchAppId) loadMatchHistory();
     });
-    const run = h('button', {
+    const run = report ? null : h('button', {
       class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'match-run',
-      text: matchBusy ? '分析中…' : report ? '重新分析这个岗位' : '开始匹配分析',
+      text: matchBusy ? '分析中…' : '开始匹配分析',
       disabled: matchBusy || !matchAppId || !resume || resume.status !== 'ready',
-      onclick: () => runMatch({ parent: report?.id || null })
+      onclick: () => runMatch({ parent: null })
     });
-    matchSection.append(h('div', { class: 'tn-match-picker' }, select, run,
-      h('span', { class: 'tn-small tn-muted', text: !matchAppId ? '先从本人台账选择一个岗位；也能从岗位详情带入。' : resume?.status === 'ready' ? '只读取当前岗位和当前简历，不会修改台账状态。' : '需要当前简历分析完成。' })));
+    const more = (matchAppHasMore.applied || matchAppHasMore.viewed)
+      ? h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-app-more', text: matchAppLoading ? '加载中…' : '加载更多岗位', disabled: matchAppLoading, onclick: () => loadMatchApps({ more: true }) })
+      : null;
+    matchSection.append(h('div', { class: 'tn-match-picker' }, search, select, run, more,
+      h('span', { class: 'tn-small tn-muted', text: !matchAppId ? '先从本人台账搜索并选择一个岗位；也能从岗位详情带入。' : report ? '报告已生成；重新分析请用报告下方的“下一步行动”。' : resume?.status === 'ready' ? '只读取当前岗位和当前简历，不会修改台账状态。' : '需要当前简历分析完成。' })));
+    if (matchAppLoading) matchSection.append(h('div', { class: 'tn-inline-msg', 'data-test': 'match-app-loading' }, h('span', { class: 'tn-spinner', 'aria-hidden': 'true' }), '正在加载更多台账岗位…'));
+    if (wasSearchFocused) requestAnimationFrame(() => {
+      const next = matchSection.querySelector('[data-test="match-app-search"]');
+      if (!next) return;
+      next.focus({ preventScroll: true });
+      const caret = Math.min(searchCaret ?? next.value.length, next.value.length);
+      next.setSelectionRange(caret, caret);
+    });
     if (matchAppId && selected) {
       matchSection.append(h('div', { class: 'tn-match-jobline' },
         h('strong', { text: [selected.company_name, selected.job_title].filter(Boolean).join(' · ') }),
@@ -235,29 +329,62 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       matchSection.append(h('div', { class: 'tn-inline-msg', 'data-test': 'match-running' },
         h('span', { class: 'tn-spinner', 'aria-hidden': 'true' }), '正在读取岗位与简历证据，生成匹配报告…'));
     }
-    if (match?.error) {
+    if (match?.error && (!report || report.status === 'ready')) {
       matchSection.append(h('div', { class: 'tn-inline-msg err', 'data-test': 'match-error' }, match.error,
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '查看岗位详情', onclick: () => openDetail(matchAppId, { gen, onChanged: () => loadMatchAppsOnly() }) }),
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '重试', 'data-test': 'match-retry', onclick: () => runMatch({ parent: report?.id || null }) })));
     }
-    if (report) matchSection.append(renderMatchReport(report));
+    if (report?.status === 'ready') matchSection.append(renderMatchReport(report));
+    else if (report) matchSection.append(renderMatchStatus(report));
     if (!matchAppId) {
       matchSection.append(h('div', { class: 'tn-empty' }, h('p', { text: '选择一个本人台账岗位，开始单岗位匹配。' }),
         h('p', { class: 'tn-small tn-muted', text: '也可以从岗位详情点「匹配分析」带入当前岗位。' })));
     }
   }
 
+  function renderMatchStatus(report) {
+    return h('div', { class: 'tn-banner err tn-match-report-status', 'data-test': 'match-report-unavailable' },
+      h('div', { class: 'tn-banner-body' },
+        h('div', { text: `报告未完成：${report.error_message || report.error_code || '模型或证据校验失败'}` }),
+        h('div', { class: 'tn-small', text: '历史报告不会显示为已完成；请重新运行匹配分析生成新报告。' })),
+      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '重新运行', 'data-test': 'match-rerun-failed', onclick: () => runMatch({ parent: null }) })
+    );
+  }
+
+  function focusDimension(key) {
+    const card = matchSection.querySelector(`[data-dimension="${key}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    card.classList.remove('tn-evidence-flash');
+    void card.offsetWidth;
+    card.classList.add('tn-evidence-flash');
+  }
+
+  function summaryEvidence(item, label = '查看依据') {
+    if (!item?.dimension_key && !item?.key) return null;
+    const sources = new Set((item.evidence || []).map((e) => e.source));
+    const confirmed = sources.has('user_confirmed');
+    return h('span', { class: 'tn-summary-evidence' },
+      h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'summary-evidence', onclick: () => focusDimension(item.dimension_key || item.key) }, label),
+      confirmed ? h('span', { class: 'tn-match-dim-tag', text: '含用户确认补充' }) : null);
+  }
+
   function renderMatchReport(report) {
     const result = report.result || {};
     const job = result.job || matchApps.find((x) => x.id === matchAppId) || {};
+    const reportVersion = report.report_version || result.report_version || '';
     const box = h('div', { class: 'tn-ai-report tn-match-report', 'data-test': 'match-report', 'data-report-id': report.id });
     box.append(h('div', { class: 'tn-match-report-head' },
       h('div', {},
         h('h3', { text: [job.company_name, job.job_title].filter(Boolean).join(' · ') || '岗位匹配报告' }),
         h('div', { class: 'tn-small tn-muted', text: `简历：${result.resume?.filename || '当前简历'}${result.resume?.updated_at ? ` · 版本 ${fmtDateTime(result.resume.updated_at)}` : ''} · 分析时间：${fmtDateTime(result.analyzed_at || report.completed_at)} · 报告 ${report.id}` })),
       job.job_url ? h('a', { class: 'tn-btn tn-btn-sm', href: job.job_url, target: '_blank', rel: 'noopener noreferrer', text: '打开原岗位' }) : null,
-      h('span', { class: 'tn-match-version', text: report.report_version || result.report_version || 'match-v1' })
+      h('span', { class: 'tn-match-version', text: reportVersion || 'match-v1（旧）' })
     ));
+    if (reportVersion !== 'match-v2') {
+      box.append(h('div', { class: 'tn-banner warn', 'data-test': 'match-legacy-report' },
+        h('div', { class: 'tn-banner-body', text: '这份报告生成于证据核验修复前，仍按原文保留，但不代表已按新版门槛与引文规则重新核验；建议重新运行匹配分析。' })));
+    }
     box.append(h('div', { class: 'tn-match-core' },
       matchCoreCard('能力匹配度', result.ability?.conclusion || '无法判断', SINGLE_LEVEL_CLASS[result.ability?.conclusion], result.ability),
       matchCoreCard('投递优先级', result.priority?.conclusion || '待确认', PRIORITY_CLASS[result.priority?.conclusion], result.priority)
@@ -295,17 +422,20 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       h('div', { class: 'tn-match-summary-grid' },
         h('div', {}, h('h5', { text: '有证据的优势' }),
           strengths.length ? h('ul', { class: 'tn-match-list' }, ...strengths.map((s) => h('li', {},
-            h('span', { class: 'tn-match-dim-tag', text: s.dimension || DIMENSION_NAMES[s.key] || '匹配' }), s.text))) : h('p', { class: 'tn-small tn-muted', text: '暂未找到可逐字核验的优势。' })),
+            h('span', { class: 'tn-match-dim-tag', text: s.dimension || DIMENSION_NAMES[s.key] || '匹配' }), s.text,
+            summaryEvidence(s)))) : h('p', { class: 'tn-small tn-muted', text: '暂未找到可逐字核验的优势。' })),
         h('div', {}, h('h5', { text: '明确差距' }),
           gaps.filter((g) => g.kind !== '资料不足').length
             ? h('ul', { class: 'tn-match-list' }, ...gaps.filter((g) => g.kind !== '资料不足').map((g) => h('li', {},
               h('span', { class: 'tn-match-dim-tag', text: g.dimension }), g.text,
+              summaryEvidence(g),
               h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'match-gap-supplement', onclick: () => openCorrectionModal({ dimension: g.key, original: `【${g.dimension}】${g.text}` }) }, '补充这段经历'))))
             : h('p', { class: 'tn-small tn-muted', text: '没有发现明确的能力差距；资料不足项单独列出。' }),
           h('h5', { class: 'tn-match-subhead', text: '资料不足 / 暂未发现案例' }),
           gaps.filter((g) => g.kind === '资料不足').length
             ? h('ul', { class: 'tn-match-list' }, ...gaps.filter((g) => g.kind === '资料不足').map((g) => h('li', {},
               h('span', { class: 'tn-match-dim-tag', text: g.dimension }), `${g.text}（查过：${result.resume?.filename || '当前简历'}；岗位要求：${g.requirement || '见上方维度'}）`,
+              summaryEvidence(g),
               h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'match-gap-supplement', onclick: () => openCorrectionModal({ dimension: g.key, original: `【${g.dimension}】${g.text}` }) }, '补充证据'))))
             : h('p', { class: 'tn-small tn-muted', text: '没有资料不足项。' })
         )
@@ -387,24 +517,41 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
 
   function renderResumeSuggestions(report) {
     const result = report.result || {};
-    const tips = [];
-    tips.push(`目标岗位：${[result.job?.company_name, result.job?.job_title].filter(Boolean).join(' · ') || '当前岗位'}`);
-    tips.push('说明：以下只是建议，不会自动修改或覆盖原简历；是否采纳由你决定。');
-    for (const d of result.dimensions || []) {
-      if (!d.gaps?.length && d.conclusion !== '无法判断') continue;
-      tips.push('');
-      tips.push(`【${d.name}】`);
-      if (d.requirement) tips.push(`JD 要求：${d.requirement}`);
-      if (d.user_evidence) tips.push(`简历对应：${d.user_evidence}`);
-      if (d.gaps?.length) tips.push(`建议补充：${d.gaps.join('；')}`);
-      if (d.next_step) tips.push(`怎么改：${d.next_step}`);
-    }
+    const dimensions = (result.dimensions || []).filter((d) => d.gaps?.length);
     const panel = h('div', { class: 'tn-match-action-panel', 'data-test': 'match-resume-suggestions-wrap' },
       h('h5', { text: '当前岗位简历修改建议' }),
-      h('p', { class: 'tn-small tn-muted', text: '关联原简历证据和 JD 要求；原文仍保留在简历库，不会被这次匹配改写。' }),
-      h('textarea', { class: 'tn-textarea', rows: '10', 'data-test': 'match-resume-suggestions', value: tips.join('\n') }),
-      h('div', { class: 'tn-small tn-muted', text: '确认要改简历时，请到「简历库」修正文本并重新分析。' })
+      h('p', { class: 'tn-small tn-muted', text: `目标岗位：${[result.job?.company_name, result.job?.job_title].filter(Boolean).join(' · ') || '当前岗位'}。以下每条都关联原简历引文和 JD 要求；只是建议，不会自动改写原简历，是否采纳由你决定。` })
     );
+    if (!dimensions.length) {
+      panel.append(h('div', { class: 'tn-empty', style: { padding: '20px 10px' } }, h('p', { text: '当前报告没有需要补充的明确缺口。' })));
+      return panel;
+    }
+    for (const d of dimensions.slice(0, 8)) {
+      const userEvidence = (d.evidence || []).filter((e) => e.source === 'resume' || e.source === 'user_confirmed');
+      const original = userEvidence.map((e) => e.quote).join('；') || d.user_evidence || '原简历没有可核验的对应段落';
+      const suggestion = [d.next_step || '补充与该岗位要求直接相关的经历、工具使用和交付结果。',
+        d.gaps?.length ? `针对缺口：${d.gaps.join('；')}` : ''].filter(Boolean).join(' ');
+      const textarea = h('textarea', { class: 'tn-textarea', rows: '3', 'data-test': 'match-resume-suggestion', value: suggestion });
+      const copy = h('button', {
+        class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-resume-copy',
+        text: '复制这条建议',
+        onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(textarea.value);
+            toast('建议已复制；原简历未被修改', 'ok');
+          } catch {
+            textarea.focus(); textarea.select(); toast('无法访问剪贴板，请手动复制选中的文字', 'err');
+          }
+        }
+      });
+      panel.append(h('article', { class: 'tn-resume-suggestion', 'data-test': 'match-resume-suggestion-card' },
+        h('div', { class: 'tn-match-dim-head' }, h('h5', { text: d.name }), h('span', { class: 'tn-small tn-muted', text: '可编辑，不会自动保存' })),
+        h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '原简历段落' }), h('blockquote', { class: 'tn-ai-evidence', text: original })),
+        h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '对应 JD 要求' }), h('p', { text: d.requirement || '—' })),
+        h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '建议文本' }), textarea, h('div', { class: 'tn-action-row', style: { marginTop: '6px' } }, copy))
+      ));
+    }
+    panel.append(h('div', { class: 'tn-small tn-muted', text: '确认要改简历时，请到「简历库」修正文本并重新分析；本页不会写入简历。' }));
     return panel;
   }
 
@@ -520,31 +667,39 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
   async function loadMatchHistory({ keep = false } = {}) {
     if (!matchAppId) return;
     const targetAppId = matchAppId;
+    const seq = ++matchHistoryReqSeq;
     try {
       const response = await api.get(`/api/v1/ai/match-reports?application_id=${encodeURIComponent(targetAppId)}`);
-      if (!active() || matchAppId !== targetAppId) return;
+      if (!active() || matchAppId !== targetAppId || seq !== matchHistoryReqSeq) return;
       matchHistory = response.data || [];
       if (!keep && !match?.report && matchHistory[0]?.status === 'ready') {
         await loadMatchReport(matchHistory[0].id, { targetAppId });
         return;
       }
-      if (active()) renderMatch();
+      if (active() && seq === matchHistoryReqSeq) renderMatch();
     } catch (error) {
-      if (active() && matchAppId === targetAppId) { match = { ...(match || {}), historyError: errorMessage(error) }; renderMatch(); }
+      if (active() && matchAppId === targetAppId && seq === matchHistoryReqSeq) {
+        match = { ...(match || {}), historyError: errorMessage(error) };
+        renderMatch();
+      }
     }
   }
 
   async function loadMatchReport(reportId, { targetAppId = matchAppId } = {}) {
+    const seq = ++matchReportReqSeq;
     try {
       const response = await api.get(`/api/v1/ai/reports/${encodeURIComponent(reportId)}`);
-      if (!active() || matchAppId !== targetAppId) return;
+      if (!active() || matchAppId !== targetAppId || seq !== matchReportReqSeq) return;
       if (!response.data?.application_ids?.includes(targetAppId)) return;
       match = { status: response.data.status === 'ready' ? 'ready' : 'failed', report: response.data,
         error: response.data.status === 'ready' ? '' : (response.data.error_message || '报告未完成') };
       interview = null;
       renderMatch();
     } catch (error) {
-      if (active()) { match = { status: 'failed', error: errorMessage(error), report: match?.report || null }; renderMatch(); }
+      if (active() && seq === matchReportReqSeq) {
+        match = { status: 'failed', error: errorMessage(error), report: match?.report || null };
+        renderMatch();
+      }
     }
   }
 

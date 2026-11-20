@@ -586,3 +586,18 @@ div.tn-jd-items { padding-left: 0; }
   .tn-match-picker .tn-match-select, .tn-match-picker .tn-btn { width: 100%; }
   .tn-match-report-head .tn-match-version { margin-left: 0; }
 }
+
+/* 验收修复：岗位搜索、摘要回链、简历修改建议逐条证据 */
+.tn-match-search { flex: 1 1 230px; min-width: 190px; }
+.tn-summary-evidence { display: inline-flex; gap: 4px; align-items: center; margin-left: 4px; vertical-align: baseline; }
+.tn-summary-evidence .tn-btn { padding: 1px 6px; font-size: 11px; }
+.tn-evidence-flash { animation: tn-evidence-flash 1.5s ease; }
+@keyframes tn-evidence-flash { 0%, 100% { box-shadow: none; } 20%, 70% { box-shadow: 0 0 0 3px rgba(23, 89, 76, 0.25); } }
+.tn-resume-suggestion { border-top: 1px dashed var(--line); padding: 12px 0 4px; }
+.tn-resume-suggestion:first-of-type { border-top: none; }
+.tn-resume-suggestion textarea { width: 100%; font-size: 13px; }
+.tn-match-report-status { margin-top: 12px; }
+@media (max-width: 760px) {
+  .tn-match-search { width: 100%; flex-basis: 100%; }
+  .tn-summary-evidence { display: flex; margin-left: 0; margin-top: 3px; }
+}
