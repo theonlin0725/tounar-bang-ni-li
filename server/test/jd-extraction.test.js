@@ -67,3 +67,21 @@ test('concurrent requests deduplicate, cache is owner scoped, failures do not ca
  await extractJd('failure',input,{fetchImpl});assert.equal(calls,3);
  await assert.rejects(extractJd('bad',{...input,text:'x'.repeat(30001)},{fetchImpl}));
 });
+
+test('标题与标签同父节点：合并标签的父候选被拒绝，独立名称候选保留', () => {
+ const parent = '游戏设计师（战斗策划） 游戏热爱';
+ const clean = '游戏设计师（战斗策划）';
+ const titleLines = ['游戏设计师（战斗策划）', '游戏热爱', parent, '岗位描述', '负责战斗技能设计。', '岗位要求', '热爱游戏。'];
+ const candidates = [
+   { id: 'parent', text: parent, source: 'heading_near_apply' },
+   { id: 'clean', text: clean, source: 'visible_title_node' }
+ ];
+ const rawTitle = { is_job: true, job_title_evidence: 'parent', company_name: null, location: null, recruitment_batch: null,
+   sections: { 团队介绍: [], 岗位职责: [{ line: 4 }], 任职要求: [{ line: 6 }], 其他信息: [] } };
+ const bad = validateExtraction(rawTitle, titleLines, 'https://campus.game.163.com/app/detail/index?id=4721&projectId=102', candidates);
+ assert.equal(bad.job_title, '');
+ assert.equal(bad.job_title_status, 'pending');
+ const good = validateExtraction({ ...rawTitle, job_title_evidence: 'clean' }, titleLines, 'https://campus.game.163.com/app/detail/index?id=4721&projectId=102', candidates);
+ assert.equal(good.job_title, clean);
+ assert.equal(good.field_sources.job_title, 'model_source_quote');
+});

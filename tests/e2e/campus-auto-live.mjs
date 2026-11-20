@@ -121,6 +121,12 @@ await context.addInitScript(() => {
 });
 
 const results = [];
+const NETEASE_GAME_EXPECTED = {
+  '4721': { company: '网易游戏（互娱）', title: '游戏设计师（战斗策划）', location: '杭州、上海、广州' },
+  '4739': { company: '网易游戏（互娱）', title: '图形开发工程师', location: '杭州、上海、广州' },
+  '4731': { company: '网易游戏（互娱）', title: '游戏研发工程师（客户端/服务端）', location: '杭州、上海、广州' },
+  '4765': { company: '网易游戏（互娱）', title: '游戏技术美术工程师（PCG向）', location: '广州' }
+};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const db = () => new DatabaseSync(path.join(server.dir, 'tounar.sqlite'), { readOnly: true });
 
@@ -336,7 +342,15 @@ for (const row of selected) {
     result.job_viewed = ev.events.filter(e => e.event_type === 'job_viewed').length;
     const fe = await frontEnd(app.id);
     result.前端 = fe.ok ? '通过' : '未通过';
-    result.结果 = result.job_viewed > 0 && result.前端 === '通过' && result.模型来源 === 'model_source_quote' ? '自动整理成功' : '已入账但证据不完整';
+    const expected = NETEASE_GAME_EXPECTED[String(app.site_job_id || '')]
+      || NETEASE_GAME_EXPECTED[String(new URL(clicked.url).searchParams.get('id') || '')];
+    result.字段值 = JSON.stringify({ company: app.company_name, title: app.job_title, location: app.location });
+    const fieldsOk = expected ? app.company_name === expected.company && app.job_title === expected.title && app.location === expected.location : null;
+    result.字段正确 = expected ? (fieldsOk ? '通过' : '失败') : '未提供预期';
+    const basic = result.job_viewed > 0 && result.前端 === '通过' && result.模型来源 === 'model_source_quote';
+    result.结果 = !basic ? '已入账但证据不完整'
+      : expected ? (fieldsOk ? '自动整理成功（字段正确）' : '已入账但字段错误')
+        : '自动整理成功（未设字段预期）';
     result.前端JD = fe.jd.slice(0, 160);
   } catch (error) {
     result.结果 = '异常';
@@ -350,6 +364,6 @@ for (const row of selected) {
 }
 fs.writeFileSync(path.join(OUT, 'summary.json'), JSON.stringify({ selected: selected.length, results }, null, 2));
 console.log(`\n结果目录：${OUT}`);
-console.log(`完成 ${results.filter(r => r.结果 === '自动整理成功').length}/${results.length}`);
+console.log(`完成 ${results.filter(r => r.结果 === '自动整理成功（字段正确）').length}/${results.length}（字段正确）；字段失败 ${results.filter(r => r.结果 === '已入账但字段错误').length}；未设预期 ${results.filter(r => r.结果 === '自动整理成功（未设字段预期）').length}`);
 await context.close();
 await server.stop();

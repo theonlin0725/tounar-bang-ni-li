@@ -76,6 +76,17 @@ before(async () => {
         res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
         return;
       }
+      if (input.job?.company_name === '研究门槛公司') {
+        answer = {
+          ability: { conclusion: '部分匹配', summary: '有部分可迁移技能。', basis: '简历有 SQL。' },
+          priority: { conclusion: '适合投', summary: '能力有部分匹配。', basis: '无明显冲突。' },
+          overall_advice: '可以继续了解这个岗位。',
+          hard_gates: [{ requirement: '计算机视觉或图形学等相关研究方向', jd_evidence: '计算机视觉或图形学等相关研究方向', user_info: '简历专业为市场营销，未呈现该研究方向', resume_evidence: '市场营销', result: '不满足', basis: '未呈现该方向。' }],
+          dimensions: [], limitations: []
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(answer) } }] }));
+        return;
+      }
       if (input.job?.company_name === '无证据阻断公司') {
         answer = {
           ability: { conclusion: '匹配', summary: '模型声称匹配。', basis: '无。' },
@@ -594,4 +605,23 @@ it('P0 优势与顶部依据必须由用户侧证据支持，虚构收益被移�
   const skills = result.dimensions.find((d) => d.key === 'skills');
   assert.notEqual(skills.user_evidence, '精通 Tableau');
   assert.ok(skills.evidence.some((e) => e.source === 'resume' && e.quote.includes('SQL')));
+});
+
+it('P1 研究方向/岗位技能不是硬门槛：未呈现不能触发红色阻断', async () => {
+  await uploadAndAnalyze(`林舟。市场营销专业。熟悉 SQL，做过用户访谈和数据分析。`, '林舟-市场.txt');
+  const created = await createApp({
+    company_name: '研究门槛公司', job_title: '图形开发工程师', has_applied: true, status: 'applied',
+    applied_date: '2026-11-20',
+    jd_summary: '岗位要求：计算机视觉或图形学等相关研究方向；熟悉 SQL。',
+    job_url: 'https://example.com/jobs/tounar-audit-research-gate'
+  }, 'career-policy-research-gate');
+  assert.equal(created.status, 201, created.text);
+  const res = await post('/api/v1/ai/match', { application_id: created.json.data.id });
+  assert.equal(res.status, 200, res.text);
+  const result = res.json.data.result;
+  assert.ok(!result.hard_gates.some((g) => /计算机视觉|图形学/.test(g.requirement)), JSON.stringify(result.hard_gates));
+  assert.notEqual(result.priority.conclusion, '暂缓');
+  assert.doesNotMatch(result.overall_advice, /硬性门槛阻断|先处理硬性门槛/);
+  const dim = result.dimensions.find((d) => d.key === 'skills');
+  assert.notEqual(dim?.conclusion, '不匹配');
 });

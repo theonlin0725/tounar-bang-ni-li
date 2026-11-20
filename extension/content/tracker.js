@@ -383,8 +383,41 @@
 
   function scopedRecruitmentDetail() {
     const url = new URL(location.href);
-    let titleSelector, sourceSelector, companyName, locationName;
-    if (['app.mokahr.com','careers.ey.com.cn'].includes(url.hostname) && Adapters.isPublicRecruitmentDetail(url)) {
+    let titleSelector, sourceSelector, companyName, locationName, summary, extra = {};
+    if (url.hostname === 'campus.game.163.com'
+      && url.pathname === '/app/detail/index'
+      && /^\d+$/.test(url.searchParams.get('id') || '')) {
+      titleSelector = '.position-header-left .position-title > span:first-of-type';
+      sourceSelector = '.u-job-details';
+      companyName = Adapters.directoryEmployer(url.href) || '网易游戏（互娱）';
+      const detail = [...document.querySelectorAll(sourceSelector)]
+        .find((node) => [...node.children].some((child) => child.matches?.('.title') && child.matches?.('.desc') === false))
+        || document.querySelector(sourceSelector);
+      const sections = [];
+      if (detail) {
+        const children = [...detail.children];
+        for (let i = 0; i < children.length; i += 1) {
+          if (!children[i].matches?.('.title')) continue;
+          const label = String(children[i].innerText || '').trim();
+          const value = children[i + 1]?.matches?.('.desc') ? String(children[i + 1].innerText || '').trim() : '';
+          if (value) sections.push({ label, value });
+        }
+      }
+      const loc = sections.find((x) => /工作地点/.test(x.label));
+      if (loc) locationName = loc.value;
+      const duty = sections.find((x) => /岗位描述|职位描述|工作职责|岗位职责/.test(x.label));
+      const req = sections.find((x) => /岗位要求|任职要求|职位要求|任职资格/.test(x.label));
+      if (duty) {
+        const bullets = duty.value.split(/\n+/).map((line) => line.trim()).filter((line) => /^[-•]/.test(line));
+        summary = ['岗位职责', ...(bullets.length ? bullets.slice(0, 3) : [duty.value.slice(0, 180)])].join('\n');
+      }
+      const parts = [];
+      if (duty) parts.push(`${duty.label}\n${duty.value}`);
+      if (req) parts.push(`${req.label}\n${req.value}`);
+      extra = { description: parts.join('\n\n'), summary };
+    } else if (url.hostname === 'campus.game.163.com') {
+      return null;
+    } else if (['app.mokahr.com','careers.ey.com.cn'].includes(url.hostname) && Adapters.isPublicRecruitmentDetail(url)) {
       titleSelector = '[class*="left-panel-"] [class*="sd-foundation-heading-40-"][class*="title-"]';
       sourceSelector = '[class*="job-description-"]';
       companyName = Adapters.directoryEmployer(url.href);
@@ -402,11 +435,11 @@
     const titles = [...new Set([...document.querySelectorAll(titleSelector)].filter(visible).map(textOf).filter(Boolean))];
     const body = [...document.querySelectorAll(sourceSelector)].find(visible);
     if (!body || body.querySelector('form,textarea,[contenteditable]')) return null;
-    const description = body?.innerText?.trim() || '';
+    const description = extra.description || body?.innerText?.trim() || '';
     if (titles.length !== 1 || !titles[0] || description.length < 40 || !(JD_DUTY_SIGNAL.test(description) || JD_REQUIREMENT_SIGNAL.test(description))) return null;
     // Dedicated detail sections may use styled divs instead of h1/h2 headings.
     // Any repeated title or breadcrumb inside the panel is left for the model to discard.
-    return {title:titles[0], description, companyName, locationName, root:body};
+    return {title:titles[0], description, companyName, locationName, summary, root:body};
   }
   // The current job panel is the smallest visible container that has a unique
   // title plus real duty/requirement text.  Using the panel instead of the whole
@@ -781,7 +814,7 @@
       add('job_title',scoped.title,96,'recruitment_detail_panel');
       add('company_name',scoped.companyName,96,'recruitment_detail_panel');
       add('location',scoped.locationName,90,'recruitment_detail_panel');
-      add('jd_summary',scoped.description,96,'recruitment_detail_panel',scoped.description);
+      add('jd_summary',scoped.summary || scoped.description,96,'recruitment_detail_panel',scoped.description);
     }
     if(adapter.company_name&&!aggregator)add('company_name',adapter.company_name,98,'adapter_company');
     if(fixed&&!aggregator)add('company_name',fixed,91,'known_company_host');

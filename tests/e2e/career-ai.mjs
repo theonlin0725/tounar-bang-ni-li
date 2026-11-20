@@ -204,9 +204,20 @@ try {
   const matchText = await page.locator('[data-test=match-report]').innerText();
   check('单岗位报告显示能力匹配度、投递优先级和总体建议',
     matchText.includes('能力匹配度') && matchText.includes('投递优先级') && matchText.includes('总体建议'));
-  check('单岗位报告包含门槛表与六维卡片', (await page.locator('[data-test=match-gates]').count()) === 1
-    && (await page.locator('[data-test^=match-dimension-]').count()) === 6);
-  check('单岗位报告展示证据来源与下一步行动', matchText.includes('证据来源') && matchText.includes('优化当前岗位简历') && matchText.includes('生成面试问题'));
+  check('单岗位报告首屏只有两张结论卡，六维默认收起',
+    (await page.locator('[data-test^=match-dimension-][data-dimension]').count()) === 6
+      && (await page.locator('[data-test^=match-dimension-detail-]').evaluateAll((nodes) => nodes.every((n) => n.hidden))) === true
+      && (await page.locator('.tn-match-core-summary').count()) === 0);
+  await page.click('[data-test=match-dim-toggle-hard_gate]');
+  check('门槛表只在硬性门槛卡片展开后出现', (await page.locator('[data-test=match-gates]').count()) === 1
+    && (await page.locator('[data-test=match-dimension-detail-hard_gate]').isVisible()));
+  await page.click('[data-test=match-dim-toggle-skills]');
+  check('一次只展开一项，技能详情显示原文来源和下一步行动',
+    (await page.locator('[data-test=match-dimension-detail-skills]').isVisible())
+      && (await page.locator('[data-test=match-dimension-detail-hard_gate]').isHidden())
+      && (await page.locator('[data-test=match-dimension-detail-skills]').innerText()).includes('查看原文与来源')
+      && matchText.includes('优化当前岗位简历') && matchText.includes('生成面试问题'));
+  await page.screenshot({ path: path.join(out, 'match-expanded-1280.png'), fullPage: true });
   const firstReportId = await page.locator('[data-test=match-report]').getAttribute('data-report-id');
   await page.click('[data-test=match-resume-opt]');
   await page.waitForSelector('[data-test=match-resume-suggestion-card]');
@@ -246,6 +257,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.waitForTimeout(250);
 
+  await page.click('[data-test=match-dim-toggle-skills]');
   await page.locator('[data-dimension=skills] [data-test=match-correct]').click();
   await page.waitForSelector('[data-test=match-correction-modal]');
   const correctionText = await page.locator('[data-test=match-correction-modal]').innerText();
@@ -299,6 +311,8 @@ try {
     && await page.evaluate(() => document.activeElement?.getAttribute('data-test')) === 'sidebar-open');
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(out, 'match-mobile-390-report.png'), fullPage: true });
+  await page.click('[data-test=match-dim-toggle-hard_gate]');
+  await page.screenshot({ path: path.join(out, 'match-mobile-expanded-390.png'), fullPage: true });
   const mobileOverflow = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth,
     coreColumns: getComputedStyle(document.querySelector('.tn-match-core')).gridTemplateColumns.split(' ').length

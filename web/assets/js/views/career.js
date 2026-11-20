@@ -86,6 +86,7 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
   let matchHistoryReqSeq = 0;
   let matchReportReqSeq = 0;
   let matchBusy = false;
+  let openDimension = null;
   let interview = null;
   let resumeSuggestionsOpen = false;
   const active = () => !isStale(gen) && root.isConnected;
@@ -214,7 +215,9 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
 
   /* ---------- 单岗位匹配 ---------- */
   function matchLevelBadge(value, cls) {
-    return h('span', { class: `tn-ai-level ${cls || 'muted'}`, text: value || '无法判断' });
+    const icons = { '匹配': '✓', '部分匹配': '!', '不匹配': '×', '无法判断': '?' };
+    return h('span', { class: `tn-ai-level ${cls || 'muted'}` },
+      h('span', { class: 'tn-state-icon', 'aria-hidden': 'true', text: icons[value] || '·' }), value || '无法判断');
   }
   function matchSourceLabel(source) {
     return { jd: 'JD 原文', resume: '简历原文', user_confirmed: '用户确认补充' }[source] || '依据';
@@ -230,12 +233,10 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
     if (!rows?.length) return h('p', { class: 'tn-small tn-muted', text: emptyText || '暂无。' });
     return h('ul', { class: 'tn-match-list' }, ...rows.map((x) => h('li', { text: x })));
   }
-  function matchCoreCard(label, value, cls, data) {
+  function matchCoreCard(label, value, cls) {
     return h('article', { class: `tn-match-core-card ${cls || 'muted'}`, 'data-test': `match-${label === '能力匹配度' ? 'ability' : 'priority'}` },
       h('div', { class: 'tn-match-core-label', text: label }),
-      h('div', { class: 'tn-match-core-value', text: value }),
-      h('p', { class: 'tn-match-core-summary', text: data?.summary || '—' }),
-      h('p', { class: 'tn-small tn-muted', text: `依据：${data?.basis || '材料不足'}` })
+      h('div', { class: 'tn-match-core-value', text: value })
     );
   }
 
@@ -261,6 +262,7 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       if (!matchApps.some((item) => item.id === matchAppId)) matchAppId = '';
       match = null;
       interview = null;
+      openDimension = null;
       matchHistory = [];
       ++matchHistoryReqSeq;
       ++matchReportReqSeq;
@@ -280,6 +282,7 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       matchAppId = select.value;
       match = null;
       interview = null;
+      openDimension = null;
       matchHistory = [];
       ++matchHistoryReqSeq;
       ++matchReportReqSeq;
@@ -351,13 +354,31 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
     );
   }
 
+  function setDimensionOpen(key) {
+    for (const card of matchSection.querySelectorAll('.tn-match-dim')) {
+      const active = card.getAttribute('data-dimension') === key;
+      card.classList.toggle('expanded', active);
+      const summary = card.querySelector('.tn-match-dim-summary');
+      const detail = card.querySelector('.tn-match-dim-detail');
+      if (summary) summary.setAttribute('aria-expanded', active ? 'true' : 'false');
+      if (detail) detail.hidden = !active;
+    }
+  }
   function focusDimension(key) {
+    openDimension = key;
+    setDimensionOpen(key);
     const card = matchSection.querySelector(`[data-dimension="${key}"]`);
     if (!card) return;
     card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     card.classList.remove('tn-evidence-flash');
     void card.offsetWidth;
     card.classList.add('tn-evidence-flash');
+    card.querySelectorAll('.tn-match-evidence-detail, .tn-match-quote-detail').forEach((node) => { node.open = true; });
+    card.querySelector('.tn-match-dim-summary')?.focus({ preventScroll: true });
+  }
+  function toggleDimension(key) {
+    openDimension = openDimension === key ? null : key;
+    setDimensionOpen(openDimension);
   }
 
   function summaryEvidence(item, label = '查看依据') {
@@ -386,31 +407,20 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
         h('div', { class: 'tn-banner-body', text: '这份报告生成于证据核验修复前，仍按原文保留，但不代表已按新版门槛与引文规则重新核验；建议重新运行匹配分析。' })));
     }
     box.append(h('div', { class: 'tn-match-core' },
-      matchCoreCard('能力匹配度', result.ability?.conclusion || '无法判断', SINGLE_LEVEL_CLASS[result.ability?.conclusion], result.ability),
-      matchCoreCard('投递优先级', result.priority?.conclusion || '待确认', PRIORITY_CLASS[result.priority?.conclusion], result.priority)
+      matchCoreCard('能力匹配度', result.ability?.conclusion || '无法判断', SINGLE_LEVEL_CLASS[result.ability?.conclusion]),
+      matchCoreCard('投递优先级', result.priority?.conclusion || '待确认', PRIORITY_CLASS[result.priority?.conclusion])
     ));
     if (result.overall_advice) box.append(h('div', { class: 'tn-match-advice', 'data-test': 'match-advice' }, h('strong', { text: '总体建议：' }), result.overall_advice));
-    if (result.priority?.conclusion === '暂缓' && result.hard_gates?.some((g) => g.result === '不满足')) {
-      box.append(h('div', { class: 'tn-banner err', 'data-test': 'match-blocking' }, h('div', { class: 'tn-banner-body',
-        text: `硬性门槛阻断：${result.hard_gates.filter((g) => g.result === '不满足').map((g) => g.requirement).join('；')}。普通能力优势不能抵消这条门槛。` })));
+    const blocking = (result.hard_gates || []).filter((g) => g.result === '不满足');
+    if (blocking.length) {
+      box.append(h('div', { class: 'tn-banner err', 'data-test': 'match-blocking' },
+        h('div', { class: 'tn-banner-body' },
+          h('div', { text: `硬性门槛阻断：${blocking[0].requirement}${blocking.length > 1 ? ` 等 ${blocking.length} 项` : ''}。普通能力优势不能抵消硬门槛。` })),
+        h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-view-gates', text: '查看门槛', onclick: () => focusDimension('hard_gate') })));
     }
 
-    box.append(h('section', { class: 'tn-match-section-block' },
-      h('h4', { text: '硬性门槛检查' }),
-      result.hard_gates?.length ? h('div', { class: 'tn-gate-table-wrap' },
-        h('table', { class: 'tn-gate-table', 'data-test': 'match-gates' },
-          h('thead', {}, h('tr', {}, h('th', { text: '岗位要求' }), h('th', { text: '用户对应信息' }), h('th', { text: '判断结果' }), h('th', { text: '判断依据' }))),
-          h('tbody', {}, ...result.hard_gates.map((gate) => h('tr', {},
-            h('td', {}, h('div', { text: gate.requirement }), gate.jd_evidence ? h('div', { class: 'tn-match-quote', text: `JD：“${gate.jd_evidence}”` }) : null),
-            h('td', {}, h('div', { text: gate.user_info || '—' }), gate.resume_evidence ? h('div', { class: 'tn-match-quote', text: `简历：“${gate.resume_evidence}”` }) : null),
-            h('td', {}, h('span', { class: `tn-gate-result ${GATE_CLASS[gate.result] || 'muted'}`, text: gate.result })),
-            h('td', { class: 'tn-small', text: gate.basis || '—' })
-          )))
-        )) : h('p', { class: 'tn-small tn-muted', text: 'JD 未列明工作许可、最低年限、指定城市线下办公等硬性门槛；不把普通偏好当成门槛。' })
-    ));
-
     const dimensions = result.dimensions || [];
-    box.append(h('section', { class: 'tn-match-section-block' },
+    box.append(h('section', { class: 'tn-match-section-block tn-match-accordion' },
       h('h4', { text: '六维匹配分析' }),
       h('div', { class: 'tn-match-dim-grid' }, ...dimensions.map((d) => renderDimensionCard(d, report)))
     ));
@@ -460,31 +470,79 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
     return box;
   }
 
-  function renderDimensionCard(d, report) {
-    const card = h('article', { class: 'tn-match-dim', 'data-dimension': d.key, 'data-test': `match-dimension-${d.key}` });
-    card.append(h('div', { class: 'tn-match-dim-head' },
-      h('h5', { text: d.name || DIMENSION_NAMES[d.key] || d.key }),
-      matchLevelBadge(d.conclusion, SINGLE_LEVEL_CLASS[d.conclusion])
-    ));
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '岗位要求' }), h('p', { text: d.requirement || 'JD 未提供足够信息。' })));
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '用户证据' }), h('p', { text: d.user_evidence || '资料不足。' })));
-    if (d.key === 'hard_gate') {
-      const gates = report.result?.hard_gates || [];
-      card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '与上方门槛检查同一份数据' }),
-        gates.length ? h('ul', { class: 'tn-match-list' }, ...gates.map((g) => h('li', {},
-          h('span', { class: `tn-gate-result ${GATE_CLASS[g.result] || 'muted'}`, text: g.result }),
-          ` ${g.requirement}`))) : h('p', { class: 'tn-small tn-muted', text: 'JD 未列明硬性门槛。' })));
+  function dimensionCorrectionButton(d) {
+    return h('div', { class: 'tn-match-dim-actions' },
+      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-correct',
+        onclick: () => openCorrectionModal({ dimension: d.key, original: `【${d.name}】${d.conclusion}${d.gaps?.length ? `；缺口：${d.gaps.join('；')}` : ''}` }) }, '补充或纠错'));
+  }
+
+  function gateResultBadge(value) {
+    const icons = { '满足': '✓', '不满足': '×', '信息不足': '?', '需要用户确认': '!' };
+    return h('span', { class: `tn-gate-result ${GATE_CLASS[value] || 'muted'}` },
+      h('span', { class: 'tn-state-icon', 'aria-hidden': 'true', text: icons[value] || '·' }), value || '信息不足');
+  }
+
+  function renderGateDetail(report) {
+    const gates = report.result?.hard_gates || [];
+    const box = h('div', { class: 'tn-match-gate-detail' });
+    if (!gates.length) {
+      box.append(h('p', { class: 'tn-small tn-muted', text: 'JD 未列明工作许可、最低年限、指定城市线下办公等硬性门槛；不把普通偏好当成门槛。' }));
+      return box;
     }
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '匹配优势' }), matchGapList(d.strengths, '暂未找到有证据的优势。')));
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '能力缺口' }), matchGapList(d.gaps, '暂未发现明确缺口。')));
-    const ev = matchEvidenceRows(d.evidence);
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '证据来源' }),
-      d.evidence?.some((x) => x.quote.length > 120) ? h('details', {}, h('summary', { class: 'tn-small', text: '展开证据引文' }), ev) : ev));
-    card.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '下一步建议' }), h('p', { text: d.next_step || '—' })));
-    card.append(h('div', { class: 'tn-match-dim-actions' },
-      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-correct', onclick: () => openCorrectionModal({ dimension: d.key, original: `【${d.name}】${d.conclusion}${d.gaps?.length ? `；缺口：${d.gaps.join('；')}` : ''}` }) }, '补充或纠错')
+    const table = h('table', { class: 'tn-gate-table', 'data-test': 'match-gates' },
+      h('thead', {}, h('tr', {}, h('th', { text: '岗位要求' }), h('th', { text: '你的对应信息' }), h('th', { text: '结果' }), h('th', { text: '判断依据' }))),
+      h('tbody', {}, ...gates.map((gate) => h('tr', {},
+        h('td', {}, h('div', { text: gate.requirement }),
+          gate.jd_evidence ? h('details', { class: 'tn-match-quote-detail' }, h('summary', { text: '查看 JD 原文' }), h('blockquote', { text: gate.jd_evidence })) : null),
+        h('td', {}, h('div', { text: gate.user_info || '—' }),
+          gate.resume_evidence ? h('details', { class: 'tn-match-quote-detail' }, h('summary', { text: '查看简历/用户确认原文' }), h('blockquote', { text: gate.resume_evidence })) : null),
+        h('td', {}, gateResultBadge(gate.result)),
+        h('td', { class: 'tn-small' }, h('p', { text: gate.basis || '—' }))
+      )))
+    );
+    box.append(h('div', { class: 'tn-gate-table-wrap' }, table));
+    box.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '下一步建议' }), h('p', { text: report.result?.dimensions?.find((d) => d.key === 'hard_gate')?.next_step || '先与招聘方确认门槛是否可豁免。' })));
+    box.append(dimensionCorrectionButton(report.result?.dimensions?.find((d) => d.key === 'hard_gate') || { key: 'hard_gate', name: '硬性门槛', conclusion: '', gaps: [] }));
+    return box;
+  }
+
+  function renderDimensionDetail(d) {
+    const box = h('div', { class: 'tn-match-dim-detail-inner' });
+    box.append(h('div', { class: 'tn-match-requirement-table' },
+      h('div', { class: 'tn-match-requirement-row tn-match-requirement-head' },
+        h('span', { text: '岗位要求' }), h('span', { text: '你的证据' }), h('span', { text: '判断' })),
+      h('div', { class: 'tn-match-requirement-row' },
+        h('div', { class: 'tn-match-requirement-cell' }, h('span', { class: 'tn-mobile-label', text: '岗位要求' }), h('p', { text: d.requirement || 'JD 未提供足够信息。' })),
+        h('div', { class: 'tn-match-requirement-cell' }, h('span', { class: 'tn-mobile-label', text: '你的证据' }), h('p', { text: d.user_evidence || '资料不足。' })),
+        h('div', { class: 'tn-match-requirement-cell tn-match-judgement' }, h('span', { class: 'tn-mobile-label', text: '判断' }), matchLevelBadge(d.conclusion, SINGLE_LEVEL_CLASS[d.conclusion])))
     ));
-    return card;
+    if (d.strengths?.length) box.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '已具备' }), matchGapList(d.strengths)));
+    if (d.gaps?.length) box.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '待补证 / 明确缺口' }), matchGapList(d.gaps)));
+    box.append(h('details', { class: 'tn-match-evidence-detail' },
+      h('summary', { text: '查看原文与来源' }),
+      matchEvidenceRows(d.evidence)));
+    box.append(h('div', { class: 'tn-match-field' }, h('div', { class: 'tn-match-field-label', text: '下一步' }), h('p', { text: d.next_step || '—' })));
+    box.append(dimensionCorrectionButton(d));
+    return box;
+  }
+
+  function renderDimensionCard(d, report) {
+    const detailId = `tn-match-dim-detail-${d.key}`;
+    const open = openDimension === d.key;
+    const summary = h('button', {
+      class: 'tn-match-dim-summary', type: 'button', 'aria-expanded': open ? 'true' : 'false',
+      'aria-controls': detailId, 'data-test': `match-dim-toggle-${d.key}`,
+      onclick: () => toggleDimension(d.key)
+    }, h('span', { class: 'tn-match-dim-head' },
+      h('span', { class: 'tn-match-dim-name', text: d.name || DIMENSION_NAMES[d.key] || d.key }),
+      matchLevelBadge(d.conclusion, SINGLE_LEVEL_CLASS[d.conclusion]),
+      h('span', { class: 'tn-match-dim-chevron', 'aria-hidden': 'true', text: open ? '⌃' : '⌄' })));
+    const detail = h('div', { class: 'tn-match-dim-detail', id: detailId, 'data-test': `match-dimension-detail-${d.key}`, hidden: !open },
+      d.key === 'hard_gate' ? renderGateDetail(report) : renderDimensionDetail(d));
+    return h('article', {
+      class: `tn-match-dim${open ? ' expanded' : ''}`, 'data-dimension': d.key,
+      'data-test': `match-dimension-${d.key}`
+    }, summary, detail);
   }
 
   function renderMatchActions(report) {
@@ -636,6 +694,7 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       if (!active() || matchAppId !== targetAppId) return;
       match = { status: 'ready', report: response.data };
       interview = null;
+      openDimension = null;
       toast(parent ? '新的匹配报告已生成，旧报告仍可查看' : '匹配报告已生成', 'ok');
       await loadMatchHistory({ keep: true });
     } catch (error) {
@@ -694,6 +753,7 @@ export async function renderCareer(container, { gen, apps = null, applicationId 
       match = { status: response.data.status === 'ready' ? 'ready' : 'failed', report: response.data,
         error: response.data.status === 'ready' ? '' : (response.data.error_message || '报告未完成') };
       interview = null;
+      openDimension = null;
       renderMatch();
     } catch (error) {
       if (active() && seq === matchReportReqSeq) {

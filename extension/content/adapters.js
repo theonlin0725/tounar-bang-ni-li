@@ -38,6 +38,21 @@
     notes: '多候选评分：显式钩子/JSON-LD/已验证适配器/岗位语义；低把握留空，不用域名猜公司或最长正文猜JD。真实页面覆盖仍需逐站验收。'
   };
 
+  function textOf(node) {
+    return String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+  function jobDetailSections(detail) {
+    if (!detail) return [];
+    const entries = [...detail.children].filter((node) => node.matches?.('.title') || node.matches?.('.desc'));
+    const out = [];
+    for (let i = 0; i < entries.length; i += 1) {
+      if (!entries[i].matches?.('.title')) continue;
+      const value = entries[i + 1]?.matches?.('.desc') ? String(entries[i + 1].innerText || '').trim() : '';
+      if (value) out.push({ label: textOf(entries[i]), value });
+    }
+    return out;
+  }
+
   // 已知招聘官网域名 → 公司名（通用识别的公司字段兜底；聚合平台返回 null，不猜）
   const HOST_COMPANY = {
     'join.qq.com': '腾讯', 'careers.tencent.com': '腾讯', 'hr.tencent.com': '腾讯',
@@ -48,6 +63,7 @@
     'campus.xiaomi.com': '小米', 'hr.xiaomi.com': '小米',
     'talent.baidu.com': '百度',
     'campus.163.com': '网易', 'hr.163.com': '网易',
+    'campus.game.163.com': '网易游戏（互娱）',
     // 企业自建招聘站：域名即雇主，可以据此补公司（聚合站仍保持 null）
     'jobs.mihoyo.com': '米哈游',
     'job.xiaohongshu.com': '小红书',
@@ -392,6 +408,44 @@
       verified_paths: ['/job-detail.html?id={id}&lang=zh'],
       verifiedUrlPatterns: [/^https:\/\/hr\.163\.com\/job-detail\.html\?(?=[^#]*\bid=\d+)/i],
       notes: '真实中文详情 79495、78226 见 tests/fixtures/sites/netease；英语入口、campus.163.com 和投递登录态未验证。'
+    },
+    {
+      key: 'netease-game',
+      company_name: '网易游戏（互娱）',
+      priority: 1,
+      label: '网易游戏（互娱）校园招聘',
+      version: '1.0.0-verified-campus-game-detail',
+      channel: '企业官网',
+      hosts: ['campus.game.163.com'],
+      jobUrlPatterns: [/\/app\/detail\/index\?(?=[^#]*\bid=\d+)/i],
+      listUrlPatterns: [/\/app\/index(?:[/?#]|$)/i],
+      selectors: {
+        // 该站标题节点把正式岗位名和同级 ant-tag 标签放在一起，只取首个名称 span。
+        title: ['.position-header-left .position-title > span:first-of-type'],
+        company: [],
+        jd: ['.u-job-details'],
+        location: [],
+        success: ['[class*="success"]', '[class*="result"]']
+      },
+      refine: function neteaseGameRefine(job) {
+        const title = textOf(document.querySelector('.position-header-left .position-title > span:first-of-type'));
+        const detail = [...document.querySelectorAll('.u-job-details')]
+          .find((node) => [...node.children].some((child) => child.matches?.('.title')))
+          || document.querySelector('.u-job-details');
+        if (title) job.job_title = title;
+        if (detail) {
+          const sections = jobDetailSections(detail);
+          const location = sections.find((x) => /工作地点/.test(x.label));
+          if (location?.value) job.location = location.value;
+          if (!job.company_name) job.company_name = '网易游戏（互娱）';
+        }
+        return job;
+      },
+      site_verified: true,
+      verified_at: '2026-11-20',
+      verified_paths: ['/app/detail/index?id={id}&projectId=102'],
+      verifiedUrlPatterns: [/^https:\/\/campus\.game\.163\.com\/app\/detail\/index\?(?=[^#]*\bid=\d+)/i],
+      notes: '按 campus.game.163.com 详情实页模板采集：.position-title 首个 span 为正式岗位名，ant-tag 为标签；.u-job-details 的 title/desc 对提供职责、要求和全部城市。公司只由该主机已验证模板/招聘目录提供，不扩映射整个 163。'
     },
     {
       key: 'boss',

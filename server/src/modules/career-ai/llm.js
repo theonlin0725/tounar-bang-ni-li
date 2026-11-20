@@ -268,12 +268,14 @@ const MATCH_SYSTEM = `你是严谨的单岗位求职匹配分析助手。用户�
 9. 优势必须能回到某个维度、JD 原文和用户证据。对于“未发现案例”，要写成“查过的简历版本中未发现”，不能写成“用户不会”。
 10. 工作许可、线下办公、学历、最低年限、指定证书等门槛：只有对应用户侧原文才能支持“满足/不满足”；没有原文写“信息不足”。“仅接受远程”与强制线下冲突可写“不满足”；“未取得工作许可”可写“不满足”；境外许可不能冒充中国境内许可。
 11. 优势、缺口、用户事实中的技能名和数字必须能在对应 JD、简历或用户确认补充中找到；没有证据的营收、百分比、技能和成果不要输出。
-12. 顶部总体建议必须服从门槛结论：任一硬门槛“不满足”只能建议暂缓；门槛“信息不足/需要用户确认”不能建议优先投递或适合投递。`;
+12. 顶部总体建议必须服从门槛结论：任一硬门槛“不满足”只能建议暂缓；门槛“信息不足/需要用户确认”不能建议优先投递或适合投递。
+13. 岗位技能、研究方向、职责描述、任职要求中的普通能力项不是硬门槛，应放进对应六维；不要把“未呈现/专业不同/未提及”判成“不满足”，否则输出“信息不足”或“需要用户确认”。只有不可妥协的资格条件（工作许可、强制地点、最低学历/年限、必要证书等）才放 hard_gates。`;
 
 const CITY_RE = /(上海|北京|深圳|广州|杭州|成都|南京|武汉|苏州|西安|厦门|长沙|青岛|天津|重庆)/;
 const PERMIT_RE = /(工作许可|就业资格|工作签证|居留许可|劳工证|执业许可)/;
 const CREDENTIAL_RE = /(证书|资格|执照|许可证|许可|签证)/;
 const SOFT_RE = /优先|加分|更佳|非必须/;
+const HARD_OTHER_MARKER = /必须|须|持有|不接受|最低|至少|不得超过|不超过|硬性|门槛/;
 const SOURCE_LABELS = { jd: 'JD 原文', resume: '简历原文', user_confirmed: '用户确认补充' };
 
 function sourceText(...values) {
@@ -502,6 +504,10 @@ function evaluateGate(gate, sources) {
     return evidenceResult('信息不足', gate.user_info || '简历没有可核验的对应证据', '', '模型结论没有对应用户侧证据，不能作为硬门槛判断。', category);
   }
   if (!evidence) return evidenceResult(modelResult === '需要用户确认' ? modelResult : '信息不足', gate.user_info || '资料不足', '', '没有可核验的用户侧证据。', category);
+  if (modelResult === '不满足' && !/(不具备|未取得|未持有|尚未|不接受|无法|不符合|不满足|没有)/.test(evidence)) {
+    return evidenceResult('信息不足', gate.user_info || `现有材料只显示：${evidence}`, evidence,
+      '现有材料没有明确冲突，不能据此判“不满足”；需补充或由本人确认。', category);
+  }
   return evidenceResult(modelResult, gate.user_info || `简历原文：${evidence}`, evidence, gate.basis || '按简历原文核验。', category);
 }
 
@@ -551,12 +557,15 @@ export async function matchJob({ profile, resumeText, job, corrections = [] }) {
     const jdEvidence = text(gate?.jd_evidence, 300);
     const jdGrounded = jdEvidence.length >= 2 && simplify(jdText).includes(simplify(jdEvidence));
     if (!requirement || !jdGrounded || isSoftRequirement(requirement, jdEvidence)) return null;
+    const category = gate.category || gateCategory(requirement, jdEvidence);
+    // 岗位技能、研究方向、职责描述不是不可妥协门槛；只有明确硬性措辞的“其他”才保留。
+    if (category === 'other' && !HARD_OTHER_MARKER.test(`${requirement} ${jdEvidence}`)) return null;
     const evaluated = evaluateGate({
       requirement, jd_evidence: jdEvidence,
       resume_evidence: text(gate?.resume_evidence, 300),
       user_info: text(gate?.user_info, 500), basis: text(gate?.basis, 500),
       result: GATE_RESULTS.includes(gate?.result) ? gate.result : '信息不足',
-      category: gate.category || gateCategory(requirement, jdEvidence)
+      category
     }, sources);
     return evaluated ? { requirement, jd_evidence: jdEvidence, ...evaluated } : null;
   };

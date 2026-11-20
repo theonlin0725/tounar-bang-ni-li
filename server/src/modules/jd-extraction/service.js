@@ -37,7 +37,13 @@ function sanitizeTitleCandidates(input, lines) {
     });
     if (out.length >= 12) break;
   }
-  return out;
+  const strong = out.filter((item) => ['scoped_panel', 'visible_title_node', 'json_ld', 'label', 'page_title'].includes(item.source));
+  return out.filter((item) => {
+    // 同一父节点把正式名称和同级标签合并时，模型只能选独立名称候选。
+    if (['heading_near_apply', 'title_near_apply', 'large_visible_text', 'other'].includes(item.source)
+      && strong.some((other) => other.text !== item.text && item.text.startsWith(other.text + ' '))) return false;
+    return true;
+  });
 }
 function reliableTitle(text, raw, titleCandidates, selected) {
   const value = normalized(text);

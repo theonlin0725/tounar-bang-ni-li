@@ -170,6 +170,25 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     sourcesBox.append(h('div', { class: 'tn-kv' }, h('div', { class: 'tn-kv-item' },
       h('span', { class: 'tn-kv-key', text: '来源方式' }),
       h('span', { text: methods.length ? methods.join(' / ') : '未知' }))));
+    const fieldLabels = { company_name: '公司', job_title: '岗位', location: '城市', jd_summary: 'JD 摘要', jd_text: '完整 JD', site_job_id: '岗位 ID' };
+    const detailLabels = {
+      netease_game_detail_template_v1: '网易互娱实页模板',
+      netease_game_directory_verified: '招聘目录已验证',
+      netease_game_jd_summary_v1: '岗位职责摘要',
+      recruitment_detail_panel: '详情模板',
+      visible_title_node: '独立标题节点',
+      model_source_quote: '模型原文引用',
+      heading_near_apply: '投递按钮附近标题',
+      jd_heading_sections: 'JD 标题段规则',
+      unavailable: '缺证'
+    };
+    const fieldSources = (app.field_sources || []).filter((source) => fieldLabels[source.field]);
+    if (fieldSources.length) {
+      sourcesBox.append(h('div', { class: 'tn-kv', style: { marginTop: '6px' } },
+        ...fieldSources.map((source) => h('div', { class: 'tn-kv-item' },
+          h('span', { class: 'tn-kv-key', text: fieldLabels[source.field] }),
+          h('span', { text: `${SOURCE_LABELS[source.source_method] || source.source_method || '未知'} · ${detailLabels[source.source_detail] || source.source_detail || '未标记来源'} · ${source.confidence || 'unknown'}` })))));
+    }
     bodyEl.append(section('信息来源', sourcesBox));
 
     /* 待确认关联 */

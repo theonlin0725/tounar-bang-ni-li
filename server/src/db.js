@@ -245,12 +245,13 @@ export function markApplicationChanged(ownerId, applicationId, eventId, sourceMe
     const sourceEvent = eventId ? one('SELECT payload_json FROM events WHERE id = ? AND owner_id = ?', [eventId, ownerId]) : null;
     const payload = sourceEvent ? JSON.parse(sourceEvent.payload_json || '{}') : {};
     const confidence = sourceMethod === 'manual' ? 'high' : (options.fieldConfidence?.[field] || payload.field_confidence?.[field] || 'medium');
+    const sourceDetail = options.sourceDetails?.[field] ?? payload.field_sources?.[field] ?? null;
     getDb().prepare(`INSERT INTO application_field_sources
       (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(application_id, field) DO UPDATE SET source_method=excluded.source_method,
         event_id=excluded.event_id, updated_at=excluded.updated_at, confidence=excluded.confidence, source_detail=excluded.source_detail`)
-      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso(), confidence, payload.field_sources?.[field] || null);
+      .run(applicationId, ownerId, field, sourceMethod, eventId || null, nowIso(), confidence, sourceDetail);
     notifyCommittedWrite();
   }
   bumpRevision();

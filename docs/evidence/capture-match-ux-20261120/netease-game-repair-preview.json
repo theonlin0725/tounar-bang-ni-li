@@ -1,0 +1,168 @@
+{
+  "mode": "dry-run",
+  "target_host": "campus.game.163.com",
+  "target_path": "/app/detail/index",
+  "matched": 4,
+  "changed": 4,
+  "results": [
+    {
+      "application_id": "app_IYc07JlI2Y0FOWun",
+      "owner_id": "usr_1-OZN0nEFAny-QUv",
+      "site_job_id": "4765",
+      "job_url": "https://campus.game.163.com/app/detail/index?id=4765&projectId=102",
+      "status": "pending",
+      "before": {
+        "company_name": "",
+        "job_title": "游戏技术美术工程师（PCG向） TA程序向 PCG生成",
+        "location": null,
+        "jd_summary": "网易互娱持续在不同领域推出爆款游戏，已创造一系列旗舰IP与热门产品，如《梦幻西游》《大话西游》系列、《阴阳师》《燕云十六声》《蛋仔派对》《第五人格》《荒野行动》"
+      },
+      "source_before": {
+        "company_name": "plugin/low/unavailable",
+        "job_title": "plugin/medium/heading_near_apply",
+        "location": "plugin/low/unavailable",
+        "jd_summary": "plugin/medium/jd_heading_sections"
+      },
+      "after": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "游戏技术美术工程师（PCG向）",
+        "location": "广州",
+        "jd_summary": "岗位职责 - 熟悉游戏美术和程序的开发流程，搭建程序和美术之间沟通的桥梁 - 协助美术团队制定场景PCG生成技术方案,实现高质量的场景生成 - 制定或优化美术生",
+        "company_key": "网易游戏"
+      },
+      "changes": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "游戏技术美术工程师（PCG向）",
+        "location": "广州",
+        "jd_summary": "岗位职责 - 熟悉游戏美术和程序的开发流程，搭建程序和美术之间沟通的桥梁 - 协助美术团队制定场景PCG生成技术方案,实现高质量的场景生成 - 制定或优化美术生",
+        "company_key": "网易游戏"
+      },
+      "skipped": [],
+      "source_after": {
+        "company_name": "plugin/high/netease_game_directory_verified",
+        "job_title": "plugin/high/netease_game_detail_template_v1",
+        "location": "plugin/high/netease_game_detail_template_v1",
+        "jd_summary": "plugin/high/netease_game_jd_summary_v1"
+      }
+    },
+    {
+      "application_id": "app_v91TMaf0PyhxHvCV",
+      "owner_id": "usr_1-OZN0nEFAny-QUv",
+      "site_job_id": "4731",
+      "job_url": "https://campus.game.163.com/app/detail/index?id=4731&projectId=102",
+      "status": "pending",
+      "before": {
+        "company_name": "",
+        "job_title": "游戏研发工程师（客户端/服务端）",
+        "location": null,
+        "jd_summary": "网易互娱持续在不同领域推出爆款游戏，已创造一系列旗舰IP与热门产品，如《梦幻西游》系列、《大话西游》系列、《阴阳师》《燕云十六声》《蛋仔派对》《第五人格》《荒野"
+      },
+      "source_before": {
+        "company_name": "plugin/low/unavailable",
+        "job_title": "plugin/medium/large_visible_text",
+        "location": "plugin/low/unavailable",
+        "jd_summary": "plugin/medium/jd_heading_sections"
+      },
+      "after": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "游戏研发工程师（客户端/服务端）",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 为不同的平台创造和开发世界一流的游戏，尤其是当前最热的移动平台； - 成为最具创造力团队的一员，和国内最顶级的游戏研发团队一起工作，解决各种挑战性",
+        "company_key": "网易游戏"
+      },
+      "changes": {
+        "company_name": "网易游戏（互娱）",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 为不同的平台创造和开发世界一流的游戏，尤其是当前最热的移动平台； - 成为最具创造力团队的一员，和国内最顶级的游戏研发团队一起工作，解决各种挑战性",
+        "company_key": "网易游戏"
+      },
+      "skipped": [],
+      "source_after": {
+        "company_name": "plugin/high/netease_game_directory_verified",
+        "job_title": "plugin/high/netease_game_detail_template_v1",
+        "location": "plugin/high/netease_game_detail_template_v1",
+        "jd_summary": "plugin/high/netease_game_jd_summary_v1"
+      }
+    },
+    {
+      "application_id": "app_QHNni0V8W5xNVQZj",
+      "owner_id": "usr_1-OZN0nEFAny-QUv",
+      "site_job_id": "4739",
+      "job_url": "https://campus.game.163.com/app/detail/index?id=4739&projectId=102",
+      "status": "pending",
+      "before": {
+        "company_name": "",
+        "job_title": "图形开发工程师 实时光追 前沿技术探索 图形引擎 渲染 全局光照",
+        "location": null,
+        "jd_summary": "网易互娱持续在不同领域推出爆款游戏，已创造一系列旗舰IP与热门产品，如《梦幻西游》系列、《大话西游》系列、《阴阳师》《燕云十六声》《蛋仔派对》《第五人格》《荒野"
+      },
+      "source_before": {
+        "company_name": "plugin/low/unavailable",
+        "job_title": "plugin/medium/heading_near_apply",
+        "location": "plugin/low/unavailable",
+        "jd_summary": "plugin/medium/jd_heading_sections"
+      },
+      "after": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "图形开发工程师",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 驱动视觉技术创新：研发实时光追、动态全局光照、超写实材质系统等前沿图形技术，定义下一代游戏画面标准； - 探索跨平台（PC/移动/主机）渲染方案，",
+        "company_key": "网易游戏"
+      },
+      "changes": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "图形开发工程师",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 驱动视觉技术创新：研发实时光追、动态全局光照、超写实材质系统等前沿图形技术，定义下一代游戏画面标准； - 探索跨平台（PC/移动/主机）渲染方案，",
+        "company_key": "网易游戏"
+      },
+      "skipped": [],
+      "source_after": {
+        "company_name": "plugin/high/netease_game_directory_verified",
+        "job_title": "plugin/high/netease_game_detail_template_v1",
+        "location": "plugin/high/netease_game_detail_template_v1",
+        "jd_summary": "plugin/high/netease_game_jd_summary_v1"
+      }
+    },
+    {
+      "application_id": "app_5vRdNHea0Lhp_ZWJ",
+      "owner_id": "usr_1-OZN0nEFAny-QUv",
+      "site_job_id": "4721",
+      "job_url": "https://campus.game.163.com/app/detail/index?id=4721&projectId=102",
+      "status": "pending",
+      "before": {
+        "company_name": "",
+        "job_title": "游戏设计师（战斗策划） 游戏热爱",
+        "location": null,
+        "jd_summary": "网易互娱持续在不同领域推出爆款游戏，已创造一系列旗舰IP与热门产品，如《梦幻西游》《大话西游》系列、《阴阳师》、《燕云十六声》《蛋仔派对》《第五人格》《荒野行动"
+      },
+      "source_before": {
+        "company_name": "plugin/low/unavailable",
+        "job_title": "plugin/medium/heading_near_apply",
+        "location": "plugin/low/unavailable",
+        "jd_summary": "plugin/medium/jd_heading_sections"
+      },
+      "after": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "游戏设计师（战斗策划）",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 发挥无尽畅想，赋予英雄和怪物以灵魂，设计战斗技能，打磨战斗场面，创造激情的战斗体验和极致的战斗表现； - 从框架搭建到规则设计，负责战斗资源的配置",
+        "company_key": "网易游戏"
+      },
+      "changes": {
+        "company_name": "网易游戏（互娱）",
+        "job_title": "游戏设计师（战斗策划）",
+        "location": "杭州、上海、广州",
+        "jd_summary": "岗位职责 - 发挥无尽畅想，赋予英雄和怪物以灵魂，设计战斗技能，打磨战斗场面，创造激情的战斗体验和极致的战斗表现； - 从框架搭建到规则设计，负责战斗资源的配置",
+        "company_key": "网易游戏"
+      },
+      "skipped": [],
+      "source_after": {
+        "company_name": "plugin/high/netease_game_directory_verified",
+        "job_title": "plugin/high/netease_game_detail_template_v1",
+        "location": "plugin/high/netease_game_detail_template_v1",
+        "jd_summary": "plugin/high/netease_game_jd_summary_v1"
+      }
+    }
+  ]
+}
