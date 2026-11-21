@@ -588,6 +588,13 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
   });
 
   it('离线强规则只接受明确个人进展，忽略转发/流程/条件句；面试改期提示“时间不合适”不误判为拒信', () => {
+    const reschedule = classifyRecruitmentMail({
+      subject: '云杉互娱游戏运营一面改期', fromDomain: 'yunshan.example', fromName: '云杉互娱招聘',
+      bodyText: '原定面试时间需要调整，新的面试时间为 11 月 14 日 16:00。如该时间不合适，请联系 HR 改期。',
+      mode: 'recruitment_body'
+    });
+    assert.equal(reschedule.category, 'interview');
+    assert.equal(reschedule.status, 'interview');
     assert.equal(confirmedMailProgress('【星河科技】后端实习生 面试邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加面试。如该时间不合适，请联系HR改期。')?.status, 'interview');
     assert.equal(confirmedMailProgress('【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n请于 11 月 30 日前完成在线测评。')?.status, 'assessment');
     assert.equal(confirmedMailProgress('Re: 【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加测评。'), null);

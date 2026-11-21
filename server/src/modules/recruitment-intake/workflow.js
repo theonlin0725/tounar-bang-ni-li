@@ -347,17 +347,24 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
         return { state: 'applied', application: target, change: 'unchanged' };
       }
     }
-    if (newness === 'duplicate_or_old') {
+    const ambiguousMailCompany = source === 'mail' && !target && Boolean(mailMatch?.candidates?.length);
+    if (newness === 'duplicate_or_old' && !ambiguousMailCompany) {
       finishRun(runRow, { status: 'completed', decision: 'no_change', reason_code: 'AI_DUPLICATE_OR_OLD' });
       run("UPDATE events SET processing_state='ignored', review_reason='AI_DUPLICATE_OR_OLD', processed_at=? WHERE id=? AND owner_id=?", [nowIso(), event.id, event.owner_id]);
       return { state: 'ignored', reason: 'duplicate_or_old' };
     }
-    const companyOnlyAuto = source === 'mail' && !target && !extracted.job_title && Boolean(extracted.company_name)
+    // 招聘进展的三个非终态只要有明确公司/岗位、高把握阶段和实际进展，就不能因为
+    // 正文没写截止时间/申请编号而反复进待确认。可选字段缺失不应吞掉主进展。
+    const clearProgressAuto = source === 'mail' && Boolean(extracted.company_name)
       && !processDescription && ['applied', 'assessment', 'interview'].includes(status)
       && judged.actual_progress >= config.autoIntakeMinProgress
-      && judged.evidence_support >= config.autoIntakeMinEvidence - 0.1;
+      && (!extracted.job_title || judged.evidence_support >= 0.2)
+      && (judged.status?.confidence ?? 0) >= statusThreshold(status)
+      && (judged.company_valid == null || judged.company_valid >= 0.6)
+      && (!extracted.job_title || judged.job_title_valid == null || judged.job_title_valid >= 0.6);
+    const companyOnlyAuto = clearProgressAuto && !target && !extracted.job_title;
     const lowConfidence = (processDescription || judged.actual_progress < config.autoIntakeMinProgress
-      || judged.evidence_support < config.autoIntakeMinEvidence) && !companyOnlyAuto;
+      || judged.evidence_support < config.autoIntakeMinEvidence) && !clearProgressAuto;
     if (lowConfidence) {
       const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_PROGRESS_UNCERTAIN', summary: '这条招聘线索的进展或证据不够确定，请确认', ex: extracted, status: status || 'pending', candidates, extracted, judged });
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_PROGRESS_UNCERTAIN' });

@@ -85,7 +85,9 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
   const assessment = hasAny(text, ['笔试', '测评', '在线考试', 'online assessment', 'written test']);
   // 「感谢您的应聘」类最常见于拒信，但也可能是收简历回执。
   // 只有确认没有面试/笔试/录用信息时才当拒信，而且置信度封顶 0.88（低于自动终态 0.9，必进待确认）。
-  const explicitNegative = hasAny(text, ['未通过', '不合适', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '感谢信', '拒绝', '进入人才库', '暂不匹配']);
+  const reschedule = hasAny(text, ['改期', '面试时间调整', '时间调整', 'reschedule', '时间不合适'])
+    && !hasAny(text, ['未通过', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '拒绝', '进入人才库', '暂不匹配']);
+  const explicitNegative = hasAny(text, ['未通过', '不合适', '很遗憾', '遗憾地', 'not selected', 'unfortunately', '感谢信', '拒绝', '进入人才库', '暂不匹配']) && !reschedule;
   // 投递成功回执：明确的“已提交/已收到申请”才算已投递；仅“感谢投递”不算（可能是拒信或营销）。
   const appliedReceipt = hasAny(text, [
     '投递成功', '申请成功', '提交成功', '已成功提交', '申请已收到', '已收到您的简历', '已收到您的申请',

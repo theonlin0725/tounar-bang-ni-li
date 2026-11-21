@@ -26,6 +26,8 @@
 - 新增 `location / round_label / interview_scheduled_at / deadline_at` 的抽取、校验和入账透传。
 - 低置信度占位岗位（如同公司唯一活跃记录、`待补充岗位`）可由后续明确岗位名自动补全；人工字段与人工状态继续保护。
 - 公司级清晰测评/面试进展在无候选时可自动建账占位岗位；仅“内推成功确认”这类没有个人阶段邀请的邮件直接忽略。
+- 对 `applied / assessment / interview` 三态，公司/岗位/阶段都明确且模型主进展把握达标时，不再因为缺少截止时间、申请号等可选字段而进待确认。
+- 规则分类器将“面试时间调整/时间不合适/改期”与拒信区分，避免面试改期误判 `rejected`。
 
 ### 1.4 自动入账与待确认互斥
 
@@ -52,7 +54,7 @@
 
 | 套件 | 结果 |
 |---|---|
-| `npm test` | 222 / 224；两个既有云快照用例不稳定失败（`cloud-persistence` / `cloud-persistence-http`，ENOENT/TEMPORARY_FAILURE），与本次改动无关 |
+| `npm test` | 224 / 226；两个既有云快照用例不稳定失败（`cloud-persistence` / `cloud-persistence-http`，ENOENT/TEMPORARY_FAILURE），与本次改动无关 |
 | `npm run test:web` | 74 / 74 |
 | `npm run test:e2e` | 67 / 67（Plugin-E2E） |
 | `npm run test:career-ai` | 51 / 51 |
@@ -73,7 +75,15 @@
 - 自动入账关闭同岗位旧 open review；
 - 台账 5 列、状态色、纯天数、日期更新时间、390px 卡片布局。
 
-### 2.2 4324 真实邮箱验收
+### 2.2 全链路泛化基准
+
+新增 `tools/run-mail-e2e-benchmark.mjs`、本地 SMTP/IMAP 沙箱和 `tests/fixtures/mail-generalization-corpus.json`：
+
+- 40 封合成邮件（已知 10 / 未见 30，unseen 占 75%）；
+- 本地 SMTP → IMAP → production sync/parser/LLM/DB/API/前端闭环；
+- 首轮基线召回 74.2%，暴露“缺少截止时间导致清晰测评进待确认”和“改期误判拒信”两个共性问题；修正后本轮 100% 通过全部门槛，详见 `docs/MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md`。
+
+### 2.3 4324 真实邮箱验收
 
 隔离副本：`/Users/mingenlin/tounar-acceptance/20261120-real-resume-selftest`  
 服务：`http://127.0.0.1:4324`

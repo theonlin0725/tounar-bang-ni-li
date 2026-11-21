@@ -30,6 +30,7 @@ before(async () => {
         const ex = user.extracted || {};
         const companyOnly = Boolean(ex.company_name) && !ex.job_title;
         const noStatus = /内推/.test(String(user.subject || '') + String(user.body_text || ''));
+        const duplicateOld = /多岗重复/.test(String(user.subject || '') + String(user.body_text || ''));
         return fakeJson(res, {
           model: 'deepseek-flash',
           choices: [{ message: { content: JSON.stringify({
@@ -39,7 +40,7 @@ before(async () => {
             job_title_valid: ex.job_title ? 0.95 : 0.05,
             fields_consistent: 0.95,
             status: { value: noStatus ? 'no_status' : (ex.status && ex.status !== 'unknown' ? ex.status : 'assessment'), confidence: 0.95 },
-            newness: { value: 'new', confidence: 0.9 },
+            newness: { value: duplicateOld ? 'duplicate_or_old' : 'new', confidence: duplicateOld ? 0.14 : 0.9 },
             candidate: { value: candidates.length && !companyOnly ? 'c0' : (candidates.length ? 'uncertain' : 'no_match'), confidence: candidates.length ? 0.9 : 0.5 }
           }) } }]
         });
@@ -68,6 +69,10 @@ before(async () => {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '结构化公司', job_title: '数据工程师', location: '上海', round_label: '一面', interview_scheduled_at: '2026-11-25T06:00:00.000Z', deadline_at: '2026-11-30T15:59:59.000Z', status: 'interview', evidence: [{ field: 'status', quote: '面试邀请' }], uncertainties: [] };
       } else if (/占位补全/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '占位科技', job_title: '后端实习生', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/多岗重复/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '多岗重复公司', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/低证据岗位/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '低证据岗位公司', job_title: '数据分析师', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: ['正文未写截止时间'] };
       } else if (/低证据/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '低证据公司', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: ['正文证据有限'] };
       } else if (/内推成功/.test(text)) {
@@ -228,6 +233,15 @@ it('AI 开启时同公司新岗位且模型 no_match：新建独立记录，不�
   assert.equal(db.one('SELECT status FROM applications WHERE id=?', [old.id]).status, 'pending');
 });
 
+it('模型误判 duplicate_or_old 时，同公司多岗公司级邮件仍不能被静默忽略', async () => {
+  app('多岗重复公司', '岗位A', 'applied');
+  app('多岗重复公司', '岗位B', 'applied');
+  const e = event('多岗重复：多岗重复公司2027校招测评邀请，请完成在线测评。', { company: '多岗重复公司' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'pending', JSON.stringify(result));
+  assert.equal(result.review.reason_code, 'AI_COMPANY_ONLY');
+});
+
 it('同公司已有两个未终态岗位时，公司级无岗位名测评仍进待确认', async () => {
   app('歧义公司', '岗位A', 'applied');
   app('歧义公司', '岗位B', 'applied');
@@ -235,6 +249,17 @@ it('同公司已有两个未终态岗位时，公司级无岗位名测评仍进�
   const result = await workflow.processIntakeEvent(payload(e));
   assert.equal(result.state, 'pending', JSON.stringify(result));
   assert.equal(result.review.reason_code, 'AI_COMPANY_ONLY');
+});
+
+it('岗位级清晰进展即使缺少截止时间/申请号也不误进待确认', async () => {
+  const e = event('低证据岗位：低证据岗位公司数据分析师测评邀请，请完成在线测评。', { company: '低证据岗位公司', title: '数据分析师' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.change, 'created');
+  assert.equal(result.application.company_name, '低证据岗位公司');
+  assert.equal(result.application.job_title, '数据分析师');
+  assert.equal(result.application.status, 'assessment');
+  assert.equal(db.one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=? AND status='open'", [e.id]).n, 0);
 });
 
 it('公司级清晰进展即使正文证据分略低也自动建账，不误进待确认', async () => {

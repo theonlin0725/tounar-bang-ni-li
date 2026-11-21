@@ -1,0 +1,1078 @@
+{
+  "version": 1,
+  "generated_at": "2026-11-22",
+  "samples": [
+    {
+      "id": "unseen_tech_html_table",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:00:00.000Z",
+      "from_name": "星轨科技校招",
+      "from_address": "campus@stargrid.example",
+      "subject": "【星轨科技】2027 校园招聘在线测评通知",
+      "mime_type": "multipart/alternative",
+      "text_body": "星轨科技邀请您完成在线测评。\n公司：星轨科技\n岗位：Software Engineer Intern\n城市：上海",
+      "html_body": "<p>候选人您好：</p><table><tr><th>公司</th><td>星轨科技</td></tr><tr><th>岗位</th><td>Software Engineer Intern</td></tr><tr><th>城市</th><td>上海</td></tr></table><p>请完成在线测评。</p>",
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "星轨科技",
+        "company_aliases": [
+          "星轨科技"
+        ],
+        "job_title": "Software Engineer Intern",
+        "job_aliases": [
+          "Software Engineer Intern",
+          "软件工程师实习生"
+        ],
+        "status": "assessment",
+        "location": "上海",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "known_netease_assessment",
+      "split": "known",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:10:00.000Z",
+      "from_name": "网易校园招聘",
+      "from_address": "campus@service.netease.example",
+      "subject": "【网易】2027届校招在线测评通知",
+      "mime_type": "multipart/alternative",
+      "text_body": "您好，感谢您应聘网易「游戏策划」岗位，请于 11 月 25 日前完成在线测评。\n招聘流程：网申→测评→面试\n如您已取消应聘请忽略。",
+      "html_body": "<p>您好，感谢您应聘网易「游戏策划」岗位。</p><p>请完成在线测评。</p><p>如您已取消应聘请忽略。</p>",
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "网易",
+        "company_aliases": [
+          "网易",
+          "NetEase"
+        ],
+        "job_title": "游戏策划",
+        "job_aliases": [
+          "游戏策划"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_tech_long_footer",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:20:00.000Z",
+      "from_name": "云穹科技招聘团队",
+      "from_address": "recruit@yunque.example",
+      "subject": "面试安排｜云穹科技后端开发工程师",
+      "mime_type": "multipart/alternative",
+      "text_body": "请查看面试安排。",
+      "html_body": "<p>候选人您好：<br>这是一封用于验证长邮件头尾结构的合成招聘通知。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br>流程说明：请按页面提示完成后续操作。<br><br>云穹科技人力资源部<br>公司：云穹科技<br>岗位：后端开发工程师<br>城市：杭州<br>面试安排：11 月 16 日 14:30，线上一面。<br></p>",
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "云穹科技",
+        "company_aliases": [
+          "云穹科技"
+        ],
+        "job_title": "后端开发工程师",
+        "job_aliases": [
+          "后端开发工程师",
+          "Backend Engineer"
+        ],
+        "status": "interview",
+        "location": "杭州",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_tech_natural_language",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:30:00.000Z",
+      "from_name": "青岚互动招聘",
+      "from_address": "jobs@qinglan.example",
+      "subject": "恭喜你通过简历筛选",
+      "mime_type": "text/plain",
+      "text_body": "恭喜你通过青岚互动的简历筛选，邀请你参加产品运营实习生在线笔试，请于本周内完成。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "青岚互动",
+        "company_aliases": [
+          "青岚互动"
+        ],
+        "job_title": "产品运营实习生",
+        "job_aliases": [
+          "产品运营实习生"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_tech_bilingual",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:40:00.000Z",
+      "from_name": "NovaForge Talent",
+      "from_address": "talent@novaforge.example",
+      "subject": "Next step: AI Product Manager Intern assessment",
+      "mime_type": "multipart/alternative",
+      "text_body": "Hi,\nThank you for applying to NovaForge. Please complete the online assessment for the AI Product Manager Intern / AI产品经理实习生 role.\nNovaForge Recruiting",
+      "html_body": "<p>Hi,</p><p>Thank you for applying to <strong>NovaForge</strong>. Please complete the online assessment for the <strong>AI Product Manager Intern / AI产品经理实习生</strong> role.</p>",
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "NovaForge",
+        "company_aliases": [
+          "NovaForge",
+          "Nova Forge"
+        ],
+        "job_title": "AI Product Manager Intern / AI产品经理实习生",
+        "job_aliases": [
+          "AI Product Manager Intern / AI产品经理实习生",
+          "AI Product Manager Intern",
+          "AI产品经理实习生"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_tech_html_only",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T02:50:00.000Z",
+      "from_name": "海岱数据招聘",
+      "from_address": "campus@haidai.example",
+      "subject": "海岱数据 2027 校招测评",
+      "mime_type": "text/html",
+      "text_body": "",
+      "html_body": "<table><tr><td>公司</td><td>海岱数据</td></tr><tr><td>岗位</td><td>Data Analyst Intern</td></tr><tr><td>城市</td><td>南京</td></tr></table><p>请完成在线测评。</p>",
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "海岱数据",
+        "company_aliases": [
+          "海岱数据"
+        ],
+        "job_title": "Data Analyst Intern",
+        "job_aliases": [
+          "Data Analyst Intern",
+          "数据分析实习生"
+        ],
+        "status": "assessment",
+        "location": "南京",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_tech_interview_time",
+      "split": "unseen",
+      "group": "A_tech_internet",
+      "round": 1,
+      "send_at": "2026-11-01T03:00:00.000Z",
+      "from_name": "雾芯智能 HR",
+      "from_address": "hr@wuxin.example",
+      "subject": "【雾芯智能】算法工程师一面邀请",
+      "mime_type": "text/plain",
+      "text_body": "雾芯智能邀请您参加算法工程师岗位一面，时间为 11 月 18 日 15:00，地点北京。如该时间不合适，请联系 HR 改期。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "雾芯智能",
+        "company_aliases": [
+          "雾芯智能"
+        ],
+        "job_title": "算法工程师",
+        "job_aliases": [
+          "算法工程师"
+        ],
+        "status": "interview",
+        "location": "北京",
+        "round_label": "一面",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_icbc_numeric",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T03:10:00.000Z",
+      "from_name": "95588",
+      "from_address": "95588@icbc.example",
+      "subject": "【2027校园招聘】在线笔试通知",
+      "mime_type": "text/plain",
+      "text_body": "中国工商银行2027校园招聘邀请您参加金融科技岗在线笔试，工作地点上海。请于 11 月 20 日前完成。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "中国工商银行",
+        "company_aliases": [
+          "中国工商银行",
+          "工商银行",
+          "ICBC"
+        ],
+        "job_title": "金融科技岗",
+        "job_aliases": [
+          "金融科技岗"
+        ],
+        "status": "assessment",
+        "location": "上海",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_ccb_numeric",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T03:20:00.000Z",
+      "from_name": "95533",
+      "from_address": "95533@ccb.example",
+      "subject": "2027校园招聘测评通知",
+      "mime_type": "text/plain",
+      "text_body": "中国建设银行2027校园招聘邀请您参加数据治理岗在线测评，工作地点北京。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "中国建设银行",
+        "company_aliases": [
+          "中国建设银行",
+          "建设银行",
+          "CCB"
+        ],
+        "job_title": "数据治理岗",
+        "job_aliases": [
+          "数据治理岗"
+        ],
+        "status": "assessment",
+        "location": "北京",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "known_bank_cmb_numeric",
+      "split": "known",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T03:30:00.000Z",
+      "from_name": "95555",
+      "from_address": "95555@cmbchina.com",
+      "subject": "招商银行2027校园招聘在线测评通知",
+      "mime_type": "text/plain",
+      "text_body": "招商银行2027校园招聘，邀请您完成数据分析师岗位在线测评。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "招商银行",
+        "company_aliases": [
+          "招商银行",
+          "招行"
+        ],
+        "job_title": "数据分析师",
+        "job_aliases": [
+          "数据分析师"
+        ],
+        "status": "assessment",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_unilever_composite",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T03:40:00.000Z",
+      "from_name": "联合利华校招",
+      "from_address": "campus@unilever.example",
+      "subject": "2027联合利华管理培训生测评通知",
+      "mime_type": "text/plain",
+      "text_body": "联合利华2027管理培训生项目邀请您完成在线测评。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "联合利华",
+        "company_aliases": [
+          "联合利华",
+          "Unilever"
+        ],
+        "job_title": "管理培训生",
+        "job_aliases": [
+          "管理培训生",
+          "管培生"
+        ],
+        "status": "assessment",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_zte_composite",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T03:50:00.000Z",
+      "from_name": "中兴通讯招聘",
+      "from_address": "recruit@zte.example",
+      "subject": "【2027届中兴通讯财经管培生】笔试安排",
+      "mime_type": "text/plain",
+      "text_body": "中兴通讯邀请您参加财经管培生笔试，具体安排请查看通知。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "中兴通讯",
+        "company_aliases": [
+          "中兴通讯",
+          "ZTE"
+        ],
+        "job_title": "财经管培生",
+        "job_aliases": [
+          "财经管培生"
+        ],
+        "status": "assessment",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_china_mobile_company_only",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T04:00:00.000Z",
+      "from_name": "中国移动校园招聘",
+      "from_address": "campus@chinamobile.example",
+      "subject": "中国移动2027校园招聘在线测评",
+      "mime_type": "text/plain",
+      "text_body": "中国移动2027校园招聘邀请您完成在线测评，具体岗位可在官网查询。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "中国移动",
+        "company_aliases": [
+          "中国移动",
+          "China Mobile"
+        ],
+        "job_title": null,
+        "status": "assessment",
+        "recruitment_batch": "2027",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_bank_psbc_interview",
+      "split": "unseen",
+      "group": "B_bank_soe",
+      "round": 1,
+      "send_at": "2026-11-01T04:10:00.000Z",
+      "from_name": "95580",
+      "from_address": "95580@psbc.example",
+      "subject": "中国邮政储蓄银行面试通知",
+      "mime_type": "text/plain",
+      "text_body": "中国邮政储蓄银行邀请您参加信息科技岗面试，时间 11 月 19 日，地点广州。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "中国邮政储蓄银行",
+        "company_aliases": [
+          "中国邮政储蓄银行",
+          "邮储银行",
+          "PSBC"
+        ],
+        "job_title": "信息科技岗",
+        "job_aliases": [
+          "信息科技岗"
+        ],
+        "status": "interview",
+        "location": "广州",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_moka",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T04:20:00.000Z",
+      "from_name": "Moka",
+      "from_address": "noreply@mokahr.com",
+      "subject": "【极昼科技】后端开发工程师测评邀请",
+      "mime_type": "text/plain",
+      "text_body": "极昼科技邀请您完成后端开发工程师在线测评。\n公司：极昼科技\n岗位：后端开发工程师",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "极昼科技",
+        "company_aliases": [
+          "极昼科技"
+        ],
+        "job_title": "后端开发工程师",
+        "job_aliases": [
+          "后端开发工程师"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_beisen",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T04:30:00.000Z",
+      "from_name": "北森",
+      "from_address": "hr@beisen.com",
+      "subject": "北辰医疗面试安排",
+      "mime_type": "text/plain",
+      "text_body": "北辰医疗邀请您参加临床数据专员岗位面试，时间 11 月 17 日。\n公司：北辰医疗\n岗位：临床数据专员",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "北辰医疗",
+        "company_aliases": [
+          "北辰医疗"
+        ],
+        "job_title": "临床数据专员",
+        "job_aliases": [
+          "临床数据专员"
+        ],
+        "status": "interview",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_shl",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T04:40:00.000Z",
+      "from_name": "SHL Assessments",
+      "from_address": "assessments@shl.com",
+      "subject": "Assessment invitation — Polaris Labs Graduate Software Engineer",
+      "mime_type": "text/plain",
+      "text_body": "Polaris Labs invites you to complete a SHL assessment for the Graduate Software Engineer role.",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "Polaris Labs",
+        "company_aliases": [
+          "Polaris Labs",
+          "Polaris"
+        ],
+        "job_title": "Graduate Software Engineer",
+        "job_aliases": [
+          "Graduate Software Engineer"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_hirevue",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T04:50:00.000Z",
+      "from_name": "HireVue",
+      "from_address": "no-reply@hirevue.com",
+      "subject": "Interview invitation — Aurora Retail Marketing Associate",
+      "mime_type": "text/plain",
+      "text_body": "Aurora Retail invites you to a HireVue video interview for the Marketing Associate position.",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "Aurora Retail",
+        "company_aliases": [
+          "Aurora Retail"
+        ],
+        "job_title": "Marketing Associate",
+        "job_aliases": [
+          "Marketing Associate"
+        ],
+        "status": "interview",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_workday",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T05:00:00.000Z",
+      "from_name": "Workday",
+      "from_address": "recruitment@myworkday.com",
+      "subject": "Application Received — Helio Energy Data Engineer",
+      "mime_type": "text/plain",
+      "text_body": "Thank you for applying to Helio Energy. We have received your application for the Data Engineer role.",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "Helio Energy",
+        "company_aliases": [
+          "Helio Energy"
+        ],
+        "job_title": "Data Engineer",
+        "job_aliases": [
+          "Data Engineer"
+        ],
+        "status": "applied",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_hackerrank",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T05:10:00.000Z",
+      "from_name": "HackerRank",
+      "from_address": "no-reply@hackerrank.com",
+      "subject": "HackerRank Coding Challenge — Quanta Systems Software Engineer Intern",
+      "mime_type": "text/plain",
+      "text_body": "Quanta Systems invites you to complete a HackerRank coding challenge for the Software Engineer Intern role.",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "Quanta Systems",
+        "company_aliases": [
+          "Quanta Systems",
+          "Quanta"
+        ],
+        "job_title": "Software Engineer Intern",
+        "job_aliases": [
+          "Software Engineer Intern"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "unseen_ats_english_rejection",
+      "split": "unseen",
+      "group": "C_ats_english",
+      "round": 1,
+      "send_at": "2026-11-01T05:20:00.000Z",
+      "from_name": "Meridian Capital Recruiting",
+      "from_address": "careers@meridian.example",
+      "subject": "Update on your Investment Analyst application",
+      "mime_type": "text/plain",
+      "text_body": "Dear candidate, unfortunately we are not moving forward with your application for the Investment Analyst role at Meridian Capital. We appreciate your interest.",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "created",
+        "company_name": "Meridian Capital",
+        "company_aliases": [
+          "Meridian Capital"
+        ],
+        "job_title": "Investment Analyst",
+        "job_aliases": [
+          "Investment Analyst"
+        ],
+        "status": "rejected",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "state_cloud_offer_step_1",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 1,
+      "send_at": "2026-11-02T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营投递成功",
+      "mime_type": "text/plain",
+      "text_body": "感谢您投递云杉互娱游戏运营岗位，您的申请已成功提交。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "created",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "applied",
+        "measure_status": false
+      }
+    },
+    {
+      "id": "state_cloud_offer_step_2",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 2,
+      "send_at": "2026-11-03T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营在线测评",
+      "mime_type": "text/plain",
+      "text_body": "邀请您完成云杉互娱游戏运营岗位在线测评。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "advanced",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "assessment",
+        "measure_status": false
+      }
+    },
+    {
+      "id": "state_cloud_offer_step_3",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 3,
+      "send_at": "2026-11-05T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营一面邀请",
+      "mime_type": "text/plain",
+      "text_body": "邀请您参加云杉互娱游戏运营岗位一面，时间 11 月 12 日 14:00。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "advanced",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "interview",
+        "round_label": "一面",
+        "measure_status": false
+      }
+    },
+    {
+      "id": "state_cloud_offer_step_4",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 4,
+      "send_at": "2026-11-07T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营一面改期",
+      "mime_type": "text/plain",
+      "text_body": "原定面试时间需要调整，新的面试时间为 11 月 14 日 16:00。如该时间不合适，请联系 HR 改期。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "advanced",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "interview",
+        "round_label": "一面",
+        "measure_status": false
+      }
+    },
+    {
+      "id": "state_cloud_offer_step_5",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 5,
+      "send_at": "2026-11-10T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营录用通知",
+      "mime_type": "text/plain",
+      "text_body": "云杉互娱正式向您发放游戏运营岗位录用通知，欢迎加入。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "advanced",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "offer",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "state_cloud_old_receipt",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 6,
+      "send_at": "2026-10-30T02:00:00.000Z",
+      "from_name": "云杉互娱招聘",
+      "from_address": "hr@yunshan.example",
+      "subject": "云杉互娱游戏运营投递成功（旧回执）",
+      "mime_type": "text/plain",
+      "text_body": "感谢您投递云杉互娱游戏运营岗位，您的申请已成功提交。",
+      "html_body": null,
+      "target": "state_cloud",
+      "expected": {
+        "action": "no_change",
+        "company_name": "云杉互娱",
+        "company_aliases": [
+          "云杉互娱"
+        ],
+        "job_title": "游戏运营",
+        "job_aliases": [
+          "游戏运营"
+        ],
+        "status": "offer",
+        "measure_status": false,
+        "score_recall": false
+      }
+    },
+    {
+      "id": "state_beichen_role_a",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 6,
+      "send_at": "2026-11-11T02:00:00.000Z",
+      "from_name": "北辰数据招聘",
+      "from_address": "hr@beichen.example",
+      "subject": "北辰数据数据分析师测评邀请",
+      "mime_type": "text/plain",
+      "text_body": "北辰数据邀请您完成数据分析师岗位在线测评。",
+      "html_body": null,
+      "target": "beichen_a",
+      "expected": {
+        "action": "created",
+        "company_name": "北辰数据",
+        "company_aliases": [
+          "北辰数据"
+        ],
+        "job_title": "数据分析师",
+        "job_aliases": [
+          "数据分析师"
+        ],
+        "status": "assessment",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "state_beichen_role_b",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 7,
+      "send_at": "2026-11-12T02:00:00.000Z",
+      "from_name": "北辰数据招聘",
+      "from_address": "hr@beichen.example",
+      "subject": "北辰数据产品经理面试邀请",
+      "mime_type": "text/plain",
+      "text_body": "北辰数据邀请您参加产品经理岗位面试。",
+      "html_body": null,
+      "target": "beichen_b",
+      "expected": {
+        "action": "created",
+        "company_name": "北辰数据",
+        "company_aliases": [
+          "北辰数据"
+        ],
+        "job_title": "产品经理",
+        "job_aliases": [
+          "产品经理"
+        ],
+        "status": "interview",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "state_beichen_company_only",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 8,
+      "send_at": "2026-11-13T02:00:00.000Z",
+      "from_name": "北辰数据招聘",
+      "from_address": "hr@beichen.example",
+      "subject": "北辰数据2027校招测评通知",
+      "mime_type": "text/plain",
+      "text_body": "北辰数据2027校园招聘邀请您完成在线测评，具体岗位以官网为准。",
+      "html_body": null,
+      "target": "beichen_ambiguous",
+      "expected": {
+        "action": "pending",
+        "company_name": "北辰数据",
+        "company_aliases": [
+          "北辰数据"
+        ],
+        "job_title": null,
+        "status": null,
+        "measure_status": false,
+        "should_leave_open_review": true
+      }
+    },
+    {
+      "id": "state_placeholder_create",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 8,
+      "send_at": "2026-11-13T03:00:00.000Z",
+      "from_name": "云图科技招聘",
+      "from_address": "campus@yuntu.example",
+      "subject": "云图科技2027校招测评邀请",
+      "mime_type": "text/plain",
+      "text_body": "云图科技2027校园招聘邀请您完成在线测评，具体岗位待后续通知。",
+      "html_body": null,
+      "target": "placeholder",
+      "expected": {
+        "action": "created",
+        "company_name": "云图科技",
+        "company_aliases": [
+          "云图科技"
+        ],
+        "job_title": null,
+        "status": "assessment",
+        "measure_status": false
+      }
+    },
+    {
+      "id": "state_placeholder_upgrade",
+      "split": "unseen",
+      "group": "D_state_and_edge",
+      "round": 9,
+      "send_at": "2026-11-14T02:00:00.000Z",
+      "from_name": "云图科技招聘",
+      "from_address": "campus@yuntu.example",
+      "subject": "云图科技产品运营面试邀请",
+      "mime_type": "text/plain",
+      "text_body": "云图科技邀请您参加产品运营岗位面试，时间为 11 月 20 日。",
+      "html_body": null,
+      "target": "placeholder",
+      "expected": {
+        "action": "advanced",
+        "company_name": "云图科技",
+        "company_aliases": [
+          "云图科技"
+        ],
+        "job_title": "产品运营",
+        "job_aliases": [
+          "产品运营"
+        ],
+        "status": "interview",
+        "measure_status": true
+      }
+    },
+    {
+      "id": "noise_tounar_reminder",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:00:00.000Z",
+      "from_name": "Tounar 帮你理",
+      "from_address": "no-reply@tounar.local",
+      "subject": "Tounar 每日进展提醒",
+      "mime_type": "text/plain",
+      "text_body": "您有一条面试提醒，请打开帮你理查看。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "Tounar",
+        "company_aliases": [
+          "Tounar",
+          "帮你理"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_bangnili_otp",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:10:00.000Z",
+      "from_name": "帮你理",
+      "from_address": "no-reply@tounar.local",
+      "subject": "帮你理登录验证码",
+      "mime_type": "text/plain",
+      "text_body": "您的验证码是 123456，请勿泄露。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "帮你理",
+        "company_aliases": [
+          "帮你理",
+          "Tounar"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_info_session",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:20:00.000Z",
+      "from_name": "未来校园招聘",
+      "from_address": "campus@future.example",
+      "subject": "空中宣讲会邀请函",
+      "mime_type": "text/plain",
+      "text_body": "欢迎参加未来科技2027校园招聘空中宣讲会，了解岗位与流程。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "未来科技",
+        "company_aliases": [
+          "未来科技"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_process_guide",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:30:00.000Z",
+      "from_name": "求职指南",
+      "from_address": "career@guide.example",
+      "subject": "2027校招流程全解析",
+      "mime_type": "text/plain",
+      "text_body": "本文介绍校园招聘的网申、笔试、面试流程和准备建议。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "求职指南",
+        "company_aliases": [
+          "求职指南"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_referral_only",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:40:00.000Z",
+      "from_name": "人才推荐",
+      "from_address": "referral@corp.example",
+      "subject": "内推成功确认",
+      "mime_type": "text/plain",
+      "text_body": "你已经被成功内推，内推不等于投递成功，请关注官网后续流程。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "人才推荐",
+        "company_aliases": [
+          "人才推荐"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_job_digest",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T02:50:00.000Z",
+      "from_name": "岗位推荐",
+      "from_address": "digest@jobs.example",
+      "subject": "本周岗位推荐周报",
+      "mime_type": "text/plain",
+      "text_body": "本周为你推荐互联网、金融、制造业的校园招聘岗位，点击查看。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "岗位推荐",
+        "company_aliases": [
+          "岗位推荐"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_forward_thread",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T03:00:00.000Z",
+      "from_name": "同学",
+      "from_address": "friend@example",
+      "subject": "Fwd: 面试经验分享",
+      "mime_type": "text/plain",
+      "text_body": "转发：这是我之前整理的一份面试经验，供你参考。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "面试经验",
+        "company_aliases": [
+          "面试经验"
+        ],
+        "measure_status": false
+      }
+    },
+    {
+      "id": "noise_bank_bill",
+      "split": "known",
+      "group": "E_noise",
+      "round": 1,
+      "send_at": "2026-11-15T03:10:00.000Z",
+      "from_name": "银行服务",
+      "from_address": "service@bank.example",
+      "subject": "您本月信用卡账单",
+      "mime_type": "text/plain",
+      "text_body": "本月账单已出，请登录手机银行查看还款金额。",
+      "html_body": null,
+      "target": null,
+      "expected": {
+        "action": "ignored",
+        "company_name": "信用卡账单",
+        "company_aliases": [
+          "信用卡账单",
+          "银行"
+        ],
+        "measure_status": false
+      }
+    }
+  ]
+}
