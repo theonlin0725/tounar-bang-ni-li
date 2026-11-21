@@ -897,8 +897,20 @@ export function recordConfirmedMail(event, facts) {
       app = fillMissingFields(app, fields, event.id, 'mail');
       if (!app.has_applied) app = markApplicationChanged(app.owner_id, app.id, event.id, 'mail',
         { has_applied: 1, applied_at: at, applied_at_precision: 'inferred_before' }, { reason: '招聘进展确证申请' });
-      const update = applyStatusTransition(app, facts.status, event, { sourceMethod: 'mail' });
-      if (!update.ok) throw new AppError(409, 'MAIL_STAGE_CONFLICT', '岗位状态已变化，请重新同步');
+      const update = applyStatusTransition(app, facts.status, event, {
+        sourceMethod: 'mail',
+        reviewTerminal: !config.autoTerminalFromMail
+      });
+      if (!update.ok) {
+        return { state: 'pending', review: createReviewForEvent(event, {
+          kind: update.review?.kind || 'status_conflict',
+          reasonCode: update.review?.reasonCode || 'MAIL_STAGE_CONFLICT',
+          summary: update.review?.summary || '状态更新需要人工确认',
+          fields, suggested: { ...facts, has_applied: true }, progressCandidates: match.candidates,
+          evidence: { subject_excerpt: event.payload.subject_excerpt, body_excerpt: event.payload.body_excerpt,
+            source_received_at: event.occurred_at }
+        }) };
+      }
       app = update.app;
       if (app.version !== target.version) change = 'updated';
     }

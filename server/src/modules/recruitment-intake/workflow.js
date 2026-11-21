@@ -231,7 +231,9 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
         site_key: event.site_key || p.site_key || null
       })
       : null;
-    const foundCandidates = findCandidates(event.owner_id, extracted);
+    const foundCandidates = source === 'mail' && mailMatch?.reason === 'new_job_same_company'
+      ? []
+      : findCandidates(event.owner_id, extracted);
     const candidates = [...foundCandidates];
     for (const candidate of mailMatch?.candidates || []) {
       if (!candidates.some((c) => c.id === candidate.id)) candidates.push(candidate);

@@ -215,7 +215,7 @@ export function confirmedMailProgress(subject, bodyText, { fromName = '', fromDo
 
   const stages = [
     ['offer', /(?:正式录用|录用通知|录用意向书|offer\s*letter|录取通知)/i],
-    ['rejected', /(?:很遗憾.{0,24}(?:未通过|不合适|未能|遗憾)|未通过(?:本次)?(?:筛选|简历|测评|笔试|面试)|不合适|进入人才库|not\s+selected)/i],
+    ['rejected', /(?:很遗憾.{0,24}(?:未通过|不合适|未能|遗憾)|未通过(?:本次)?(?:筛选|简历|测评|笔试|面试)|(?:岗位|职位|背景|暂)不(?:合适|匹配)|进入人才库|not\s+selected|unfortunately.{0,30}(?:not|unable))/i],
     ['closed', /(?:岗位关闭|职位关闭|流程结束|申请已撤回|position\s+closed)/i],
     ['interview', /(?:面试邀请|面试通知|面试安排|面试时间确认|邀请.{0,12}(?:一面|二面|三面|初试|复试|终面|HR面|面试)|invitation\s+to\s+interview)/i],
     ['assessment', /(?:测评邀请|笔试邀请|在线测评通知|测评通知|笔试通知|测评安排|笔试安排|测评已开启|进入测评环节|请(?:您|你)?.{0,24}完成.{0,12}(?:测评|笔试|在线考试)|online\s+assessment|written\s+test)/i],

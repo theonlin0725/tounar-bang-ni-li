@@ -181,6 +181,26 @@ describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失�
     assert.equal(result.mail_state, 'applied');
   });
 
+  it('单封 ingest 抛错被隔离并继续，统计 errors=1，后续邮件仍可完成', async () => {
+    const { ingestMessageIsolated, recordIngestFailure } = encoderForTest();
+    const stats = { errors: 0, scanned: 0, total: 2, percent: 0, remaining: 2 };
+    const seen = [];
+    const first = await ingestMessageIsolated({ id: 'c' }, { uid: 1 }, {}, '', '', {
+      ingest: async () => { throw Object.assign(new Error('bad mail'), { code: 'BAD_MAIL' }); }
+    });
+    if (first.error) recordIngestFailure(stats, stats.total, 1);
+    const second = await ingestMessageIsolated({ id: 'c' }, { uid: 2 }, {}, '', '', {
+      ingest: async () => { seen.push(2); return { created: true }; }
+    });
+    seen.push(2);
+    assert.equal(first.error.code, 'BAD_MAIL');
+    assert.equal(stats.errors, 1);
+    assert.equal(stats.scanned, 1);
+    assert.equal(second.ingested.created, true);
+    assert.deepEqual(seen, [2, 2]);
+    assert.equal(stats.total, 2);
+  });
+
   it('D3 离线 processMailEvent 0 候选时也能自动建立投递明细', async () => {
     const script = `
       import { one } from './server/src/db.js';
@@ -518,12 +538,55 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     assert.equal(s4.company_only_progress, undefined);
   });
 
-  it('离线强规则只接受明确个人进展，忽略转发/流程/条件句', () => {
-    assert.equal(confirmedMailProgress('【星河科技】后端实习生 面试邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加面试。')?.status, 'interview');
+  it('离线强规则只接受明确个人进展，忽略转发/流程/条件句；面试改期提示“时间不合适”不误判为拒信', () => {
+    assert.equal(confirmedMailProgress('【星河科技】后端实习生 面试邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加面试。如该时间不合适，请联系HR改期。')?.status, 'interview');
     assert.equal(confirmedMailProgress('【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n请于 11 月 30 日前完成在线测评。')?.status, 'assessment');
     assert.equal(confirmedMailProgress('Re: 【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加测评。'), null);
     assert.equal(confirmedMailProgress('招聘流程介绍', '这是流程介绍，不代表您已通过。'), null);
     assert.equal(confirmedMailProgress('【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n如果您通过筛选，将邀请您参加测评。'), null);
+  });
+
+  it('终态邮件命中已有申请时不抛出 MAIL_STAGE_CONFLICT 中断同步', async () => {
+    const script = `
+      import { one, run } from './server/src/db.js';
+      import { nowIso } from './server/src/util.js';
+      import { createApplication, recordConfirmedMail } from './server/src/domain/applications.js';
+      const owner = one('SELECT id FROM users ORDER BY created_at LIMIT 1')?.id || 'u_terminal_test';
+      const app = createApplication({ ownerId: owner, sourceMethod: 'manual', status: 'applied',
+        fields: { company_name: '终态保护公司', job_title: '测试工程师', applied_at: '2026-10-01T00:00:00Z', applied_at_precision: 'date' },
+        at: '2026-10-01T00:00:00Z' });
+      const event = { id: 'evt_terminal_no_crash', owner_id: owner, source_method: 'mail', occurred_at: '2026-11-05T00:00:00Z',
+        payload: { from_domain: 'hr.example.com', subject_excerpt: '【终态保护公司】很遗憾未通过', body_excerpt: '很遗憾您未通过本次筛选' } };
+      run("INSERT INTO events (id, owner_id, client_event_id, source_method, event_type, occurred_at, observed_at, received_at, schema_version, evidence_level, payload_json, payload_hash, processing_state) VALUES (?, ?, 'mail:term-no-crash', 'mail', 'mail_progress_detected', ?, ?, ?, 'C1', 'strong', ?, 'h-term', 'pending')",
+        [event.id, owner, event.occurred_at, nowIso(), nowIso(), JSON.stringify(event.payload)]);
+      const res = recordConfirmedMail(event, { company_name: '终态保护公司', job_title: '测试工程师', status: 'rejected' });
+      const after = one('SELECT status FROM applications WHERE id=?', [app.id]);
+      console.log(JSON.stringify({ state: res.state, status: after?.status, has_review: Boolean(res.review) }));
+    `;
+    const srv = await startTestServer({ name: 'mail-terminal-no-crash' });
+    try {
+      await srv.login('demo@tounar.local');
+      const { stdout: outAuto } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+        cwd: fileURLToPath(new URL('../..', import.meta.url)),
+        env: { ...process.env, DATA_DIR: srv.dir, APP_ENV: 'test', AUTO_TERMINAL_FROM_MAIL: 'true', AUTO_INTAKE_ENABLED: 'false' }
+      });
+      const autoRes = JSON.parse(outAuto.trim().split('\n').at(-1));
+      assert.equal(autoRes.state, 'applied');
+      assert.equal(autoRes.status, 'rejected');
+
+      const srv2 = await startTestServer({ name: 'mail-terminal-review' });
+      try {
+        await srv2.login('demo@tounar.local');
+        const { stdout: outReview } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+          cwd: fileURLToPath(new URL('../..', import.meta.url)),
+          env: { ...process.env, DATA_DIR: srv2.dir, APP_ENV: 'test', AUTO_TERMINAL_FROM_MAIL: 'false', AUTO_INTAKE_ENABLED: 'false' }
+        });
+        const revRes = JSON.parse(outReview.trim().split('\n').at(-1));
+        assert.equal(revRes.state, 'pending');
+        assert.equal(revRes.has_review, true);
+        assert.equal(revRes.status, 'applied');
+      } finally { await srv2.stop(); }
+    } finally { await srv.stop(); }
   });
 
   it('证据留存：headers_only 不保留正文，recruitment_body 只留摘要', () => {

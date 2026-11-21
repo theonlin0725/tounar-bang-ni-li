@@ -49,6 +49,8 @@ before(async () => {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '多岗位科技', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/新机会/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '新机会科技', job_title: '后端实习生', status: 'interview', evidence: [{ field: 'status', quote: '面试邀请' }], uncertainties: [] };
+      } else if (/网易新岗/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '网易', job_title: '产品经理', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/单活跃公司/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '单活跃公司', job_title: null, recruitment_batch: '2027届校招', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/歧义公司/.test(text)) {
@@ -199,6 +201,18 @@ it('公司级统一测评邮件命中唯一未终态同公司记录：原地升�
   assert.equal(result.application.id, target.id);
   assert.equal(db.one('SELECT status FROM applications WHERE id=?', [target.id]).status, 'assessment');
   assert.equal(db.one('SELECT has_applied FROM applications WHERE id=?', [target.id]).has_applied, 1);
+});
+
+it('AI 开启时同公司新岗位且模型 no_match：新建独立记录，不混入旧岗位', async () => {
+  const old = app('网易', '游戏策划', 'pending');
+  const e = event('网易新岗：网易产品经理测评邀请，请完成在线测评。', { company: '网易', title: '产品经理' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.change, 'created');
+  assert.notEqual(result.application.id, old.id);
+  assert.equal(result.application.company_name, '网易');
+  assert.equal(result.application.job_title, '产品经理');
+  assert.equal(db.one('SELECT status FROM applications WHERE id=?', [old.id]).status, 'pending');
 });
 
 it('同公司已有两个未终态岗位时，公司级无岗位名测评仍进待确认', async () => {

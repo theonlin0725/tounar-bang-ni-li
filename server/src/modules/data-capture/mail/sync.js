@@ -210,12 +210,17 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText, {
   const facts = parsed.confirmed || confirmedMailProgress(parsed.subject, bodyText, {
     fromName: fields.from_name || '', fromDomain: fields.from_domain || ''
   });
-  const result = facts ? recordConfirmedMail(event, facts) : aiCandidate
-    ? await processIntakeEvent(event, {
+  let result;
+  if (aiCandidate) {
+    result = await processIntakeEvent(event, {
       bodyText, subject: parsed.subject, fromDomain: fields.from_domain || '', fromName: fields.from_name || '',
       receivedAt: event.occurred_at, statusText: parsed.classification.category
-    })
-    : processMailEvent(event);
+    });
+    // AI 技术失败时保留强规则兜底；歧义/低置信度仍保留 AI 的待确认结论。
+    if (facts && ['retry', 'failed'].includes(result.state)) result = recordConfirmedMail(event, facts);
+  } else {
+    result = facts ? recordConfirmedMail(event, facts) : processMailEvent(event);
+  }
   if (leaseId && !currentBinding(connection.id, connection.binding_version, leaseId)) {
     return { state: 'aborted', aborted: true, reason: 'binding_changed', result };
   }
@@ -371,6 +376,21 @@ function renewLease(connectionId, bindingVersion, leaseId) {
     WHERE id = ? AND binding_version = ? AND sync_lease_owner = ? AND status <> 'disconnected'`,
   [until, connectionId, bindingVersion, leaseId]);
   return result.changes > 0;
+}
+
+async function ingestMessageIsolated(connection, message, parsed, bodyText, receivedAt, { leaseId = null, ingest = ingestMessage } = {}) {
+  try {
+    return { ingested: await ingest(connection, message, parsed, bodyText, receivedAt, { leaseId }) };
+  } catch (error) {
+    return { error };
+  }
+}
+function recordIngestFailure(stats, total, uid) {
+  stats.errors += 1;
+  stats.scanned += 1;
+  stats.remaining = Math.max(0, Number(total || 0) - stats.scanned);
+  stats.percent = Math.min(99, total ? Math.floor((stats.scanned / total) * 100) : 99);
+  return { uid, ...stats };
 }
 
 export async function syncConnection(connectionId, { ownerId = null } = {}) {
@@ -539,10 +559,18 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
         }
         const parsed = { uidvalidity: uidValidity, subject, classification, fields, tentativeHeader,
           confirmed: confirmedMailProgress(subject, bodyText, { fromName: from.name, fromDomain: from.address.split('@')[1] || '' }), backfill: historical.has(message.uid) };
-        const ingested = await ingestMessage(fresh, {
+        const attempt = await ingestMessageIsolated(fresh, {
           uid: message.uid,
           messageId: message.envelope?.messageId || null
         }, parsed, bodyText, receivedAt, { leaseId: lease });
+        if (attempt.error) {
+          logSyncError(fresh.id, `ingest_uid_${message.uid}`, attempt.error);
+          recordIngestFailure(stats, stats.total, message.uid);
+          lastProcessedUid = Math.max(lastProcessedUid, message.uid);
+          publish();
+          continue;
+        }
+        const ingested = attempt.ingested;
         if (ingested.aborted) {
           aborted = true;
           break;
@@ -620,9 +648,11 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
     logSyncError(fresh.id, stage, err);
     if (info.code === 'IMAP_SYNC_FAILED') {
       const errorName = String(err?.name || 'Error').replace(/[^A-Za-z]/g, '').slice(0, 40) || 'Error';
+      const errorCode = String(err?.code || '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 40);
+      const codeTag = errorCode ? `:${errorCode}` : '';
       const programmingError = err instanceof ReferenceError || err instanceof TypeError || err instanceof RangeError;
       const detail = programmingError ? `: ${String(err.message || '').slice(0, 160)}` : '';
-      info.message = `邮箱同步失败（${stage} / ${errorName}${detail}），已保留上次成功结果`;
+      info.message = `邮箱同步失败（${stage} / ${errorName}${codeTag}${detail}），已保留上次成功结果`;
     }
     stats.phase = 'error'; stats.phase_label = '同步失败'; stats.finished_at = nowIso();
     stats.errors += 1;
@@ -647,6 +677,6 @@ export async function syncAllConnections() {
 export function encoderForTest() {
   return {
     messageUidKey, findTextPart, findHtmlPart, decodeMimeWords, classifyError,
-    firstScanProcessedCount, ingestMessage, downloadPart, currentBinding, renewLease
+    firstScanProcessedCount, ingestMessage, ingestMessageIsolated, recordIngestFailure, downloadPart, currentBinding, renewLease
   };
 }

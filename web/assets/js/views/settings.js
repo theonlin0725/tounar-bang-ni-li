@@ -713,6 +713,7 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
         }
         const terminal = ['connected', 'degraded', 'reauth_required', 'disconnected'].includes(c.status);
         if (terminal) {
+          if (msgBox?.isConnected) clear(msgBox);
           if (Number(c.sync_stats?.applied || 0) > 0 || Number(c.sync_stats?.pending || 0) > 0) onChanged?.();
           if (!card) await reloadMe();
           return;
