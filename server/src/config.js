@@ -39,6 +39,10 @@ const allowedEmails = new Set(
   (process.env.ALLOWED_EMAILS ?? 'demo@tounar.local,peer@tounar.local')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 );
+const hasAiGateway = Boolean(process.env.AI_API_URL && process.env.AI_API_KEY);
+const mailIntakeJudgeDefault = hasAiGateway && !process.env.JEV_API_KEY ? 'flash' : 'jev';
+const mailIntakeJudge = String(process.env.MAIL_INTAKE_JUDGE || mailIntakeJudgeDefault).toLowerCase();
+const autoIntakeDefault = hasAiGateway && (Boolean(process.env.JEV_API_KEY) || mailIntakeJudge === 'flash');
 
 export const config = {
   root: ROOT,
@@ -133,7 +137,7 @@ export const config = {
   jevTimeoutMs: intEnv('JEV_TIMEOUT_MS', 30000),
   // 判断模型开关：mail 只影响邮件自动同步/人工确认；plugin 独立，默认继续走 Jev。
   // flash = 复用 AI_API_* 的 OpenAI 兼容模型直接判断；jev = 现有 TypeSafe 判断。
-  mailIntakeJudge: String(process.env.MAIL_INTAKE_JUDGE || 'jev').toLowerCase(),
+  mailIntakeJudge,
   pluginIntakeJudge: String(process.env.PLUGIN_INTAKE_JUDGE || 'jev').toLowerCase(),
   mailIntakeJudgeFallback: String(process.env.MAIL_INTAKE_JUDGE_FALLBACK || 'none').toLowerCase(),
   // 本机到 TypeSafe 被区域限制时的 Dify 云兜底（同一工作流内有真实 Jev HTTP 节点）
@@ -141,8 +145,7 @@ export const config = {
   difyApiKey: process.env.DIFY_API_KEY || '',
   difyUserId: process.env.DIFY_USER_ID || 'tounar-confirm',
   difyTimeoutMs: intEnv('DIFY_TIMEOUT_MS', 30000),
-  autoIntakeEnabled: boolEnv('AUTO_INTAKE_ENABLED', Boolean(process.env.AI_API_URL && process.env.AI_API_KEY
-    && (process.env.JEV_API_KEY || String(process.env.MAIL_INTAKE_JUDGE || 'jev').toLowerCase() === 'flash'))),
+  autoIntakeEnabled: boolEnv('AUTO_INTAKE_ENABLED', autoIntakeDefault),
   autoIntakeMinProgress: confidenceEnv('AUTO_INTAKE_MIN_PROGRESS', 0.72),
   autoIntakeMinEvidence: confidenceEnv('AUTO_INTAKE_MIN_EVIDENCE', 0.65),
   autoIntakeMinStatus: confidenceEnv('AUTO_INTAKE_MIN_STATUS', 0.6),

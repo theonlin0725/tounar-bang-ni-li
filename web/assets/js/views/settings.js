@@ -96,6 +96,7 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
   };
   let disposed = false;
   let siteAccessCard = null;
+  let mailPollId = 0;
   const stillCurrent = () => !disposed && App.gen === genAtOpen && (!isCurrent || isCurrent());
 
   const tabRow = h('div', { class: 'tn-tabs tn-settings-tabs', style: { marginBottom: '16px' } });
@@ -108,7 +109,7 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
   } else {
     modal = openModal({
       title: '设置与授权',
-      subtitle: '提醒设置 · 插件绑定 · QQ 邮箱 · 删除数据',
+      subtitle: '提醒设置 · 插件绑定 · 招聘邮箱 · 删除数据',
       body,
       onClose: () => { disposed = true; siteAccessCard?.dispose(); for (const t of timers) clearTimeout(t); timers.clear(); },
       testid: 'settings-modal'
@@ -457,151 +458,149 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
   }
 
   /* ---------- 邮箱 ---------- */
+  function mailStatusMeta(status) {
+    return MAIL_STATUS[status] || { label: status || '未知', cls: 'state-muted' };
+  }
+  function mailProgressText(conn) {
+    const stats = conn.sync_stats || {};
+    const total = Number(stats.total ?? conn.first_scan_total ?? 0);
+    const scanned = Number(stats.scanned ?? conn.first_scan_processed ?? 0);
+    if (conn.status === 'connecting' || stats.phase === 'connecting') return '正在连接邮箱…';
+    if (conn.status === 'syncing' && (!total || stats.phase === 'searching')) return '正在获取邮件数量…';
+    if (conn.status === 'syncing') return `${stats.phase_label || `正在扫描 ${scanned} / ${total} 封`}`;
+    if (conn.status === 'connected') return total ? `已扫描 ${total} / ${total} 封（完成）` : '没有新邮件';
+    if (stats.phase_label) return stats.phase_label;
+    return conn.status === 'disconnected' ? '已断开' : (mailStatusMeta(conn.status).label);
+  }
+  function mailPercent(conn) {
+    const stats = conn.sync_stats || {};
+    const total = Number(stats.total ?? conn.first_scan_total ?? 0);
+    const scanned = Number(stats.scanned ?? conn.first_scan_processed ?? 0);
+    if (conn.status === 'connected') return 100;
+    if (['connecting', 'searching'].includes(stats.phase) || !total) return null;
+    if (stats.percent != null) return Math.max(0, Math.min(100, Number(stats.percent)));
+    return Math.max(0, Math.min(99, Math.floor((scanned / total) * 100)));
+  }
+  function mailProgressNode(conn) {
+    const pct = mailPercent(conn);
+    const progressAttrs = { max: '100' };
+    if (pct != null) progressAttrs.value = String(pct);
+    return h('div', { class: `tn-mail-progress ${conn.status === 'connected' ? 'is-ok' : ['degraded','reauth_required','disconnected'].includes(conn.status) ? 'is-error' : 'is-syncing'}`, 'data-test': 'mail-progress' },
+      h('div', { class: 'tn-mail-progress-head' },
+        h('span', { text: mailProgressText(conn) }),
+        h('strong', { text: pct == null ? '…' : `${pct}%` })),
+      h('progress', progressAttrs),
+      h('div', { class: 'tn-small tn-muted', 'data-test': 'mail-sync-summary',
+        text: `自动入账 ${conn.sync_stats?.applied ?? 0} 条 · 待确认 ${conn.sync_stats?.pending ?? 0} 条 · 错误 ${conn.sync_stats?.errors ?? 0}` }),
+      h('div', { class: 'tn-tiny tn-faint',
+        text: conn.last_sync_success_at ? `最近成功同步 ${relativeTime(conn.last_sync_success_at)}` : '最近尚无成功同步' }));
+  }
   function renderMailSection(me) {
     const section = h('div', { class: 'tn-pref-group', 'data-test': 'mail-section' });
-    section.append(h('h4', { text: 'QQ 邮箱（只读）' }));
-    const conn = me.mail_connection;
-    if (!conn) {
+    section.append(h('h4', { text: '招聘邮箱（只读）' }));
+    const initial = me.mail_connection;
+    if (!initial) {
       section.append(renderMailConnectForm(null));
       return section;
     }
-    const meta = MAIL_STATUS[conn.status] || { label: conn.status, cls: 'state-muted' };
-    const stats = conn.sync_stats || {};
-    const scheduler = me.scheduler || {};
-    const intake = me.intake_health || {};
-    const statLine = [
-      `本轮取到 ${stats.fetched ?? '—'}`,
-      `新增 ${stats.new ?? '—'}`,
-      `处理 ${stats.processed ?? '—'}`,
-      `待确认 ${stats.pending ?? '—'}`,
-      `错误 ${stats.errors ?? '—'}`,
-      conn.remaining != null ? `剩余积压 ${conn.remaining}` : null
-    ].filter(Boolean).join(' · ');
-    section.append(
-      h('div', { class: 'tn-device', 'data-test': 'mail-connection' },
-        h('div', { class: 'tn-device-name' }, conn.email, h('span', { class: `tn-state-pill ${meta.cls}`, text: meta.label })),
-        h('div', { class: 'tn-device-meta', text: [
-          conn.mode === 'headers_only' ? '读取范围：仅邮件头（不下载正文）' : '读取范围：邮件头筛选 + 命中候选正文',
-          `首扫起始 ${conn.scan_since ? fmtDateTime(conn.scan_since) : '—'}`,
-          conn.last_sync_success_at ? `最近成功同步 ${relativeTime(conn.last_sync_success_at)}` : '尚无成功同步'
-        ].join(' · ') }),
-        conn.mode === 'recruitment_body'
-          ? h('div', { class: 'tn-small tn-muted', text: '正文只对命中招聘邮件头筛选的候选下载，用于模型提取；最多保留 300 字摘录作证据，不读取、不保存附件。' })
-          : null,
-        h('div', { class: 'tn-device-meta', 'data-test': 'mail-sync-stats', text: statLine }),
-        conn.first_scan_total ? h('div', { class: 'tn-device-meta', text: `首扫进度 ${conn.first_scan_processed ?? 0}/${conn.first_scan_total}` }) : null,
-        h('div', { class: 'tn-device-meta tn-small', text: [
-          scheduler.mail_enabled ? '定时收信已开启' : '定时收信已关闭',
-          scheduler.reminder_enabled ? '提醒发信已开启' : '提醒发信已关闭',
-          scheduler.judge_mode?.mail ? `邮件判断：${scheduler.judge_mode.mail === 'flash' ? 'Flash 直判' : 'Jev 核验'}` : null
-        ].filter(Boolean).join(' · ') }),
-        (intake.retry || intake.failed)
-          ? h('div', { class: 'tn-device-meta tn-danger-text', text: `自动处理：等待重试 ${intake.retry || 0} · 最终失败 ${intake.failed || 0}（失败可在待确认中人工处理）` })
-          : null,
-        conn.last_error_message ? h('div', { class: 'tn-device-meta tn-danger-text', text: `最近错误（${conn.last_error_code || 'UNKNOWN'}）：${conn.last_error_message}` }) : null
-      )
-    );
-
-    const actionRow = h('div', { class: 'tn-action-row', style: { marginTop: '8px' } });
+    const card = h('div', { class: 'tn-device', 'data-test': 'mail-connection', 'data-connection-id': initial.id });
     const msgBox = h('div', { 'data-test': 'mail-msg' });
-    if (conn.status !== 'disconnected') {
-      actionRow.append(h('button', {
-        class: 'tn-btn tn-btn-sm', type: 'button',
-        text: conn.mode === 'headers_only' ? '切换为招聘候选正文' : '切回仅邮件头',
-        'data-test': 'mail-mode-switch',
-        onclick: async () => {
-          const nextMode = conn.mode === 'headers_only' ? 'recruitment_body' : 'headers_only';
-          const ok = await confirmDialog({
-            title: nextMode === 'recruitment_body' ? '切换到招聘候选正文模式？' : '切回仅读取邮件头？',
-            message: nextMode === 'recruitment_body'
-              ? 'Tounar 会对命中招聘关键词的候选邮件下载正文，并发送给模型提取公司与岗位。'
-              : 'Tounar 将停止下载邮件正文，只根据邮件头识别招聘进展。',
-            detail: nextMode === 'recruitment_body'
-              ? '正文不写入数据库；仅在证据中保留最多 300 字摘录。不读取、不保存附件。切换后旧同步任务会失效并从当前游标继续。'
-              : '已保存的台账与历史不会删除；新的邮件只按邮件头处理。',
-            confirmLabel: nextMode === 'recruitment_body' ? '切换并重新同步' : '切回仅邮件头'
-          });
-          if (!ok) return;
-          clear(msgBox);
-          try {
-            await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/mode`, {
-              mode: nextMode,
-              ...(nextMode === 'recruitment_body' ? { consent_version: 'QQ_MAIL_READ_CONSENT_V1' } : {})
-            });
-            toast(nextMode === 'recruitment_body' ? '已切换到招聘候选正文模式' : '已切回仅邮件头', 'ok');
-            await reloadMe();
-            pollMail(conn.id, msgBox);
-          } catch (err) {
-            msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
-          }
+
+    function paint(conn) {
+      clear(card);
+      const meta = mailStatusMeta(conn.status);
+      const stats = conn.sync_stats || {};
+      const actionRow = h('div', { class: 'tn-action-row', style: { marginTop: '8px' } });
+      card.append(...[
+        h('div', { class: 'tn-device-name' }, conn.email,
+          h('span', { class: `tn-state-pill ${meta.cls}`, text: meta.label })),
+        mailProgressNode(conn),
+        conn.status === 'disconnected'
+          ? h('div', { class: 'tn-small tn-muted', text: '已断开；历史台账保留。可以在下方直接换绑其他招聘邮箱。' })
+          : null,
+        conn.last_error_message
+          ? h('div', { class: 'tn-device-meta tn-danger-text', 'data-test': 'mail-error',
+            text: `最近错误（${conn.last_error_code || 'UNKNOWN'}）：${conn.last_error_message}` })
+          : null
+      ].filter(Boolean));
+      if (conn.status !== 'disconnected') {
+        if (conn.mode === 'headers_only') {
+          actionRow.append(h('button', {
+            class: 'tn-btn tn-btn-sm tn-btn-primary', type: 'button', text: '启用招聘邮件整理', 'data-test': 'mail-upgrade-body',
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: '启用招聘邮件整理？',
+                message: '只对命中招聘关键词的候选邮件读取正文，用于识别公司、岗位和进展。',
+                detail: '正文不写入数据库；证据最多保留 300 字摘录，不读取附件。升级后不再切换到仅邮件头。',
+                confirmLabel: '启用并重新同步'
+              });
+              if (!ok) return;
+              clear(msgBox);
+              try {
+                await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/mode`,
+                  { mode: 'recruitment_body', consent_version: 'MAIL_RECRUITMENT_READ_V2' });
+                toast('已启用招聘邮件整理', 'ok');
+                await reloadMe();
+              } catch (err) { msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) })); }
+            }
+          }));
         }
-      }));
-    }
-    if (conn.status !== 'disconnected') {
-      actionRow.append(h('button', {
-        class: 'tn-btn tn-btn-sm', type: 'button', text: '立即同步', 'data-test': 'mail-sync',
-        onclick: async () => {
-          clear(msgBox);
-          try {
-            const res = await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/sync`, {});
-            msgBox.append(h('div', { class: 'tn-inline-msg', text: '同步请求已受理（202），完成后状态会更新；不代表已同步成功。' }));
-            pollMail(conn.id, msgBox);
-            if (res.data?.status) { await reloadMe(); }
-          } catch (err) {
-            msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
-          }
-        }
-      }));
-    }
-    actionRow.append(h('button', {
-      class: 'tn-btn tn-btn-sm', type: 'button', text: conn.status === 'disconnected' ? '重新连接…' : '重新授权…',
-      'data-test': 'mail-reauth-open',
-      onclick: () => {
-        clear(msgBox);
-        msgBox.append(renderMailReauthForm(conn));
+        actionRow.append(
+          h('button', {
+            class: 'tn-btn tn-btn-sm', type: 'button', text: '立即同步', 'data-test': 'mail-sync',
+            onclick: async () => {
+              clear(msgBox);
+              try {
+                await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/sync`, {});
+                msgBox.append(h('div', { class: 'tn-inline-msg', text: '同步请求已受理（202），完成后状态会更新。' }));
+                pollMail(conn.id, card, msgBox);
+              } catch (err) { msgBox.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) })); }
+            }
+          }),
+          h('button', {
+            class: 'tn-btn tn-btn-sm', type: 'button', text: '重新授权…', 'data-test': 'mail-reauth-open',
+            onclick: () => { clear(msgBox); msgBox.append(renderMailReauthForm(conn)); }
+          }),
+          h('button', {
+            class: 'tn-btn tn-btn-sm tn-btn-danger', type: 'button', text: '断开连接', 'data-test': 'mail-disconnect',
+            onclick: async () => {
+              const ok = await confirmDialog({
+                title: '断开招聘邮箱连接？',
+                message: '服务端会删除授权凭证并停止同步；历史台账保留。',
+                detail: '断开后不会删除已解析的投递记录；如需删除数据请使用「删除全部数据」。',
+                confirmLabel: '断开', danger: true
+              });
+              if (!ok) return;
+              try {
+                await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/disconnect`, {});
+                toast('已断开邮箱连接', 'ok');
+                await reloadMe();
+                if (onChanged) onChanged();
+              } catch (err) { toast(errorText(err), 'err'); }
+            }
+          })
+        );
+        card.append(actionRow);
+      } else {
+        card.append(renderMailConnectForm(null));
       }
-    }));
-    if (conn.status !== 'disconnected') {
-      actionRow.append(h('button', {
-        class: 'tn-btn tn-btn-sm tn-btn-danger', type: 'button', text: '断开连接', 'data-test': 'mail-disconnect',
-        onclick: async () => {
-          const ok = await confirmDialog({
-            title: '断开 QQ 邮箱连接？',
-            message: '服务端会删除授权凭证并停止同步；历史台账保留。',
-            detail: '断开后不会删除已解析的投递记录；如需删除数据请使用「删除全部数据」。',
-            confirmLabel: '断开', danger: true
-          });
-          if (!ok) return;
-          try {
-            await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/disconnect`, {});
-            toast('已断开邮箱连接', 'ok');
-            await reloadMe();
-            if (onChanged) onChanged();
-          } catch (err) {
-            toast(errorText(err), 'err');
-          }
-        }
-      }));
+      card.append(msgBox);
     }
-    section.append(actionRow, msgBox);
-    section.append(h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' } },
-      '真实 QQ IMAP 与 SMTP 未在当前环境配置时，连接/同步会如实失败并显示错误，不会伪装成“已同步”。'));
+
+    paint(initial);
+    card.__paint = paint;
+    section.append(card);
+    if (['connecting', 'syncing'].includes(initial.status)) pollMail(initial.id, card, msgBox);
     return section;
   }
 
   function renderMailConnectForm(conn, compact = false) {
     const box = h('div', { ...(compact ? { style: { width: '100%', marginTop: '8px' } } : {}) });
     const emailInput = h('input', {
-      class: 'tn-input', type: 'email', placeholder: 'xxx@qq.com / foxmail.com / vip.qq.com',
-      value: conn?.email || (isQqEmail(state.me.user.email) ? state.me.user.email : '')
+      class: 'tn-input', type: 'email', placeholder: '支持 QQ、Foxmail、163、126、yeah.net 邮箱',
+      value: conn?.email || (isSupportedEmail(state.me.user.email) ? state.me.user.email : '')
     });
-    const codeInput = h('input', { class: 'tn-input', type: 'password', autocomplete: 'new-password', placeholder: 'QQ 邮箱授权码（非登录密码）' });
-    const modeSel = h('select', { class: 'tn-select' });
-    modeSel.append(
-      h('option', { value: 'headers_only', text: '只读邮件头（推荐）' }),
-      h('option', { value: 'recruitment_body', text: '招聘候选正文（读取范围更大）' })
-    );
-    modeSel.value = conn?.mode || 'headers_only';
+    const codeInput = h('input', { class: 'tn-input', type: 'password', autocomplete: 'new-password', placeholder: '邮箱客户端授权码（IMAP/SMTP 授权码，非登录密码）' });
     const scanInput = h('input', { class: 'tn-input', type: 'date', value: defaultScanSince() });
     const consent = h('input', { type: 'checkbox', 'data-test': 'mail-consent' });
     const msg = h('div', { 'data-test': 'mail-form-msg' });
@@ -617,19 +616,18 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
           const body = {
             email: emailInput.value.trim(),
             auth_code: codeInput.value.trim(),
-            mode: modeSel.value,
-            consent_version: 'QQ_MAIL_READ_CONSENT_V1',
+            consent_version: 'MAIL_RECRUITMENT_READ_V2',
             scan_since: new Date(`${scanInput.value || defaultScanSince()}T00:00:00+08:00`).toISOString()
           };
           if (conn) {
             await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/reauthorize`,
               { auth_code: body.auth_code, consent_version: body.consent_version });
             msg.append(h('div', { class: 'tn-inline-msg', text: '重新授权请求已受理（202），正在连接。' }));
-            pollMail(conn.id, msg);
+            pollMail(conn.id, null, msg);
           } else {
             const res = await api.post('/api/v1/mail-connections', body);
             msg.append(h('div', { class: 'tn-inline-msg', text: '连接请求已受理（202）；正在验证授权并启动首扫。' }));
-            pollMail(res.data.id, msg);
+            pollMail(res.data.id, null, msg);
           }
           await reloadMe();
         } catch (err) {
@@ -646,34 +644,31 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
     });
     box.append(
       h('div', { class: 'tn-form-grid' },
-        h('div', { class: 'tn-field' }, h('label', { text: 'QQ 邮箱地址' }), emailInput),
+        h('div', { class: 'tn-field' }, h('label', { text: '招聘邮箱地址' }), emailInput),
         h('div', { class: 'tn-field' }, h('label', { text: '授权码' }), codeInput),
-        h('div', { class: 'tn-field' }, h('label', { text: '读取模式' }), modeSel),
         h('div', { class: 'tn-field' }, h('label', { text: '首扫起始日' }), scanInput)
       ),
       h('div', { class: 'tn-small tn-muted' },
-        '获取方式：QQ 邮箱 → 设置 → 账户 → 开启 IMAP → 生成授权码。授权码仅加密保存用于连接；可随时断开。'),
+        '使用邮箱客户端授权码（IMAP/SMTP 授权码，不是登录密码）；QQ、Foxmail、163、126、yeah.net 需先在邮箱设置中开启 IMAP 服务。'),
       h('label', { class: 'tn-check' }, consent,
-        h('span', { text: '我已阅读并同意《QQ 邮箱只读授权说明》：Tounar 通过 IMAP 只读连接，读取约定范围的必要邮件头部用于筛选招聘邮件；仅在选择「招聘候选正文」模式时处理命中候选的正文；默认不保留正文、不读附件。' })
+        h('span', { text: '同意只读扫描邮件头和招聘候选正文，用于自动整理投递记录，不读取附件。' })
       ),
       msg,
-      h('div', { class: 'tn-action-row' }, submit),
-      h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' } },
-        '一期仅支持 QQ 邮箱（qq.com / foxmail.com / vip.qq.com）；其他邮箱会被明确拒绝。')
+      h('div', { class: 'tn-action-row' }, submit)
     );
     return box;
   }
 
   function renderMailReauthForm(conn) {
     const box = h('div', { style: { marginTop: '8px' } });
-    const codeInput = h('input', { class: 'tn-input', type: 'password', autocomplete: 'new-password', placeholder: '新的 QQ 邮箱授权码' });
+    const codeInput = h('input', { class: 'tn-input', type: 'password', autocomplete: 'new-password', placeholder: '邮箱客户端授权码（IMAP/SMTP 授权码，非登录密码）' });
     const consent = h('input', { type: 'checkbox' });
     const msg = h('div', {});
     box.append(
       h('div', { class: 'tn-form-grid' },
         h('div', { class: 'tn-field' }, h('label', { text: '新的授权码' }), codeInput),
         h('div', { class: 'tn-field' }, h('label', { text: '授权同意' }),
-          h('label', { class: 'tn-check', style: { margin: '0' } }, consent, '同意 QQ_MAIL_READ_CONSENT_V1'))
+          h('label', { class: 'tn-check', style: { margin: '0' } }, consent, '同意只读扫描邮件头和招聘候选正文，不读取附件'))
       ),
       msg,
       h('div', { class: 'tn-action-row' },
@@ -686,9 +681,9 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
             btn.disabled = true;
             try {
               await api.post(`/api/v1/mail-connections/${encodeURIComponent(conn.id)}/reauthorize`,
-                { auth_code: codeInput.value.trim(), consent_version: 'QQ_MAIL_READ_CONSENT_V1' });
+                { auth_code: codeInput.value.trim(), consent_version: 'MAIL_RECRUITMENT_READ_V2' });
               msg.append(h('div', { class: 'tn-inline-msg', text: '重新授权已受理（202），正在连接。' }));
-              pollMail(conn.id, msg);
+              pollMail(conn.id, null, msg);
               await reloadMe();
             } catch (err) {
               msg.append(h('div', { class: 'tn-inline-msg err', text: errorText(err) }));
@@ -702,31 +697,39 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
     return box;
   }
 
-  function pollMail(id, msgBox) {
+  function pollMail(id, card, msgBox) {
+    const seq = ++mailPollId;
     let attempts = 0;
     const tick = async () => {
+      if (disposed || seq !== mailPollId) return;
       attempts += 1;
       try {
         const res = await api.get(`/api/v1/mail-connections/${encodeURIComponent(id)}`);
+        if (disposed || seq !== mailPollId) return;
         const c = res.data;
         state.me.mail_connection = c;
-        if (['connected', 'degraded', 'reauth_required', 'disconnected'].includes(c.status) || attempts >= 12) {
-          await reloadMe();
+        if (card?.isConnected && typeof card.__paint === 'function') {
+          card.__paint(c);
+        }
+        const terminal = ['connected', 'degraded', 'reauth_required', 'disconnected'].includes(c.status);
+        if (terminal) {
+          if (Number(c.sync_stats?.applied || 0) > 0 || Number(c.sync_stats?.pending || 0) > 0) onChanged?.();
+          if (!card) await reloadMe();
           return;
         }
-        if (document.body.contains(msgBox)) {
+        if (msgBox?.isConnected) {
           clear(msgBox);
-          msgBox.append(h('div', { class: 'tn-inline-msg', text: `当前状态：${(MAIL_STATUS[c.status] || {}).label || c.status}…` }));
+          msgBox.append(h('div', { class: 'tn-inline-msg', text: `当前状态：${mailProgressText(c)}` }));
         }
-        later(tick, 2500);
+        later(tick, 1200);
       } catch {
-        if (attempts < 12) later(tick, 3000);
+        if (!disposed && seq === mailPollId && attempts < 30) later(tick, 2000);
       }
     };
-    later(tick, 1200);
+    later(tick, 400);
   }
 
-  function isQqEmail(email) { return /@(qq\.com|foxmail\.com|vip\.qq\.com)$/i.test(String(email || '')); }
+  function isSupportedEmail(email) { return /@(qq\.com|foxmail\.com|vip\.qq\.com|163\.com|126\.com|yeah\.net)$/i.test(String(email || '')); }
 
   function defaultScanSince() {
     const d = new Date(Date.now() - 30 * 86400000);

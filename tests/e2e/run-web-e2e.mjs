@@ -595,8 +595,12 @@ try {
     `binding_version=${self2.json?.data?.device?.binding_version} cleanup=${self2.json?.data?.device?.device_cleanup_state}`);
   await shot(page, '10-settings-data');
 
-  /* QQ 邮箱：真实 IMAP 不可达 → 如实 degraded / reauth_required；不伪装成功 */
+  /* 招聘邮箱：真实 IMAP 不可达 → 如实 degraded / reauth_required；不伪装成功 */
   const mailSection = page.locator('[data-test=mail-section]');
+  check('W-28a 招聘邮箱表单支持多服务商且没有读取模式二选一',
+    (await mailSection.innerText()).includes('QQ、Foxmail、163、126、yeah.net')
+      && !(await mailSection.innerText()).includes('读取模式')
+      && (await mailSection.locator('[data-test=mail-mode-switch]').count()) === 0);
   await mailSection.locator('input[type=email]').fill('ui@qq.com');
   await mailSection.locator('input[type=password]').fill('abcdefgh12345678');
   await page.check('[data-test=mail-consent]');
@@ -604,7 +608,7 @@ try {
   await page.waitForSelector('[data-test=mail-connection]');
   await waitForAnyText(page, '[data-test=mail-connection]', ['同步受阻', '需重新授权'], 30000);
   const mailTextUi = await page.textContent('[data-test=mail-connection]');
-  check('W-28 QQ 邮箱连接如实降级（无真实 IMAP 凭据，不伪装已同步）',
+  check('W-28 招聘邮箱连接如实降级（无真实 IMAP 凭据，不伪装已同步）',
     /IMAP_NETWORK_ERROR|IMAP_AUTH_FAILED|IMAP_SYNC_FAILED|REAUTH_REQUIRED/.test(mailTextUi) && !mailTextUi.includes('已连接'),
     mailTextUi.replace(/\s+/g, ' ').slice(0, 160));
   await shot(page, '11-mail-degraded');
@@ -724,7 +728,7 @@ try {
     console_log: browserLog,
     notes: [
       '邮件仅写入本地 outbox（MAIL_MODE=outbox），不代表真实 SMTP 送达。',
-      '真实 QQ IMAP 未配置：连接按设计如实降级，未伪装已同步。',
+      '真实招聘邮箱 IMAP 未配置：连接按设计如实降级，未伪装已同步。',
       '复核 409 由真实并发触发：UI 提交前由同一后端 API 处理同一条复核（版本推进），原请求命中真实 VERSION_CONFLICT。',
       '真实招聘站点（G04）与 WorkBuddy 云环境仍未验证，见文档。'
     ],

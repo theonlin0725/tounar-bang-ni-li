@@ -6,11 +6,12 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { startTestServer } from './helpers.js';
 import { encoderForTest } from '../src/modules/data-capture/mail/sync.js';
+import { resolveMailProvider, imapHostFor } from '../src/modules/data-capture/mail/providers.js';
 import {
-  classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
+  classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml, confirmedMailProgress
 } from '../src/domain/mailParser.js';
 
-describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败可见、不假装成功）', () => {
+describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失败可见、不假装成功）', () => {
   let server;
   let cookie;
   before(async () => {
@@ -96,6 +97,117 @@ describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败�
     });
   });
 
+  it('T2 离线强规则：无台账时明确测评邀请直接新建投递明细，重复邮件幂等', async () => {
+    const script = `
+      import { one, run } from './server/src/db.js';
+      import { encoderForTest } from './server/src/modules/data-capture/mail/sync.js';
+      import { classifyRecruitmentMail, extractMailFields, confirmedMailProgress } from './server/src/domain/mailParser.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      if (!connection) throw new Error('missing test connection');
+      run("UPDATE mail_connections SET mode='recruitment_body' WHERE id=?", [connection.id]);
+      const subject = '【新机会科技】后端实习生 测评邀请';
+      const body = '公司：新机会科技\\n岗位：后端实习生\\n邀请您于 2026-11-30 前完成在线测评。';
+      const parsed = { uidvalidity: 'offline-strong-uid', subject, tentativeHeader: true,
+        classification: classifyRecruitmentMail({ subject, fromDomain: 'hr.example.com', bodyText: body, mode: 'recruitment_body' }),
+        fields: extractMailFields({ subject, fromAddress: 'hr@hr.example.com', bodyText: body }),
+        confirmed: confirmedMailProgress(subject, body) };
+      const message = { uid: 777001, messageId: '<offline-strong@example.com>' };
+      const first = await encoderForTest().ingestMessage(connection, message, parsed, body, new Date().toISOString());
+      const second = await encoderForTest().ingestMessage(connection, message, parsed, body, new Date().toISOString());
+      const app = one("SELECT * FROM applications WHERE owner_id=? AND company_name='新机会科技'", [connection.owner_id]);
+      const reviews = one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=?", [first.event?.id || 'none']);
+      run("UPDATE mail_connections SET mode='headers_only' WHERE id=?", [connection.id]);
+      console.log(JSON.stringify({ created: Boolean(first.result?.application || app), state: first.result?.state || null,
+        duplicate: second.duplicate === true, status: app?.status || null, has_applied: Number(app?.has_applied || 0),
+        channel: app?.channel || null, applied_at: app?.applied_at || null, reviews: Number(reviews.n) }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(result.created, true);
+    assert.equal(result.state, 'applied');
+    assert.equal(result.duplicate, true);
+    assert.equal(result.status, 'assessment');
+    assert.equal(result.has_applied, 1);
+    assert.equal(result.channel, '邮件');
+    assert.ok(result.applied_at);
+    assert.equal(result.reviews, 0);
+  });
+
+  it('T2 历史待确认邮件回填正文后可用强规则自动入账并关闭复核项', async () => {
+    const script = `
+      import { all, one, run } from './server/src/db.js';
+      import { encoderForTest } from './server/src/modules/data-capture/mail/sync.js';
+      import { classifyRecruitmentMail, extractMailFields, confirmedMailProgress } from './server/src/domain/mailParser.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      run("UPDATE mail_connections SET mode='recruitment_body' WHERE id=?", [connection.id]);
+      const bodyConnection = one('SELECT * FROM mail_connections WHERE id=?', [connection.id]);
+      const uid = 777101;
+      const firstSubject = '招聘进展通知';
+      const firstBody = '邀请您完成在线测评。';
+      const firstParsed = { uidvalidity: 'backfill-uid', subject: firstSubject, tentativeHeader: true,
+        classification: classifyRecruitmentMail({ subject: firstSubject, fromDomain: 'hr.example.com', bodyText: firstBody, mode: 'recruitment_body' }),
+        fields: extractMailFields({ subject: firstSubject, fromAddress: 'hr@hr.example.com', bodyText: firstBody }), confirmed: null, backfill: false };
+      const message = { uid, messageId: '<backfill@example.com>' };
+      const first = await encoderForTest().ingestMessage(bodyConnection, message, firstParsed, firstBody, new Date().toISOString());
+      const review = one('SELECT id,status FROM review_items WHERE source_event_id=?', [first.event.id]);
+      const subject = '【回填科技】后端实习生 测评邀请';
+      const body = '公司：回填科技\\n岗位：后端实习生\\n邀请您完成在线测评。';
+      const backfillParsed = { uidvalidity: 'backfill-uid', subject, tentativeHeader: true,
+        classification: classifyRecruitmentMail({ subject, fromDomain: 'hr.example.com', bodyText: body, mode: 'recruitment_body' }),
+        fields: extractMailFields({ subject, fromAddress: 'hr@hr.example.com', bodyText: body }),
+        confirmed: confirmedMailProgress(subject, body), backfill: true };
+      const back = await encoderForTest().ingestMessage(bodyConnection, message, backfillParsed, body, new Date().toISOString());
+      const app = one("SELECT * FROM applications WHERE owner_id=? AND company_name='回填科技'", [connection.owner_id]);
+      const afterReview = one('SELECT status FROM review_items WHERE id=?', [review.id]);
+      const mail = one('SELECT processing_state FROM mail_messages WHERE id=?', [first.mail.id]);
+      run("UPDATE mail_connections SET mode='headers_only' WHERE id=?", [connection.id]);
+      console.log(JSON.stringify({ review_open: review.status, applied: back.result?.state || null,
+        app_status: app?.status || null, has_applied: Number(app?.has_applied || 0),
+        review_after: afterReview?.status || null, mail_state: mail?.processing_state || null }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(result.review_open, 'open');
+    assert.equal(result.applied, 'applied', JSON.stringify(result));
+    assert.equal(result.app_status, 'assessment');
+    assert.equal(result.has_applied, 1);
+    assert.equal(result.review_after, 'resolved');
+    assert.equal(result.mail_state, 'applied');
+  });
+
+  it('相似岗位名命中后按同一流程推进，不因严格标题不等误报冲突', async () => {
+    const script = `
+      import { one } from './server/src/db.js';
+      import { createApplication, recordConfirmedMail } from './server/src/domain/applications.js';
+      import { nowIso } from './server/src/util.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      const owner = connection.owner_id;
+      const app = createApplication({ ownerId: owner, sourceMethod: 'manual', status: 'applied',
+        fields: { company_name: '相似公司', job_title: '数据产品实习生', applied_at: '2026-10-01T00:00:00Z', applied_at_precision: 'date' },
+        at: '2026-10-01T00:00:00Z' });
+      const at = '2026-11-02T00:00:00Z';
+      const event = { id: 'evt_similar_fixture', owner_id: owner, occurred_at: at,
+        payload: { from_domain: 'hr.example.com', subject_excerpt: '测评邀请', body_excerpt: '邀请完成测评' } };
+      const result = recordConfirmedMail(event, { company_name: '相似公司', job_title: '数据产品实习', status: 'assessment' });
+      const after = one('SELECT status FROM applications WHERE id=?', [app.id]);
+      console.log(JSON.stringify({ state: result.state, review: result.review?.reason_code || null, status: after?.status }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(result.state, 'applied');
+    assert.equal(result.review, null);
+    assert.equal(result.status, 'assessment');
+  });
+
   it('读取模式可显式切换，切换会递增绑定版本并作废旧租约', async () => {
     const list = await server.request('/api/v1/mail-connections', { cookie });
     const id = list.json.data[0].id;
@@ -177,6 +289,28 @@ describe('QQ 邮箱只读连接生命周期（无真实 IMAP：只验证失败�
     assert.equal(cross.status, 404);
     const peerList = await server.request('/api/v1/mail-connections', { cookie: peer.cookie });
     assert.equal(peerList.json.data.length, 0);
+  });
+});
+
+describe('多邮箱服务商路由与 IMAP 安全分类', () => {
+  it('QQ/Foxmail/163/126/yeah.net 路由到对应 IMAP，不支持域名明确拒绝', () => {
+    assert.equal(imapHostFor('a@qq.com'), 'imap.qq.com');
+    assert.equal(imapHostFor('a@vip.qq.com'), 'imap.qq.com');
+    assert.equal(imapHostFor('a@foxmail.com'), 'imap.qq.com');
+    assert.equal(resolveMailProvider('a@163.com').key, 'netease_163');
+    assert.equal(imapHostFor('a@163.com'), 'imap.163.com');
+    assert.equal(imapHostFor('a@126.com'), 'imap.126.com');
+    assert.equal(imapHostFor('a@yeah.net'), 'imap.yeah.net');
+    assert.equal(resolveMailProvider('a@163.com').requiresImapId, true);
+    assert.equal(imapHostFor('a@gmail.com'), null);
+  });
+  it('网易 Unsafe Login 归类为需重新授权，不会当成网络抖动', () => {
+    const { classifyError } = encoderForTest();
+    const err = Object.assign(new Error('Unsafe Login. Please contact kefu@188.com'), { serverResponseCode: 'NO' });
+    const result = classifyError(err);
+    assert.equal(result.status, 'reauth_required');
+    assert.equal(result.code, 'IMAP_UNSAFE_LOGIN');
+    assert.match(result.message, /IMAP/);
   });
 });
 
@@ -272,6 +406,32 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     assert.deepEqual(seen, ['1']);
     const empty = { download: async () => ({ content: Readable.from([]) }) };
     await assert.rejects(() => downloadPart(empty, 7, { type: 'text/html' }), /正文/);
+  });
+
+  it('HTML 正文保留换行；公共邮箱域名、占位词和状态词不会变成公司/岗位', () => {
+    const html = stripHtml('<p>公司：星河科技</p><p>岗位：后端实习生</p><div>邀请您参加测评</div>', true);
+    assert.match(html, /公司：星河科技/);
+    assert.match(html, /岗位：后端实习生/);
+    const fields = extractMailFields({
+      subject: '【通知】测评邀请', fromAddress: 'hr@qq.com',
+      bodyText: '公司：qq.com\n岗位：测评邀请\n公司：星河科技\n岗位：后端实习生'
+    });
+    assert.equal(fields.company_name, '星河科技');
+    assert.equal(fields.job_title, '后端实习生');
+    const missing = extractMailFields({
+      subject: '【招聘】测评邀请', fromAddress: 'hr@163.com',
+      bodyText: '公司：163.com\n岗位：待补充'
+    });
+    assert.equal(missing.company_name, null);
+    assert.equal(missing.job_title, null);
+  });
+
+  it('离线强规则只接受明确个人进展，忽略转发/流程/条件句', () => {
+    assert.equal(confirmedMailProgress('【星河科技】后端实习生 面试邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加面试。')?.status, 'interview');
+    assert.equal(confirmedMailProgress('【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n请于 11 月 30 日前完成在线测评。')?.status, 'assessment');
+    assert.equal(confirmedMailProgress('Re: 【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n邀请您参加测评。'), null);
+    assert.equal(confirmedMailProgress('招聘流程介绍', '这是流程介绍，不代表您已通过。'), null);
+    assert.equal(confirmedMailProgress('【星河科技】后端实习生 测评邀请', '公司：星河科技\n岗位：后端实习生\n如果您通过筛选，将邀请您参加测评。'), null);
   });
 
   it('证据留存：headers_only 不保留正文，recruitment_body 只留摘要', () => {

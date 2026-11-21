@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { findProgressCandidates, companyIdentity, stageOfStatus } from './mailMatching.js';
+import { findProgressCandidates, companyIdentity, stageOfStatus, resolveMailApplication, similarJob } from './mailMatching.js';
 import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
@@ -816,6 +816,81 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
  * Mail progress enters the same application/history/notification pipeline as plugin events.
  * Company + title alone stays a review candidate (D04). A unique site_application_id match may apply.
  */
+// The caller supplies company, title and stage from the same explicit mail notice.
+export function recordConfirmedMail(event, facts) {
+  return transaction(() => {
+    const fields = { ...facts, from_domain: event.payload.from_domain, site_application_id: event.site_application_id };
+    const match = resolveMailApplication(event.owner_id, fields);
+    const target = match.target;
+    const conflict = target && ((target.company_name && companyIdentity(target.company_name) !== companyIdentity(facts.company_name))
+      || (target.job_title && !similarJob(target.job_title, facts.job_title)));
+    if (match.ambiguous || conflict) {
+      return { state: 'pending', review: createReviewForEvent(event, {
+        kind: 'ambiguous_match', reasonCode: 'MAIL_IDENTITY_CONFLICT', summary: '请核对岗位归属或字段冲突',
+        fields, suggested: { ...facts, has_applied: true }, progressCandidates: match.candidates,
+        evidence: { subject_excerpt: event.payload.subject_excerpt, body_excerpt: event.payload.body_excerpt,
+          source_received_at: event.occurred_at }
+      }) };
+    }
+    if (target && TERMINAL.has(target.status)) {
+      if (target.status === facts.status) {
+        run("UPDATE events SET application_id=?,processing_state='applied',review_reason=NULL,processed_at=? WHERE id=? AND owner_id=?",
+          [target.id, nowIso(), event.id, event.owner_id]);
+        return { state: 'applied', application: target, change: 'unchanged' };
+      }
+      return { state: 'pending', review: createReviewForEvent(event, {
+        kind: 'terminal_conflict', reasonCode: 'TERMINAL_CONFLICT', summary: '记录已处于终态，新邮件给出不同结果，请核对',
+        fields, suggested: { ...facts, has_applied: true }, progressCandidates: match.candidates,
+        evidence: { subject_excerpt: event.payload.subject_excerpt, body_excerpt: event.payload.body_excerpt,
+          source_received_at: event.occurred_at }
+      }) };
+    }
+    if (target && target.manual_status_at && Date.parse(event.occurred_at) <= Date.parse(target.manual_status_at)) {
+      run("UPDATE events SET application_id=?,processing_state='ignored',review_reason='AI_MANUAL_PROTECTED',processed_at=? WHERE id=? AND owner_id=?",
+        [target.id, nowIso(), event.id, event.owner_id]);
+      return { state: 'ignored', application: target, change: 'unchanged', reason: 'manual_protected' };
+    }
+    if (target && target.last_progress_at && Date.parse(event.occurred_at) < Date.parse(target.last_progress_at)) {
+      run("UPDATE events SET application_id=?,processing_state='ignored',review_reason='AI_OLDER_THAN_CURRENT',processed_at=? WHERE id=? AND owner_id=?",
+        [target.id, nowIso(), event.id, event.owner_id]);
+      return { state: 'ignored', application: target, change: 'unchanged', reason: 'older_than_current' };
+    }
+    if (!target && (!facts.company_name || !facts.job_title || !facts.status)) {
+      return { state: 'pending', review: createReviewForEvent(event, {
+        kind: 'mail_progress', reasonCode: 'AI_IDENTITY_INSUFFICIENT',
+        summary: '识别到招聘进展，但公司或岗位身份不足，请确认',
+        fields, suggested: { ...facts, has_applied: true }, progressCandidates: match.candidates,
+        evidence: { subject_excerpt: event.payload.subject_excerpt, body_excerpt: event.payload.body_excerpt,
+          source_received_at: event.occurred_at }
+      }) };
+    }
+    const at = event.occurred_at;
+    let app = target;
+    let change = 'unchanged';
+    if (!app) {
+      app = createApplication({ ownerId: event.owner_id, fields: {
+        ...fields, applied_at: at, applied_at_precision: 'inferred_before', channel: '邮件',
+        round_label: event.payload.round_label, interview_scheduled_at: event.payload.interview_scheduled_at
+      }, eventId: event.id, sourceMethod: 'mail', status: facts.status, at });
+      change = 'created';
+    } else if ((!app.manual_status_at || at > app.manual_status_at)
+      && (!app.last_progress_at || at >= app.last_progress_at)
+      && !(facts.status === 'applied' && ['assessment','interview'].includes(app.status))
+      && !(facts.status === 'assessment' && app.status === 'interview')) {
+      app = fillMissingFields(app, fields, event.id, 'mail');
+      if (!app.has_applied) app = markApplicationChanged(app.owner_id, app.id, event.id, 'mail',
+        { has_applied: 1, applied_at: at, applied_at_precision: 'inferred_before' }, { reason: '招聘进展确证申请' });
+      const update = applyStatusTransition(app, facts.status, event, { sourceMethod: 'mail' });
+      if (!update.ok) throw new AppError(409, 'MAIL_STAGE_CONFLICT', '岗位状态已变化，请重新同步');
+      app = update.app;
+      if (app.version !== target.version) change = 'updated';
+    }
+    run("UPDATE events SET application_id=?,processing_state='applied',review_reason=NULL,processed_at=? WHERE id=? AND owner_id=?",
+      [app.id, nowIso(), event.id, event.owner_id]);
+    return { state: 'applied', application: app, change };
+  });
+}
+
 export function processMailEvent(event) {
   return transaction(() => {
     const p = event.payload || {};

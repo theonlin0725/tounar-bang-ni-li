@@ -5,13 +5,13 @@ import {
   AppError, decryptSecret, newId, normalizeWhitespace, nowIso, parseIso, safeJsonParse, sha256
 } from '../../../util.js';
 import {
-  candidateApplicationsForText, classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
+  confirmedMailProgress, classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
 } from './parser.js';
-import { processMailEvent } from '../../../domain/applications.js';
+import { recordConfirmedMail, processMailEvent } from '../../../domain/applications.js';
 import { processIntakeEvent } from '../../recruitment-intake/workflow.js';
 import { cloudLlmAvailable, llmClassifyMail } from '../cloud/llm.js';
 
-const IMAP_HOST = process.env.IMAP_HOST || 'imap.qq.com';
+import { imapHostFor } from './providers.js';
 const IMAP_PORT = Number(process.env.IMAP_PORT || 993);
 const BODY_MAX_BYTES = 192 * 1024;
 
@@ -101,14 +101,17 @@ async function downloadPart(client, uid, part) {
 function classifyError(err) {
   if (err instanceof AuthenticationFailure || err?.authenticationFailed === true ||
       String(err?.serverResponseCode || '').toUpperCase() === 'AUTHENTICATIONFAILED') {
-    return { status: 'reauth_required', code: 'IMAP_AUTH_FAILED', message: 'QQ 邮箱授权失效，请重新授权' };
+    return { status: 'reauth_required', code: 'IMAP_AUTH_FAILED', message: '邮箱授权失效，请重新授权' };
   }
   const text = [err?.message, err?.responseText, err?.serverResponseCode, err?.code, err?.cause?.code].filter(Boolean).join(' ');
   if (/AUTHENTICATIONFAILED|AUTHENTICATE|LOGIN failed|Invalid credentials|authorization/i.test(text)) {
-    return { status: 'reauth_required', code: 'IMAP_AUTH_FAILED', message: 'QQ 邮箱授权失效，请重新授权' };
+    return { status: 'reauth_required', code: 'IMAP_AUTH_FAILED', message: '邮箱授权失效，请检查是否已开启 IMAP/SMTP 服务并填写正确的客户端授权码' };
+  }
+  if (/Unsafe Login|kefu@188\.com/i.test(text)) {
+    return { status: 'reauth_required', code: 'IMAP_UNSAFE_LOGIN', message: '网易邮箱安全拦截，请确认已开启 IMAP 服务并使用客户端授权码' };
   }
   if (/CERT|TLS|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|network|socket/i.test(text)) {
-    return { status: 'degraded', code: 'IMAP_NETWORK_ERROR', message: '暂时无法连接 QQ 邮箱，已保留上次同步结果' };
+    return { status: 'degraded', code: 'IMAP_NETWORK_ERROR', message: '暂时无法连接邮箱服务器，已保留上次同步结果' };
   }
   return { status: 'degraded', code: 'IMAP_SYNC_FAILED', message: '邮箱同步失败，已保留上次成功结果' };
 }
@@ -204,7 +207,8 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText, {
   const fields = parsed.fields;
   const event = one('SELECT * FROM events WHERE id = ?', [eventId]);
   event.payload = JSON.parse(event.payload_json);
-  const result = aiCandidate
+  const facts = parsed.confirmed || confirmedMailProgress(parsed.subject, bodyText);
+  const result = facts ? recordConfirmedMail(event, facts) : aiCandidate
     ? await processIntakeEvent(event, {
       bodyText, subject: parsed.subject, fromDomain: fields.from_domain || '',
       receivedAt: event.occurred_at, statusText: parsed.classification.category
@@ -244,6 +248,34 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt, 
       aiRun.next_retry_at && Date.parse(aiRun.next_retry_at) > Date.now());
     // A crash after the insert must not strand an event forever. Resume only when
     // no user review exists; ordinary applied/ignored events remain idempotent.
+    if (review && connection.mode === 'recruitment_body' && parsed.backfill) {
+      const open = one("SELECT id FROM review_items WHERE id=? AND status='open'", [review.id]);
+      if (!open) return { duplicate: true };
+      existingEvent.payload = {
+        ...JSON.parse(existingEvent.payload_json),
+        read_mode: connection.mode,
+        body_excerpt: publicEvidence({ subject: parsed.subject, bodyText, mode: connection.mode }).body_excerpt,
+        ai_body_excerpt: normalizeWhitespace(bodyText, 4000) || null,
+        body_review_version: 1
+      };
+      run('UPDATE events SET payload_json=? WHERE id=?', [JSON.stringify(existingEvent.payload), existingEvent.id]);
+      let result = null;
+      if (parsed.confirmed) {
+        result = recordConfirmedMail(existingEvent, parsed.confirmed);
+      } else if (config.autoIntakeEnabled && bodyText.trim()) {
+        result = await processIntakeEvent(existingEvent, {
+          bodyText, subject: parsed.subject, fromDomain: parsed.fields.from_domain || '',
+          receivedAt: existingEvent.occurred_at, statusText: parsed.classification.category
+        });
+      }
+      if (result?.state === 'applied' && result.application?.id) {
+        run("UPDATE review_items SET status='resolved',resolved_at=?,version=version+1,resolution_json=? WHERE id=? AND status='open'",
+          [nowIso(), JSON.stringify({ source: 'mail', application_id: result.application.id }), open.id]);
+        run("UPDATE mail_messages SET processing_state='applied' WHERE id=?", [mail.id]);
+        return { duplicate: true, result };
+      }
+      return { duplicate: true, result };
+    }
     if (existingEvent.processing_state === 'pending' && !review && !retryBlocked) {
       const recovered = await runEventPipeline(connection, mail?.id || null, existingEvent.id, parsed, bodyText, { leaseId });
       return { duplicate: true, recovered: true, ...recovered };
@@ -277,6 +309,7 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt, 
     subject_excerpt: publicEvidence({ subject: parsed.subject, bodyText, mode: connection.mode }).subject_excerpt,
     body_excerpt: publicEvidence({ subject: parsed.subject, bodyText, mode: connection.mode }).body_excerpt,
     read_mode: connection.mode,
+    body_review_version: connection.mode === 'recruitment_body' ? 1 : 0,
     ai_body_excerpt: normalizeWhitespace(bodyText, 4000) || null,
     round_label: classification.round_label,
     interview_scheduled_at: classification.interview_scheduled_at
@@ -358,23 +391,31 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
   let lock;
   let stage = 'connect';
   const stats = {
+    phase: 'connecting', phase_label: '正在连接邮箱…', percent: null,
     started_at: nowIso(), finished_at: null,
-    fetched: 0, new: 0, processed: 0, applied: 0, pending: 0, ignored: 0,
-    duplicate: 0, errors: 0, remaining: 0, batch_limit: 50
+    total: 0, scanned: 0, fetched: 0, new: 0, processed: 0, applied: 0, pending: 0,
+    ignored: 0, duplicate: 0, errors: 0, remaining: 0, batch_limit: 50
   };
+  const saveStats = () => {
+    run('UPDATE mail_connections SET last_sync_stats_json=? WHERE id=? AND binding_version=? AND sync_lease_owner=?',
+      [JSON.stringify(stats), fresh.id, fresh.binding_version, lease]);
+  };
+  saveStats();
   try {
     client = new ImapFlow({
-      host: IMAP_HOST,
+      host: imapHostFor(fresh.email) === 'imap.qq.com'
+        ? process.env.IMAP_HOST || 'imap.qq.com' : imapHostFor(fresh.email),
       port: IMAP_PORT,
       secure: IMAP_PORT === 993,
       auth: { user: fresh.email, pass: password },
-      clientInfo: { name: 'Tounar', version: '0.1.0', vendor: 'Tounar' },
+      clientInfo: { name: 'Tounar', version: '0.1.0', vendor: 'Tounar', 'support-email': 'support@tounar.local' },
       logger: false,
       disableAutoIdle: true,
       connectionTimeout: config.imapConnectTimeoutMs,
       greetingTimeout: config.imapConnectTimeoutMs,
       socketTimeout: 30000
     });
+    client.on('error', (err) => logSyncError(fresh.id, 'imap_socket', err));
     await client.connect();
     stage = 'mailbox_lock';
     lock = await client.getMailboxLock('INBOX', { readOnly: true });
@@ -383,6 +424,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
     const scanSince = parseIso(fresh.scan_since) || new Date(Date.now() - 30 * 86400000).toISOString();
     let uids = [];
     let firstScanTotal = fresh.first_scan_total;
+    stats.phase = 'searching'; stats.phase_label = '正在获取邮件数量…'; stats.percent = null; saveStats();
     stage = 'search';
     if (!cursor || cursor.uidvalidity !== uidValidity || !cursor.last_uid) {
       const search = await client.search({ since: new Date(scanSince) }, { uid: true });
@@ -395,18 +437,43 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
       const search = await client.search({ uid: `${last + 1}:*` }, { uid: true });
       uids = (Array.isArray(search) ? search : []).filter((uid) => uid > last).sort((a, b) => a - b);
     }
-    const batch = uids.slice(0, 50);
-    stats.fetched = batch.length;
+    const backfill = fresh.mode === 'recruitment_body' ? all(
+      `SELECT DISTINCT e.uid FROM events e JOIN review_items r ON r.source_event_id=e.id
+       WHERE e.connection_id=? AND e.uidvalidity=? AND r.status='open'
+       AND COALESCE(json_extract(e.payload_json,'$.body_review_version'),0)<1`,
+      [fresh.id, uidValidity]).map((r) => Number(r.uid)).filter(Number.isSafeInteger) : [];
+    const historical = new Set(backfill);
+    const work = [...new Set([...uids, ...backfill])].sort((a,b) => a-b);
+    stats.total = work.length;
+    stats.scanned = 0;
+    firstScanTotal = Math.max(Number(firstScanTotal || 0), work.length);
+    stats.phase = 'scanning';
+    stats.phase_label = work.length ? `正在扫描 0 / ${work.length} 封` : '没有新邮件';
+    stats.percent = work.length ? 0 : 99;
+    let publishCount = 0;
+    const publish = (force = false) => {
+      publishCount += 1;
+      if (!force && stats.total > 30 && publishCount % 3 !== 0) return;
+      stats.phase_label = stats.phase === 'scanning'
+        ? `正在扫描 ${stats.scanned} / ${stats.total} 封`
+        : stats.phase_label;
+      run(`UPDATE mail_connections SET status='syncing',last_sync_stats_json=?
+        WHERE id=? AND binding_version=? AND sync_lease_owner=?`,
+      [JSON.stringify(stats), fresh.id, fresh.binding_version, lease]);
+    };
+    publish(true);
     let lastProcessedUid = cursor?.uidvalidity === uidValidity ? Number(cursor.last_uid || 0) : 0;
     let bodyError = null;
     let aborted = false;
-    if (batch.length) {
+    for (let offset = 0; offset < work.length; offset += 50) {
+      const batch = work.slice(offset, offset + 50);
       stage = 'fetch';
       const messages = await client.fetchAll(batch.join(','), {
         uid: true, envelope: true, internalDate: true, bodyStructure: true, size: true
       }, { uid: true });
+      stats.fetched += messages.length;
       let seen = 0;
-      for (const message of messages) {
+      for (const message of messages.sort((a,b) => a.uid-b.uid)) {
         seen += 1;
         stage = 'ingest';
         if (seen % 10 === 1 && !renewLease(fresh.id, fresh.binding_version, lease)) {
@@ -423,7 +490,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           ? message.internalDate.toISOString()
           : (parseIso(message.internalDate) || nowIso());
         let bodyText = '';
-        const tentativeHeader = isRecruitmentHeader(subject, from.address, '');
+        const tentativeHeader = historical.has(message.uid) || isRecruitmentHeader(subject, from.address, '');
         if (fresh.mode === 'recruitment_body' && tentativeHeader) {
           const html = findHtmlPart(message.bodyStructure);
           const plain = findTextPart(message.bodyStructure) || html;
@@ -431,7 +498,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
             try {
               stage = 'body_download';
               const raw = await downloadPart(client, message.uid, plain);
-              bodyText = plain.type === 'text/html' ? stripHtml(raw) : normalizeWhitespace(raw, 12000);
+              bodyText = plain.type === 'text/html' ? stripHtml(raw, true) : raw.replace(/\r\n?/g, '\n').slice(0, 12000);
             } catch (err) {
               logSyncError(fresh.id, 'body_download', err);
               bodyError = { uid: message.uid, code: err?.code || 'MAIL_BODY_DOWNLOAD_FAILED', message: err?.message || '正文下载失败' };
@@ -464,7 +531,8 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
             if (!fields.job_title && llm.job_title) fields.job_title = llm.job_title;
           }
         }
-        const parsed = { uidvalidity: uidValidity, subject, classification, fields, tentativeHeader };
+        const parsed = { uidvalidity: uidValidity, subject, classification, fields, tentativeHeader,
+          confirmed: confirmedMailProgress(subject, bodyText), backfill: historical.has(message.uid) };
         const ingested = await ingestMessage(fresh, {
           uid: message.uid,
           messageId: message.envelope?.messageId || null
@@ -486,20 +554,40 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           stats.processed += 1;
         }
         lastProcessedUid = Math.max(lastProcessedUid, message.uid);
+        stats.scanned += 1;
+        stats.remaining = Math.max(0, stats.total - stats.scanned);
+        stats.percent = Math.min(99, stats.total ? Math.floor((stats.scanned / stats.total) * 100) : 99);
+        publish();
       }
+      if (bodyError || aborted) break;
+      // SEARCH and FETCH can race an expunge. Count vanished UIDs as checked.
+      stats.scanned += batch.length - messages.length;
+      stats.remaining = Math.max(0, stats.total - stats.scanned);
+      stats.percent = Math.min(99, stats.total ? Math.floor((stats.scanned / stats.total) * 100) : 99);
+      lastProcessedUid = Math.max(lastProcessedUid, batch[batch.length - 1]);
+      if (!currentBinding(fresh.id, fresh.binding_version, lease)) { aborted = true; break; }
+      run('UPDATE mail_connections SET first_scan_total=? WHERE id=? AND sync_lease_owner=?', [firstScanTotal, fresh.id, lease]);
+      commitCursor(fresh, { mailbox: 'INBOX', uidvalidity: uidValidity, lastUid: lastProcessedUid });
+      publish();
     }
     stage = 'finalize';
+    stats.phase = 'finalizing'; stats.phase_label = '正在整理同步结果…'; saveStats();
     if (aborted || !renewLease(fresh.id, fresh.binding_version, lease) ||
         !currentBinding(fresh.id, fresh.binding_version, lease)) {
       stats.finished_at = nowIso();
-      stats.remaining = uids.filter((uid) => uid > lastProcessedUid).length;
+      stats.remaining = stats.total - stats.scanned;
       return { status: 'superseded', skipped: true, ...stats, last_uid: lastProcessedUid };
     }
     const processedCount = firstScanProcessedCount(fresh.id, uidValidity, firstScanTotal);
-    stats.remaining = uids.filter((uid) => uid > lastProcessedUid).length;
+    stats.remaining = stats.total - stats.scanned;
     stats.finished_at = nowIso();
     const nextCursor = { mailbox: 'INBOX', uidvalidity: uidValidity, lastUid: lastProcessedUid };
+    stats.phase = 'done';
+    stats.phase_label = stats.total === 0 ? '没有新邮件' : `已扫描 ${stats.total} / ${stats.total} 封（100%）`;
+    stats.percent = 100;
+    stats.remaining = 0;
     if (bodyError) {
+      stats.phase = 'error'; stats.phase_label = '正文下载失败，已保留游标'; stats.percent = Math.min(99, stats.percent);
       const info = {
         status: 'degraded',
         code: bodyError.code || 'MAIL_BODY_DOWNLOAD_FAILED',
@@ -508,6 +596,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
       markConnectionError(fresh, info, { leaseId: lease, cursor: nextCursor, stats });
       return { status: 'degraded', code: info.code, error: info.message, uidvalidity: uidValidity, ...stats, last_uid: lastProcessedUid };
     }
+    publish(true);
     const committed = markConnectionSuccess(fresh, nextCursor, firstScanTotal, processedCount, { leaseId: lease, stats });
     if (!committed) {
       return { status: 'superseded', skipped: true, ...stats, last_uid: lastProcessedUid };
@@ -529,7 +618,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
       const detail = programmingError ? `: ${String(err.message || '').slice(0, 160)}` : '';
       info.message = `邮箱同步失败（${stage} / ${errorName}${detail}），已保留上次成功结果`;
     }
-    stats.finished_at = nowIso();
+    stats.phase = 'error'; stats.phase_label = '同步失败'; stats.finished_at = nowIso();
     stats.errors += 1;
     markConnectionError(fresh, info, { leaseId: lease, stats });
     return { status: info.status, code: info.code, error: info.message, ...stats };

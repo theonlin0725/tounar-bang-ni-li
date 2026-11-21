@@ -361,7 +361,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     }
     return emptyState({
       title: '还没有投递记录',
-      body: '安装浏览器插件后，浏览与投递会被自动记录；也可以授权 QQ 邮箱辅助更新。',
+      body: '安装浏览器插件后，浏览与投递会被自动记录；也可以授权招聘邮箱辅助更新。',
       action: h('div', { class: 'tn-action-row', style: { justifyContent: 'center' } },
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '查看安装与授权', onclick: () => openSettingsTab('data') }),
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '手动补录（次要）', onclick: () => openManual({ onCreated: () => resetAndLoad(), onOpenReviews: () => switchView('reviews') }) })
@@ -444,8 +444,8 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     if (f && (f.mail_status === 'reauth_required' || f.mail_status === 'degraded')) {
       bannerEl.append(h('div', { class: 'tn-banner warn', 'data-test': 'mail-banner' },
         h('div', { class: 'tn-banner-body', text: f.mail_status === 'reauth_required'
-          ? 'QQ 邮箱授权已失效，台账可能没有新邮件更新；请到「数据与授权」重新授权。'
-          : 'QQ 邮箱同步暂受阻；最近成功同步时间见页脚。' }),
+          ? '招聘邮箱授权已失效，台账可能没有新邮件更新；请到「数据与授权」重新授权。'
+          : '招聘邮箱同步暂受阻；最近成功同步时间见页脚。' }),
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '去处理', onclick: () => openSettingsTab('data') })
       ));
     }

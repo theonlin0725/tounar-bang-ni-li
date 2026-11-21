@@ -40,7 +40,7 @@ export async function captureRegression(check){
     }
     {
       const {page,context}=await pageFor('https://unknown.example/positions/10017/','<main><h1>Associate Principal, Procurement Innovation Supplier Programs</h1><button>Application</button></main>');
-      await page.waitForTimeout(4500);check('P4-长标题详情保留完整标题',await page.evaluate(()=>window.__captured.some(e=>e?.payload?.job_title==='Associate Principal, Procurement Innovation Supplier Programs')));await context.close();
+      const captured=await capture(page);check('P4-长标题详情保留完整标题',captured.job_title==='Associate Principal, Procurement Innovation Supplier Programs');await context.close();
     }
     const semantic=fs.readFileSync(root+'/tests/fixtures/synthetic-capture/semantic-job.html','utf8');
     {

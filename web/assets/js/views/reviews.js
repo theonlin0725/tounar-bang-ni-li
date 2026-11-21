@@ -188,7 +188,7 @@ export async function renderReviews(container, { gen, onChanged } = {}) {
     if (subtitle) el.append(h('p', { class: 'tn-small tn-muted', 'data-test': 'review-subtitle', text: subtitle }));
     const preview = String(d.preview || '').trim();
     if (preview) el.append(h('p', { class: 'tn-review-preview', 'data-test': 'review-preview', text: preview.slice(0, MAX_PREVIEW) }));
-    else el.append(h('p', { class: 'tn-small tn-muted', 'data-test': 'review-no-body', text: isMail && d.read_mode === 'headers_only' ? '该邮箱连接只读取邮件头，未保存正文。' : '这条线索没有保存到正文，可打开原网页核对。' }));
+    else el.append(h('p', { class: 'tn-small tn-muted', 'data-test': 'review-no-body', text: isMail && d.read_mode === 'headers_only' ? '这条线索来自旧连接，未保存正文；可在原邮件或原岗位核对。' : '这条线索没有保存到正文，可打开原网页核对。' }));
 
     const errBox = h('div', { 'data-test': 'review-error' });
     const confirm = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', text: '确认入账', 'data-test': 'review-confirm' });

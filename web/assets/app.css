@@ -721,3 +721,13 @@ div.tn-jd-items { padding-left: 0; }
   .tn-match-history-resume { grid-column: 1 / -1; white-space: normal; }
   .tn-match-report-info { margin-left: 0; flex-basis: 100%; }
 }
+.tn-mail-progress { display: grid; gap: 4px; margin: 8px 0; } .tn-mail-progress progress { width: min(100%, 32rem); accent-color: var(--brand); }
+
+/* 招聘邮箱同步进度：局部更新，不使用静态比例行 */
+.tn-mail-progress { display: grid; gap: 5px; margin: 8px 0 10px; max-width: 34rem; }
+.tn-mail-progress-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; font-size: 13px; color: var(--ink); }
+.tn-mail-progress-head strong { font-variant-numeric: tabular-nums; color: var(--brand); }
+.tn-mail-progress progress { width: 100%; height: 9px; accent-color: var(--brand); }
+.tn-mail-progress progress:not([value]) { accent-color: var(--muted); opacity: .75; }
+.tn-mail-progress.is-ok progress { accent-color: var(--ok); }
+.tn-mail-progress.is-error progress { accent-color: var(--danger); }

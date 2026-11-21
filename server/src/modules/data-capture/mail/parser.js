@@ -12,17 +12,19 @@ const COMMON_RECRUITING_DOMAINS = [
   'liepin.com', 'maimai.cn', 'hotjob.cn', 'yingjiesheng.com'
 ];
 
-export function stripHtml(value = '') {
-  return normalizeWhitespace(String(value)
+export function stripHtml(value = '', keepLines = false) {
+  const text = String(value)
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?\s*>|<\/(?:p|div|li|tr)>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'"), 12000);
+    .replace(/&#39;/gi, "'");
+  return keepLines ? text.replace(/[^\S\n]+/g, " ").trim().slice(0, 12000) : normalizeWhitespace(text, 12000);
 }
 
 export function isRecruitmentHeader(subject = '', fromDomain = '', bodyText = '') {
@@ -101,10 +103,36 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
   };
 }
 
+
+const PUBLIC_MAIL_DOMAINS = new Set(['qq.com', 'vip.qq.com', 'foxmail.com', '163.com', '126.com', 'yeah.net', 'gmail.com', 'outlook.com', 'hotmail.com']);
+const COMPANY_PLACEHOLDERS = /^(?:通知|招聘|测评|笔试|面试|投递|申请|系统|校招|春招|秋招|社招|未知|待补充|待定|未填写|招聘系统|校园招聘|社会招聘|hr|noreply|no-reply)$/i;
+const TITLE_PLACEHOLDERS = /^(?:通知|招聘|测评|笔试|面试|投递|申请|系统|校招|春招|秋招|社招|未知|待补充|待定|未填写|邀请|成功|收到|请您|岗位|职位)$/i;
+function cleanMailEntity(value, { title = false } = {}) {
+  let text = String(value || '').replace(/^[【\[]|[】\]]$/g, '').replace(/\s+/g, ' ').trim();
+  text = text.replace(/(?:校园招聘|社会招聘|招聘|有限公司)$/u, '').trim();
+  if (!text || text.length < 2 || (title ? TITLE_PLACEHOLDERS : COMPANY_PLACEHOLDERS).test(text)) return null;
+  const lower = text.toLowerCase();
+  if (PUBLIC_MAIL_DOMAINS.has(lower) || /@|https?:|:\/\//i.test(text)) return null;
+  if (title) {
+    text = text.replace(/[\s\-—·｜|]*(?:测评邀请|笔试邀请|面试邀请|投递成功|申请成功|录用通知|面试通知|笔试通知|测评通知)(?:通知)?$/u, '').trim();
+    if (!text || TITLE_PLACEHOLDERS.test(text) || /(?:邀请|通知|成功|收到|请您)/.test(text)) return null;
+  }
+  return text;
+}
+
+
+function firstValidEntity(text, pattern, options = {}) {
+  for (const match of String(text || '').matchAll(pattern)) {
+    const value = cleanMailEntity(match[1], options);
+    if (value) return value;
+  }
+  return null;
+}
+
 export function extractMailFields({ subject = '', bodyText = '', fromAddress = '' }) {
   const text = `${subject}\n${bodyText}`;
-  const company = text.match(/(?:公司|企业|雇主|company)\s*[:：]\s*([^\n，,。;；]{2,40})/i)?.[1]?.trim() || null;
-  const title = text.match(/(?:岗位|职位|应聘职位|position|role)\s*[:：]\s*([^\n，,。;；]{2,60})/i)?.[1]?.trim() || null;
+  const company = firstValidEntity(text, /(?:公司|企业|雇主|company)\s*[:：]\s*([^\n，,。;；]{2,40})/gi);
+  const title = firstValidEntity(text, /(?:岗位|职位|应聘职位|position|role)\s*[:：]\s*([^\n，,。;；]{2,60})/gi, { title: true });
   const applicationId = text.match(/(?:申请编号|申请号|application\s*(?:id|no\.?)|reference)\s*[:：#]?\s*([A-Za-z0-9_-]{4,40})/i)?.[1] || null;
   // A conservative subject fallback: 【公司】岗位 or 公司 · 岗位. It stays a candidate, not an auto-merge key.
   let subjectCompany = null;
@@ -121,8 +149,8 @@ export function extractMailFields({ subject = '', bodyText = '', fromAddress = '
   }
   const domain = String(fromAddress || '').split('@')[1]?.toLowerCase() || null;
   return {
-    company_name: clipText(company || subjectCompany || '', 80) || null,
-    job_title: clipText(title || subjectTitle || '', 100) || null,
+    company_name: clipText(company || cleanMailEntity(subjectCompany || ''), 80) || null,
+    job_title: clipText(title || cleanMailEntity(subjectTitle || '', { title: true }), 100) || null,
     site_application_id: applicationId ? clipText(applicationId, 60) : null,
     from_domain: domain
   };
@@ -146,4 +174,25 @@ export function candidateApplicationsForText(ownerId, text, allApplications) {
     if (appId && haystack.includes(appId)) return true;
     return company.length >= 2 && haystack.includes(company) && (!title || haystack.includes(title));
   });
+}
+
+// Only explicit personal receipts/invitations qualify for offline automatic entry.
+export function confirmedMailProgress(subject, bodyText) {
+  const text = subject + '\n' + bodyText;
+  if (/^(?:re|fw|fwd|回复|转发)\s*[:：]/i.test(subject) ||
+      /(?:流程介绍|招聘流程|模拟测评|模拟面试|宣讲会|未通过|取消|很遗憾|未获|尚未|未收到|不代表|广告|岗位推荐|如(?:果)?(?:您|你)?通过|若(?:您|你)?通过|若您|如您)/.test(text)) return null;
+  const stages = [
+    ['assessment', /(?:邀请(?:您|你)(?:参加|完成)|请(?:您|你)?(?:于[^。\n]{0,30})?(?:参加|完成)).{0,22}(?:测评|笔试|在线考试)|(?:测评|笔试)邀请/],
+    ['interview', /(?:邀请(?:您|你)参加|请(?:您|你)?参加).{0,22}面试|面试邀请/],
+    ['applied', /(?:已收到您(?:提交)?的(?:简历|申请)|您的(?:岗位)?申请已(?:成功提交|收到)|投递成功)/]
+  ].filter(([, pattern]) => pattern.test(text));
+  if (stages.length !== 1 || /offer|录用通知|流程结束|人才库/i.test(text)) return null;
+  const company = bodyText.match(/(?:^|[\n，,；;。])\s*(?:公司(?:名称)?|企业名称|招聘单位)\s*[:：]\s*([^\n，,；;。:：]{2,48})/m)?.[1]?.trim();
+  const bracket = subject.match(/^【([^】]{2,30})】/u);
+  const title = bodyText.match(/(?:^|[\n，,；;。])\s*(?:应聘岗位|应聘职位|岗位(?:名称)?|职位(?:名称)?)\s*[:：]\s*([^\n，,；;。:：]{2,60})/m)?.[1]?.trim()
+    || subject.match(/^【[^】]+】\s*(.{2,40}?)\s*[-—·｜| ]*(?:测评邀请|笔试邀请|面试邀请|投递成功)(?:通知)?$/u)?.[1]?.trim();
+  const employer = cleanMailEntity(company || bracket?.[1] || '');
+  const safeTitle = cleanMailEntity(title, { title: true });
+  if (!employer || !safeTitle) return null;
+  return { company_name: employer, job_title: safeTitle, status: stages[0][0] };
 }

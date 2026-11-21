@@ -1,9 +1,10 @@
-import { config } from '../../../config.js';
 import { all, one, run } from '../../../db.js';
 import { AppError, encryptSecret, newId, nowIso, normalizeEmail, assert, safeJsonParse } from '../../../util.js';
 import { syncConnection } from './sync.js';
 
-const QQ_DOMAINS = new Set(['qq.com', 'foxmail.com', 'vip.qq.com']);
+import { imapHostFor, supportedMailProviderLabels } from './providers.js';
+
+const CONSENT = 'MAIL_RECRUITMENT_READ_V2';
 
 function projection(row) {
   const stats = safeJsonParse(row.last_sync_stats_json, null);
@@ -39,15 +40,14 @@ function kickSync(connectionId) {
 
 export function createMailConnection(ownerId, body = {}) {
   const email = normalizeEmail(body.email);
-  assert(email.includes('@'), 400, 'VALIDATION_ERROR', '请输入 QQ 邮箱地址');
-  const domain = email.split('@')[1];
-  if (!QQ_DOMAINS.has(domain)) throw new AppError(400, 'VALIDATION_ERROR', '一期仅支持 QQ 邮箱（qq.com / foxmail.com / vip.qq.com）');
+  assert(email.includes('@'), 400, 'VALIDATION_ERROR', '请输入邮箱地址');
+  if (!imapHostFor(email)) throw new AppError(400, 'VALIDATION_ERROR', `支持 ${supportedMailProviderLabels().join('、')}`);
   const authCode = String(body.auth_code || '').replace(/\s+/g, '');
-  if (authCode.length < 8 || authCode.length > 64) throw new AppError(400, 'VALIDATION_ERROR', '请输入 QQ 邮箱授权码，而不是 QQ 登录密码');
-  const mode = body.mode || 'headers_only';
+  if (authCode.length < 8 || authCode.length > 64) throw new AppError(400, 'VALIDATION_ERROR', '请输入邮箱客户端授权码（IMAP/SMTP 授权码，非登录密码）');
+  const mode = body.consent_version === CONSENT ? 'recruitment_body' : body.mode || 'headers_only';
   if (!['headers_only', 'recruitment_body'].includes(mode)) throw new AppError(400, 'VALIDATION_ERROR', 'mode 无效');
-  if (body.consent_version !== 'QQ_MAIL_READ_CONSENT_V1') {
-    throw new AppError(400, 'VALIDATION_ERROR', '请先阅读并同意 QQ 邮箱只读授权说明');
+  if (body.consent_version !== CONSENT && !(imapHostFor(email) === 'imap.qq.com' && body.consent_version === 'QQ_MAIL_READ_CONSENT_V1')) {
+    throw new AppError(400, 'VALIDATION_ERROR', '请先阅读并同意招聘邮箱只读授权说明');
   }
   const scanSince = body.scan_since ? new Date(body.scan_since) : new Date(Date.now() - 30 * 86400000);
   if (Number.isNaN(scanSince.getTime())) throw new AppError(400, 'VALIDATION_ERROR', '首扫起始日无效');
@@ -58,8 +58,8 @@ export function createMailConnection(ownerId, body = {}) {
   run(`INSERT INTO mail_connections
     (id, owner_id, email, mode, scan_since, status, consent_version, credential_ciphertext, credential_iv,
      credential_tag, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'connecting', 'QQ_MAIL_READ_CONSENT_V1', ?, ?, ?, ?, ?)`,
-  [id, ownerId, email, mode, scanSince.toISOString(), enc.ciphertext, enc.iv, enc.tag, nowIso(), nowIso()]);
+    VALUES (?, ?, ?, ?, ?, 'connecting', ?, ?, ?, ?, ?, ?)`,
+  [id, ownerId, email, mode, scanSince.toISOString(), body.consent_version, enc.ciphertext, enc.iv, enc.tag, nowIso(), nowIso()]);
   kickSync(id);
   return { __status: 202, ...projection(one('SELECT * FROM mail_connections WHERE id = ?', [id])) };
 }
@@ -95,15 +95,17 @@ export function reauthorizeMailConnection(ownerId, id, body = {}) {
   const row = one('SELECT * FROM mail_connections WHERE id = ? AND owner_id = ?', [id, ownerId]);
   if (!row) throw new AppError(404, 'NOT_FOUND', '邮箱连接不存在');
   const authCode = String(body.auth_code || '').replace(/\s+/g, '');
-  if (authCode.length < 8 || authCode.length > 64) throw new AppError(400, 'VALIDATION_ERROR', '请输入新的 QQ 邮箱授权码');
-  if (body.consent_version && body.consent_version !== 'QQ_MAIL_READ_CONSENT_V1') {
+  if (authCode.length < 8 || authCode.length > 64) throw new AppError(400, 'VALIDATION_ERROR', '请输入新的邮箱客户端授权码');
+  if (body.consent_version && ![CONSENT, 'QQ_MAIL_READ_CONSENT_V1'].includes(body.consent_version)) {
     throw new AppError(400, 'VALIDATION_ERROR', '授权同意版本不匹配');
   }
+  const other = one("SELECT id FROM mail_connections WHERE owner_id=? AND id<>? AND status<>'disconnected'", [ownerId,id]);
+  if (other) throw new AppError(409,'MAIL_CONNECTION_EXISTS','已有其他邮箱连接');
   const enc = encryptSecret(authCode);
-  run(`UPDATE mail_connections SET credential_ciphertext = ?, credential_iv = ?, credential_tag = ?, status = 'connecting',
+  run(`UPDATE mail_connections SET credential_ciphertext = ?, credential_iv = ?, credential_tag = ?, status = 'connecting', mode = ?, consent_version = ?,
        binding_version = binding_version + 1, last_error_code = NULL, last_error_message = NULL, sync_lease_until = NULL,
        sync_lease_owner = NULL, updated_at = ? WHERE id = ? AND owner_id = ?`,
-  [enc.ciphertext, enc.iv, enc.tag, nowIso(), id, ownerId]);
+  [enc.ciphertext, enc.iv, enc.tag, body.consent_version === CONSENT ? 'recruitment_body' : row.mode, body.consent_version || row.consent_version, nowIso(), id, ownerId]);
   kickSync(id);
   return { __status: 202, ...projection(one('SELECT * FROM mail_connections WHERE id = ?', [id])) };
 }
@@ -114,15 +116,15 @@ export function updateMailConnectionMode(ownerId, id, body = {}) {
   if (row.status === 'disconnected') throw new AppError(409, 'MAIL_DISCONNECTED', '邮箱授权已断开，请重新授权');
   const mode = String(body.mode || '');
   if (!['headers_only', 'recruitment_body'].includes(mode)) throw new AppError(400, 'VALIDATION_ERROR', 'mode 无效');
-  if (mode === 'recruitment_body' && body.consent_version !== 'QQ_MAIL_READ_CONSENT_V1') {
+  if (mode === 'recruitment_body' && ![CONSENT, 'QQ_MAIL_READ_CONSENT_V1'].includes(body.consent_version)) {
     throw new AppError(400, 'VALIDATION_ERROR', '切换到招聘候选正文模式前，请重新确认只读授权说明');
   }
   if (row.mode === mode) return { ...projection(row), changed: false };
   // 切换读取范围同样递增绑定版本并清掉在途租约，旧任务不得继续按旧范围写库。
-  run(`UPDATE mail_connections SET mode = ?, binding_version = binding_version + 1,
+  run(`UPDATE mail_connections SET mode = ?, consent_version = ?, binding_version = binding_version + 1,
        sync_lease_until = NULL, sync_lease_owner = NULL, last_error_code = NULL, last_error_message = NULL,
        updated_at = ? WHERE id = ? AND owner_id = ?`,
-  [mode, nowIso(), id, ownerId]);
+  [mode, body.consent_version || row.consent_version, nowIso(), id, ownerId]);
   kickSync(id);
   return { __status: 202, changed: true, ...projection(one('SELECT * FROM mail_connections WHERE id = ?', [id])) };
 }
@@ -137,10 +139,11 @@ export function triggerMailSync(ownerId, id) {
 
 export function mailCapabilities() {
   return {
-    provider: 'qq_imap',
-    host: process.env.IMAP_HOST || 'imap.qq.com',
+    provider: 'imap',
+    providers: ['qq.com','foxmail.com','vip.qq.com','163.com','126.com','yeah.net'],
+    provider_labels: supportedMailProviderLabels(),
     modes: ['headers_only', 'recruitment_body'],
-    configured: config.mailMode === 'smtp',
+    configured: true,
     external_verified: false
   };
 }
