@@ -82,7 +82,11 @@ describe('ledger / 台账、手动补录、纠错、归档、已查看', () => {
 
     const viewed = await server.request('/api/v1/ledger?view=viewed', { cookie });
     assert.ok(viewed.json.data.items.some((a) => a.company_name === '看过公司'));
-    assert.equal(viewed.json.data.items.find((a) => a.company_name === '看过公司').has_applied, 0);
+    const viewedRow = viewed.json.data.items.find((a) => a.company_name === '看过公司');
+    assert.equal(viewedRow.has_applied, 0);
+    assert.ok(Number.isInteger(viewedRow.days_since_applied));
+    assert.ok(['stage_received_at', 'created_at'].includes(viewedRow.days_since_applied_basis));
+    assert.ok(viewedRow.days_since_applied_anchor);
     assert.ok(viewed.json.data.counts.viewed >= 1);
 
     const applied = await server.request('/api/v1/ledger?view=applied', { cookie });

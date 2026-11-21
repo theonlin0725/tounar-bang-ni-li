@@ -8,7 +8,8 @@ import { startTestServer } from './helpers.js';
 import { encoderForTest } from '../src/modules/data-capture/mail/sync.js';
 import { resolveMailProvider, imapHostFor } from '../src/modules/data-capture/mail/providers.js';
 import {
-  classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml, confirmedMailProgress
+  classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, isSelfOrNoiseMail, mailBodyForModel,
+  publicEvidence, stripHtml, confirmedMailProgress, cleanMailEntity
 } from '../src/domain/mailParser.js';
 
 describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失败可见、不假装成功）', () => {
@@ -514,6 +515,54 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     });
     assert.equal(missing.company_name, null);
     assert.equal(missing.job_title, null);
+  });
+
+  it('自身系统邮件和非招聘账单/物流噪音在解析前被过滤，真实招聘邮件不误杀', () => {
+    assert.equal(isSelfOrNoiseMail({ subject: '帮你理登录验证码', fromAddress: 'no-reply@tounar.local', fromName: '帮你理' }), true);
+    assert.equal(isSelfOrNoiseMail({ subject: 'Tounar 每日摘要', fromAddress: 'no-reply@tounar.local', fromName: 'Tounar' }), true);
+    assert.equal(isSelfOrNoiseMail({ subject: '您的信用卡账单', fromAddress: 'service@bank.example', bodyText: '本月账单已出' }), true);
+    assert.equal(isSelfOrNoiseMail({ subject: '快递已发出', fromAddress: 'notice@shop.example', bodyText: '订单已发货' }), true);
+    assert.equal(isSelfOrNoiseMail({ subject: '【星河科技】后端实习生 面试邀请', fromAddress: 'hr@star.example', bodyText: '邀请您参加面试' }), false);
+    assert.equal(isSelfOrNoiseMail({ subject: '【帮你理科技】面试邀请', fromAddress: 'hr@bangnili.example', bodyText: '邀请您参加面试' }), false);
+    assert.equal(isSelfOrNoiseMail({
+      subject: '系统提醒', fromAddress: 'notice@custom-mail.example',
+      selfAddresses: ['Tounar <notice@custom-mail.example>']
+    }), true);
+  });
+
+  it('模型输入保留正文头尾；纯数字发件人结合企业域名/正文得到真实公司，复合实体拆出批次、公司和岗位', () => {
+    const long = `${'抬头信息\n'.repeat(1200)}${'中间填充\n'.repeat(600)}面试安排：请于 11 月 30 日参加终面。\n${'页脚信息\n'.repeat(80)}`;
+    const clipped = mailBodyForModel(long);
+    assert.ok(clipped.length < long.length);
+    assert.match(clipped, /抬头信息/);
+    assert.match(clipped, /终面/);
+    assert.match(clipped, /页脚信息/);
+    assert.match(clipped, /正文中部省略/);
+
+    const cmb = extractMailFields({
+      subject: '2027校园招聘在线测评通知', fromAddress: '95555@cmbchina.com', fromName: '95555',
+      bodyText: '招商银行2027校园招聘，请完成在线测评。'
+    });
+    assert.equal(cmb.company_name, '招商银行');
+    assert.equal(cmb.job_title, null);
+    const cmbProgress = confirmedMailProgress('招商银行2027校园招聘在线测评通知', '请完成在线测评。', {
+      fromName: '95555', fromDomain: 'cmbchina.com'
+    });
+    assert.equal(cmbProgress.company_name, '招商银行');
+    assert.equal(cmbProgress.status, 'assessment');
+
+    const composite = extractMailFields({
+      subject: '2027欧莱雅中国管理培训生 在线测评通知', fromAddress: 'campus@mokahr.com', fromName: 'Moka',
+      bodyText: '请完成在线测评。'
+    });
+    assert.equal(composite.company_name, '欧莱雅中国');
+    assert.equal(composite.job_title, '管理培训生');
+    assert.ok(/^2027/.test(composite.recruitment_batch));
+
+    assert.equal(cleanMailEntity('请到官网 campus.163.com/app/personal/apply', { title: true }), null);
+    assert.equal(cleanMailEntity('2027届', { title: true }), null);
+    assert.equal(cleanMailEntity('pm岗位'), null);
+    assert.equal(cleanMailEntity('6316 公司'), null);
   });
 
   it('S1/S2/S4：页脚免责声明不误杀，中文自然语言岗位与公司级无岗位名可提取', () => {

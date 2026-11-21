@@ -84,14 +84,14 @@ try {
   web=await context.newPage();await web.goto(server.base);
   await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();
   await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();
-  await web.locator('[data-test=tab-viewed]').waitFor();
+  await web.locator('[data-test=nav-viewed]').waitFor();
   cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
   await openPopup();await popup.locator('#server-url').fill(server.base);await popup.click('#save-server');await popup.click('#start-pairing');
   await web.goto(server.base+'/?panel=plugin-connect');
   await web.locator('[data-test=plugin-connect-confirm]').click();
   await web.getByText('连接成功！接下来选择允许采集的招聘网站。').waitFor();
   await popup.evaluate(() => refresh());await popup.locator('#paired').waitFor({state:'visible'});
-  await web.getByRole('button',{name:'关闭',exact:true}).click();await web.locator('[data-test=tab-viewed]').click();
+  await web.getByRole('button',{name:'关闭',exact:true}).click();await web.locator('[data-test=nav-viewed]').click();
   await check('配对走扩展与前端 UI；台账提前打开',async()=>assert.equal((await ledger()).items.length,0));
   if(real) { await (['greenhouse','smartrecruiters'].includes(selectedSite)?genericLiveAcceptance:selectedSite&&selectedSite!=='tencent'?currentSiteAcceptance:tencentLiveAcceptance)({site:selectedSite,context,web,popup,events,receipts,ledger,detail,wait,check,rows,out,report}); } else {
   jobPage=await context.newPage();await jobPage.goto(fixture.base+'/jobs/1001');await jobPage.bringToFront();
@@ -153,7 +153,7 @@ try {
     context=await chromium.launchPersistentContext(report.profile,launchOptions);observeRuntime();
     await context.tracing.start({screenshots:true,snapshots:true});
     sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
-    web=await context.newPage();await web.goto(server.base);await web.locator('[data-test=tab-viewed]').click();
+    web=await context.newPage();await web.goto(server.base);await web.locator('[data-test=nav-viewed]').click();
     jobPage=await context.newPage();const before=events.length;
     await jobPage.goto(fixture.base+'/jobs/1001');await jobPage.bringToFront();
     const event=await wait(()=>events.slice(before).find(e=>e.payload.site_job_id==='1001'),'重启后自然采集');

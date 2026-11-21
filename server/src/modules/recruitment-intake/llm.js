@@ -8,7 +8,9 @@ const SYSTEM = `你是招聘进展信息提取器，不是聊天助手。只输�
 2. 区分：实际进展(actual_progress)、招聘流程说明(process_description)、广告/推广(advertisement)、转发/历史引用(forwarded_or_historical)、其他(other)。
    “招聘流程包括笔试、面试”“如果你通过会通知”等是流程说明，不是用户已发生的进展；
    但“邀请你参加笔试/测评/面试”“请于某日前完成测评”是已发生的邀请/进展，即使考试尚未进行，也属于 actual_progress。
-3. 公司可结合主题、正文落款、发件人显示名 from_name 和企业发件域名识别；公共邮箱域名不是公司。收到笔试/测评/面试/录用/拒绝通知即表示用户已投递该岗位，应直接输出对应状态。
+3. 以完整正文的抬头、表格、主体和落款 + 邮件主题为第一依据；from_name/from_domain 只作辅助。公司可结合正文落款、发件人显示名和企业发件域名识别；公共邮箱域名不是公司。收到笔试/测评/面试/录用/拒绝通知即表示用户已投递该岗位，应直接输出对应状态。
+   公司名必须输出真实雇主品牌，剥离年份批次、校园招聘/HR/招聘后缀和岗位词；禁止输出纯数字、recruitment/careers/campus/hr/noreply、自身产品 Tounar/帮你理，以及 ATS/测评平台名。纯数字发件人必须结合正文抬头/落款找真实雇主。
+   标题/正文中“2027公司岗位”必须拆出批次、公司、纯岗位名；优先从正文表格、志愿、书名号/引号、项目名提取岗位，剥离测评/面试等阶段词。
 4. status 只能是 applied/assessment/interview/offer/rejected/closed/unknown。
    applied 仅用于明确的投递成功/申请已收到；offer 仅用于明确录用；rejected 仅用于明确未通过/拒绝。
    assessment 指笔试或测评；interview 指面试邀请或已面试。旧邮件、一般招聘宣传、求职建议不算。
@@ -22,6 +24,10 @@ JSON 结构：
  "company_name": string|null,
  "job_title": string|null,
  "recruitment_batch": string|null,
+ "location": string|null,
+ "round_label": string|null,
+ "interview_scheduled_at": string|null,
+ "deadline_at": string|null,
  "site_application_id": string|null,
  "job_url": string|null,
  "event_time": string|null,
@@ -103,6 +109,10 @@ function normalize(raw, sourceText) {
     company_name: text(raw?.company_name, 200),
     job_title: text(raw?.job_title, 200),
     recruitment_batch: text(raw?.recruitment_batch, 100),
+    location: text(raw?.location, 100),
+    round_label: text(raw?.round_label, 80),
+    interview_scheduled_at: text(raw?.interview_scheduled_at, 64),
+    deadline_at: text(raw?.deadline_at, 64),
     site_application_id: text(raw?.site_application_id, 80),
     job_url: safeHttp(raw?.job_url),
     event_time: text(raw?.event_time, 64),

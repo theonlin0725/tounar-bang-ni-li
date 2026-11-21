@@ -714,7 +714,13 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
         const terminal = ['connected', 'degraded', 'reauth_required', 'disconnected'].includes(c.status);
         if (terminal) {
           if (msgBox?.isConnected) clear(msgBox);
-          if (Number(c.sync_stats?.applied || 0) > 0 || Number(c.sync_stats?.pending || 0) > 0) onChanged?.();
+          if (Number(c.sync_stats?.applied || 0) > 0 || Number(c.sync_stats?.pending || 0) > 0) {
+            onChanged?.();
+            window.dispatchEvent(new CustomEvent('tounar:mail-synced', { detail: { connection_id: id } }));
+            api.get('/api/v1/ledger?view=applied&limit=1')
+              .then((res) => window.dispatchEvent(new CustomEvent('tounar:counts', { detail: res.data?.counts || {} })))
+              .catch(() => { /* 侧栏计数刷新失败不覆盖同步结果 */ });
+          }
           if (!card) await reloadMe();
           return;
         }

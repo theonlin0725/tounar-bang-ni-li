@@ -29,15 +29,16 @@ before(async () => {
         const candidates = Array.isArray(user.candidates) ? user.candidates : [];
         const ex = user.extracted || {};
         const companyOnly = Boolean(ex.company_name) && !ex.job_title;
+        const noStatus = /内推/.test(String(user.subject || '') + String(user.body_text || ''));
         return fakeJson(res, {
           model: 'deepseek-flash',
           choices: [{ message: { content: JSON.stringify({
             actual_progress: 0.96,
-            evidence_support: 0.95,
+            evidence_support: /低证据/.test(String(user.body_text || '')) ? 0.6 : 0.95,
             company_valid: ex.company_name ? 0.96 : 0.1,
             job_title_valid: ex.job_title ? 0.95 : 0.05,
             fields_consistent: 0.95,
-            status: { value: ex.status && ex.status !== 'unknown' ? ex.status : 'assessment', confidence: 0.95 },
+            status: { value: noStatus ? 'no_status' : (ex.status && ex.status !== 'unknown' ? ex.status : 'assessment'), confidence: 0.95 },
             newness: { value: 'new', confidence: 0.9 },
             candidate: { value: candidates.length && !companyOnly ? 'c0' : (candidates.length ? 'uncertain' : 'no_match'), confidence: candidates.length ? 0.9 : 0.5 }
           }) } }]
@@ -59,6 +60,18 @@ before(async () => {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '网易', job_title: null, recruitment_batch: '2027届校招', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/确认科技/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '确认科技', job_title: '确认岗位', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/复合岗位/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '2027欧莱雅中国管理培训生', job_title: null, recruitment_batch: '2027', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/去重/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '去重科技', job_title: '后端实习生', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/结构化字段/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '结构化公司', job_title: '数据工程师', location: '上海', round_label: '一面', interview_scheduled_at: '2026-11-25T06:00:00.000Z', deadline_at: '2026-11-30T15:59:59.000Z', status: 'interview', evidence: [{ field: 'status', quote: '面试邀请' }], uncertainties: [] };
+      } else if (/占位补全/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '占位科技', job_title: '后端实习生', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/低证据/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '低证据公司', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: ['正文证据有限'] };
+      } else if (/内推成功/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '内推公司', job_title: null, status: 'unknown', evidence: [{ field: 'company_name', quote: '内推公司' }], uncertainties: ['仅确认内推，无个人阶段邀请'] };
       } else {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '星河科技', job_title: '数据产品实习生', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       }
@@ -222,6 +235,77 @@ it('同公司已有两个未终态岗位时，公司级无岗位名测评仍进�
   const result = await workflow.processIntakeEvent(payload(e));
   assert.equal(result.state, 'pending', JSON.stringify(result));
   assert.equal(result.review.reason_code, 'AI_COMPANY_ONLY');
+});
+
+it('公司级清晰进展即使正文证据分略低也自动建账，不误进待确认', async () => {
+  const e = event('低证据：低证据公司2027校招测评邀请，请完成在线测评。', { company: '低证据公司', title: null });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.change, 'created');
+  assert.equal(result.application.company_name, '低证据公司');
+  assert.match(result.application.job_title, /待补充岗位/);
+  assert.equal(db.one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=? AND status='open'", [e.id]).n, 0);
+});
+
+it('仅内推成功确认、没有个人阶段邀请的邮件忽略，不制造待确认', async () => {
+  const e = event('内推成功：你已被成功内推，可关注后续流程。', { company: '内推公司', title: null });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'ignored', JSON.stringify(result));
+  assert.equal(result.reason, 'referral_only');
+  assert.equal(db.one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=? AND status='open'", [e.id]).n, 0);
+});
+
+it('模型结构化字段（城市/轮次/面试预约/截止时间）写入台账', async () => {
+  const e = event('结构化字段：结构化公司数据工程师面试邀请，11月25日一面。', { company: null, title: null });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.application.location, '上海');
+  assert.equal(result.application.round_label, '一面');
+  assert.equal(result.application.interview_scheduled_at, '2026-11-25T06:00:00.000Z');
+  assert.equal(result.application.deadline_at, '2026-11-30T15:59:59.000Z');
+});
+
+it('后续真实岗位名自动升级低置信度占位岗位', async () => {
+  const target = applications.createApplication({
+    ownerId, sourceMethod: 'mail', status: 'applied',
+    fields: { company_name: '占位科技', job_title: '2027（待补充岗位）', applied_at: '2026-10-01T00:00:00.000Z', applied_at_precision: 'date' },
+    at: '2026-10-01T00:00:00.000Z'
+  });
+  db.run(`INSERT OR REPLACE INTO application_field_sources
+    (application_id, owner_id, field, source_method, source_detail, confidence, updated_at)
+    VALUES (?,?,'job_title','mail','mail_company_only','low',?)`, [target.id, ownerId, util.nowIso()]);
+  const e = event('占位补全：占位科技后端实习生测评邀请，请完成在线测评。', { company: '占位科技', title: null, received: '2026-11-03T00:00:00.000Z' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.application.id, target.id);
+  assert.equal(result.application.job_title, '后端实习生');
+});
+
+it('模型返回复合实体时拆出批次、公司和纯岗位，不把年份/岗位串写成公司', async () => {
+  const e = event('复合岗位：2027欧莱雅中国管理培训生在线测评通知，请完成在线测评。', { company: null, title: null });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.application.company_name, '欧莱雅中国');
+  assert.equal(result.application.job_title, '管理培训生');
+  assert.ok(/^2027/.test(result.application.recruitment_batch));
+});
+
+it('自动入账后关闭同公司同岗位已被覆盖的旧待确认项', async () => {
+  const target = app('去重科技', '后端实习生', 'applied');
+  const old = event('去重科技：旧测评邀请。', { company: '去重科技', title: '后端实习生' });
+  const reviewId = util.newId('rev');
+  db.run(`INSERT INTO review_items
+    (id,owner_id,kind,reason_code,summary,evidence_json,suggested_changes_json,candidates_json,
+     source_event_id,source_mail_id,status,version,created_at)
+    VALUES (?,?,'mail_progress','AI_PROGRESS_UNCERTAIN','旧待确认','{}',?, '[]',?,NULL,'open',1,?)`,
+  [reviewId, ownerId, JSON.stringify({ company_name: '去重科技', job_title: '后端实习生', status: 'assessment' }), old.id, util.nowIso()]);
+  const e = event('去重科技：新测评邀请，请完成在线测评。', { company: '去重科技', title: '后端实习生', received: '2026-11-02T00:00:00.000Z' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.application.id, target.id);
+  const review = db.one('SELECT status,resolution_json FROM review_items WHERE id=?', [reviewId]);
+  assert.equal(review.status, 'resolved');
+  assert.equal(JSON.parse(review.resolution_json).application_id, target.id);
 });
 
 it('邮件与插件判断开关相互独立', () => {

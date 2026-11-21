@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { findProgressCandidates, companyIdentity, stageOfStatus, resolveMailApplication, similarJob } from './mailMatching.js';
+import { findProgressCandidates, companyIdentity, companyMatchIdentity, stageOfStatus, resolveMailApplication, similarJob } from './mailMatching.js';
 import { all, bumpRevision, ensurePreferences, getApplication, markApplicationChanged, one, run, transaction } from '../db.js';
 import {
   APPLIED_STATUSES, AppError, STATUSES, STATUS_LABELS, TERMINAL, addSourceMethod, canonicalJobUrl,
@@ -51,7 +51,10 @@ export function applicationProjection(app, preferences, asOf = new Date()) {
   for (const field of PUBLIC_APPLICATION_FIELDS) out[field] = app[field];
   out.source_methods = methods;
   out.field_confidence = Object.fromEntries(all('SELECT field, confidence FROM application_field_sources WHERE owner_id = ? AND application_id = ?', [app.owner_id, app.id]).map(x => [x.field,x.confidence]));
-  out.days_since_applied = app.applied_at ? daysBetweenShanghai(app.applied_at, asOf) : null;
+  const dayAnchor = app.applied_at || app.stage_received_at || app.created_at || null;
+  out.days_since_applied = dayAnchor ? daysBetweenShanghai(dayAnchor, asOf) : null;
+  out.days_since_applied_basis = app.applied_at ? 'applied_at' : app.stage_received_at ? 'stage_received_at' : app.created_at ? 'created_at' : null;
+  out.days_since_applied_anchor = dayAnchor;
   out.days_since_interview = app.last_interview_completed_at
     ? daysBetweenShanghai(app.last_interview_completed_at, asOf) : null;
   out.due_for_review = due;
@@ -822,10 +825,60 @@ export function manualCreate({ ownerId, body, idempotencyKey, actor = 'user' }) 
  * Mail progress enters the same application/history/notification pipeline as plugin events.
  * Company + title alone stays a review candidate (D04). A unique site_application_id match may apply.
  */
+const REVIEW_STATUS_RANK = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 };
+
+/** Close mail reviews superseded by an automatically written ledger row. */
+export function resolveSupersededReviews(ownerId, app, event = null) {
+  if (!app?.id) return 0;
+  const reviews = all(`SELECT r.*, e.source_method, e.payload_json AS event_payload
+    FROM review_items r LEFT JOIN events e ON e.id = r.source_event_id
+    WHERE r.owner_id = ? AND r.status = 'open'`, [ownerId]);
+  const activeSameCompany = all(
+    'SELECT * FROM applications WHERE owner_id = ? AND archived_at IS NULL',
+    [ownerId]
+  ).filter((row) => !TERMINAL.has(row.status)
+    && companyMatchIdentity(row.company_name) === companyMatchIdentity(app.company_name));
+  let resolved = 0;
+  for (const review of reviews) {
+    const sameEvent = event?.id && review.source_event_id === event.id;
+    if (!sameEvent && review.source_method !== 'mail') continue;
+    const suggested = safeJsonParse(review.suggested_changes_json, {}) || {};
+    const payload = safeJsonParse(review.event_payload, {}) || {};
+    const company = suggested.company_name || payload.company_name || '';
+    const title = suggested.job_title || payload.job_title || '';
+    const targetStatus = suggested.status || payload.mapped_status || null;
+    const sameCompany = companyMatchIdentity(company)
+      && companyMatchIdentity(company) === companyMatchIdentity(app.company_name);
+    const titleMatches = title ? similarJob(title, app.job_title) : activeSameCompany.length === 1;
+    const stageOk = !targetStatus || (REVIEW_STATUS_RANK[targetStatus] ?? 0) <= (REVIEW_STATUS_RANK[app.status] ?? 0);
+    if (!sameEvent && !(sameCompany && titleMatches && stageOk)) continue;
+    const result = run(`UPDATE review_items SET status='resolved', resolved_at=?, version=version+1, resolution_json=?
+      WHERE id=? AND status='open'`, [
+      nowIso(),
+      JSON.stringify({ reason: sameEvent ? 'auto_applied' : 'superseded_by_auto_ledger', application_id: app.id }),
+      review.id
+    ]);
+    if (result.changes) {
+      resolved += 1;
+      if (review.source_mail_id) {
+        run("UPDATE mail_messages SET processing_state='applied' WHERE id=?", [review.source_mail_id]);
+      }
+    }
+  }
+  return resolved;
+}
+
 // The caller supplies company, title and stage from the same explicit mail notice.
 export function recordConfirmedMail(event, facts) {
   return transaction(() => {
-    const fields = { ...facts, from_domain: event.payload.from_domain, site_application_id: event.site_application_id };
+    const fields = {
+      ...facts, from_domain: event.payload.from_domain, site_application_id: event.site_application_id,
+      recruitment_batch: facts.recruitment_batch || event.payload.recruitment_batch || null,
+      location: facts.location || event.payload.location || null,
+      round_label: facts.round_label || event.payload.round_label || null,
+      interview_scheduled_at: facts.interview_scheduled_at || event.payload.interview_scheduled_at || null,
+      deadline_at: facts.deadline_at || event.payload.deadline_at || null
+    };
     const match = resolveMailApplication(event.owner_id, fields);
     const target = match.target;
     const conflict = target && ((target.company_name && companyIdentity(target.company_name) !== companyIdentity(facts.company_name))
@@ -881,7 +934,7 @@ export function recordConfirmedMail(event, facts) {
         : facts.job_title;
       app = createApplication({ ownerId: event.owner_id, fields: {
         ...fields, job_title: inferredTitle, applied_at: at, applied_at_precision: 'inferred_before', channel: '邮件',
-        round_label: event.payload.round_label, interview_scheduled_at: event.payload.interview_scheduled_at
+        round_label: event.payload.round_label, interview_scheduled_at: event.payload.interview_scheduled_at, deadline_at: event.payload.deadline_at
       }, eventId: event.id, sourceMethod: 'mail', status: facts.status, at });
       if (companyOnly) {
         run(`INSERT OR REPLACE INTO application_field_sources
@@ -914,6 +967,7 @@ export function recordConfirmedMail(event, facts) {
       app = update.app;
       if (app.version !== target.version) change = 'updated';
     }
+    resolveSupersededReviews(event.owner_id, app, event);
     run("UPDATE events SET application_id=?,processing_state='applied',review_reason=NULL,processed_at=? WHERE id=? AND owner_id=?",
       [app.id, nowIso(), event.id, event.owner_id]);
     return { state: 'applied', application: app, change };
@@ -975,6 +1029,7 @@ export function processMailEvent(event) {
           VALUES (?, ?, 'job_title', 'mail', ?, ?, 'low', 'mail_company_only')`,
         [created.id, event.owner_id, event.id, nowIso()]);
       }
+      resolveSupersededReviews(event.owner_id, created, event);
       run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?",
         [created.id, nowIso(), event.id, event.owner_id]);
       return { state: 'applied', application: created, change: 'created' };
@@ -1004,6 +1059,7 @@ export function processMailEvent(event) {
     if (!transition.ok) return review(transition.review);
     app=transition.app;
     if(source==='plugin')app=markApplicationChanged(app.owner_id,app.id,event.id,source,{last_site_observed_at:event.observed_at||nowIso()},{reason:'官网状态观察'});
+    resolveSupersededReviews(event.owner_id, app, event);
     run("UPDATE events SET application_id = ?, processing_state = 'applied', processed_at = ? WHERE id = ? AND owner_id = ?",[app.id,nowIso(),event.id,event.owner_id]);
     return { state:'applied', application:app, change: transition.changed ? 'updated' : 'unchanged', ...(transition.ignored ? { ignored: transition.ignored } : {}) };
   });

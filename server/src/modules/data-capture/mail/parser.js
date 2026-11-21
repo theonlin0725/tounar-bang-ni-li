@@ -4,13 +4,18 @@ import { companyIdentity } from '../../../domain/mailMatching.js';
 const POSITIVE_KEYWORDS = [
   '笔试', '测评', '在线考试', '面试', '邀请', '录用', 'offer', '意向书', '录取', '感谢',
   '遗憾', '未通过', '不合适', '流程结束', '岗位关闭', '撤回', '进展', '申请', '简历', '招聘',
+  '网申', '校招', '秋招', '春招', '实习', '管培', '行测', '机试', 'ai面', '一面', '二面', '终面',
+  '群面', '复试', '资格审查', '谈薪', '意向', '背调', '体检', '人才库', '测评通知', '笔试通知',
+  '面试通知', '面试安排', '录用通知', '感谢信', 'next steps', 'coding challenge', 'superday',
   'assessment', 'interview', 'offer', 'application', 'recruitment', 'unfortunately', 'not selected'
 ];
 
+const COMPOSITE_ROLE_WORDS = '管理培训生|管培生|实习生|工程师|产品经理|项目经理|运营|设计师|研究员|分析师|顾问|开发|算法|测试|财务|人力|销售|市场|策划';
 const RECRUITMENT_DOMAIN_HINTS = ['jobs.', 'careers.', 'campus.', 'recruit.', 'hr.', 'talent.', 'zhaopin.', 'hire.'];
+const ATS_DOMAINS = ['mokahr.com','beisen.com','italent.cn','hotjob.cn','workday.com','myworkdayjobs.com','greenhouse.io','lever.co','ashbyhq.com','smartrecruiters.com','shl.com','acmcoder.com','hackerrank.com','codility.com','hirevue.com','nowcoder.com','cmbchina.com','95555.com'];
 const COMMON_RECRUITING_DOMAINS = [
   'boss直聘', 'boss.com', 'nowcoder.com', 'shixiseng.com', 'lagou.com', 'zhaopin.com', '51job.com',
-  'liepin.com', 'maimai.cn', 'hotjob.cn', 'yingjiesheng.com'
+  'liepin.com', 'maimai.cn', 'hotjob.cn', 'yingjiesheng.com', ...ATS_DOMAINS
 ];
 
 export function stripHtml(value = '', keepLines = false) {
@@ -18,6 +23,7 @@ export function stripHtml(value = '', keepLines = false) {
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<br\s*\/?\s*>|<\/(?:p|div|li|tr)>/gi, '\n')
+    .replace(/<\/(?:td|th)>/gi, '\t')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -28,8 +34,30 @@ export function stripHtml(value = '', keepLines = false) {
   return keepLines ? text.replace(/[^\S\n]+/g, " ").trim().slice(0, 12000) : normalizeWhitespace(text, 12000);
 }
 
-export function isRecruitmentHeader(subject = '', fromDomain = '', bodyText = '') {
-  const s = String(subject || '').toLowerCase();
+export function mailBodyForModel(value = '', head = 4500, tail = 1500) {
+  const text = String(value || '').replace(/\r\n?/g, '\n').trim();
+  if (text.length <= head + tail) return text;
+  return `${text.slice(0, head)}\n\n[...正文中部省略...]\n\n${text.slice(-tail)}`;
+}
+
+export function isSelfOrNoiseMail({ subject = '', fromAddress = '', fromName = '', bodyText = '', selfAddresses = [] } = {}) {
+  const sender = `${fromAddress || ''} ${fromName || ''}`.toLowerCase();
+  const text = `${subject || ''}\n${bodyText || ''}`.toLowerCase();
+  const selfMailbox = (Array.isArray(selfAddresses) ? selfAddresses : [selfAddresses]).filter(Boolean).join(' ').toLowerCase();
+  const selfTokens = selfMailbox.match(/[a-z0-9._%+-]+@[a-z0-9.-]+/gi) || [];
+  const from = String(fromAddress || '').toLowerCase();
+  const strongRecruiting = /(?:面试邀请|笔试通知|测评通知|在线测评|录用通知|offer\s*letter|申请已提交|投递成功|网申进度|面试安排|笔试安排|测评安排)/i.test(`${subject}\n${bodyText}`);
+  if (from && selfTokens.some((token) => token.toLowerCase() === from)) return true;
+  if (/(?:tounar\.local|tounar|帮你理)/i.test(sender)
+    && !strongRecruiting
+    && /(?:验证码|登录|提醒|摘要|测试|系统通知|no-?reply|donotreply)/i.test(`${sender}\n${text}`)) return true;
+  if (/(?:验证码|账单|发票|快递|物流|消费|还款|订单|发货|促销|优惠券|newsletter|unsubscribe|退订)/i.test(`${subject}\n${bodyText}`)
+    && !strongRecruiting) return true;
+  return false;
+}
+
+export function isRecruitmentHeader(subject = '', fromDomain = '', bodyText = '', fromName = '') {
+  const s = `${subject || ''} ${fromName || ''}`.toLowerCase();
   const d = String(fromDomain || '').toLowerCase();
   const b = String(bodyText || '').toLowerCase();
   const hasKeyword = POSITIVE_KEYWORDS.some((k) => s.includes(k.toLowerCase()) || b.includes(k.toLowerCase()));
@@ -45,10 +73,10 @@ function hasAny(text, list) {
   return list.some((word) => text.includes(word));
 }
 
-export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyText = '', mode = 'headers_only' }) {
+export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyText = '', fromName = '', mode = 'headers_only' }) {
   const s = String(subject || '');
   const text = `${s}\n${mode === 'recruitment_body' ? bodyText : ''}`.toLowerCase();
-  if (!isRecruitmentHeader(s, fromDomain, mode === 'recruitment_body' ? bodyText : '')) {
+  if (!isRecruitmentHeader(s, fromDomain, mode === 'recruitment_body' ? bodyText : '', fromName)) {
     return { relevant: false, category: 'other', confidence: 0, round_label: null, status: null, reason: 'not_recruitment' };
   }
   const offer = hasAny(text, ['录用', 'offer', '意向书', '录取通知', '正式录用']);
@@ -108,12 +136,18 @@ export function classifyRecruitmentMail({ subject = '', fromDomain = '', bodyTex
 const PUBLIC_MAIL_DOMAINS = new Set(['qq.com', 'vip.qq.com', 'foxmail.com', '163.com', '126.com', 'yeah.net', 'gmail.com', 'outlook.com', 'hotmail.com']);
 const COMPANY_PLACEHOLDERS = /^(?:通知|招聘|测评|笔试|面试|投递|申请|系统|校招|春招|秋招|社招|未知|待补充|待定|未填写|招聘系统|校园招聘|社会招聘|hr|noreply|no-reply)$/i;
 const TITLE_PLACEHOLDERS = /^(?:通知|招聘|测评|笔试|面试|投递|申请|系统|校招|春招|秋招|社招|线上|在线|未知|待补充|待定|未填写|邀请|成功|收到|请您|岗位|职位)$/i;
-function cleanMailEntity(value, { title = false } = {}) {
+export function cleanMailEntity(value, { title = false } = {}) {
   let text = String(value || '').replace(/^[【\[]|[】\]]$/g, '').replace(/\s+/g, ' ').trim();
   text = text.replace(/(?:校园招聘|社会招聘|招聘|有限公司)$/u, '').trim();
   if (!text || text.length < 2 || (title ? TITLE_PLACEHOLDERS : COMPANY_PLACEHOLDERS).test(text)) return null;
   const lower = text.toLowerCase();
   if (PUBLIC_MAIL_DOMAINS.has(lower) || /@|https?:|:\/\//i.test(text)) return null;
+  if (/https?:\/\/|www\.|(?:^|[\s(])(?:[a-z0-9-]+\.)+(?:com|cn|net|org|edu)(?:\/|\b)/i.test(text)
+    || /请到官网|点击(?:链接|这里)|公众号|招聘链接/i.test(text)) return null;
+  if (!title && (/^\d+$/.test(text) || /^\d+\s*公司$/.test(text) || /^20\d{2}\s*(?:届|年)?(?:校园招聘|校招|社招|秋招|春招|测评)?$/.test(text) || /^(?:pm|hr|产品|运营|技术|数据|销售|市场)岗位$/i.test(text)
+    || /^(?:recruitment|careers?|campus|talent|zhaopin|hr|noreply|no-reply|admin|service|notification|通知|招聘|招聘系统|管理系统|tounar|帮你理|moka|mokahr|北森|北森云|牛客|牛客网|赛码|赛码网|italent|hotjob|nowcoder|shl|hirevue|workday|greenhouse|lever)$/i.test(text))) return null;
+  if (!title && ATS_DOMAINS.some((d) => lower === d || lower.endsWith(`.${d}`))) return null;
+  if (title && (/^\d+$/.test(text) || /^20\d{2}\s*(?:届|年)?(?:校园招聘|校招|社招|秋招|春招|测评)?$/.test(text))) return null;
   if (title) {
     text = text.replace(/[\s\-—·｜|]*(?:测评邀请|笔试邀请|面试邀请|投递成功|申请成功|录用通知|面试通知|笔试通知|测评通知)(?:通知)?$/u, '').trim();
     if (!text || TITLE_PLACEHOLDERS.test(text) || /(?:邀请|通知|成功|收到|请您)/.test(text)) return null;
@@ -146,6 +180,31 @@ export function stripMailBoilerplate(bodyText) {
     .trim();
 }
 
+export function splitCompositeEntity(company, jobTitle = null, batch = null) {
+  let c = cleanMailEntity(company || '');
+  let t = cleanMailEntity(jobTitle || '', { title: true });
+  let b = batch || null;
+  if (!c) return { company_name: null, job_title: t, recruitment_batch: b };
+  const roleWords = COMPOSITE_ROLE_WORDS;
+  let m = c.match(new RegExp(`^(20\\d{2})\\s*届?\\s*(.+?)(${roleWords})(?:岗位|职位|项目)?$`, 'u'));
+  if (m) {
+    b = b || `${m[1]}届`;
+    c = cleanMailEntity(m[2]);
+    if (!t) t = cleanMailEntity(m[3], { title: true });
+  } else if (!t) {
+    m = c.match(new RegExp(`^(.{2,30}?)(${roleWords})(?:岗位|职位|项目)?$`, 'u'));
+    if (m) {
+      c = cleanMailEntity(m[1]);
+      t = cleanMailEntity(m[2], { title: true });
+    }
+  }
+  if (c && /^20\d{2}/.test(c) && t) {
+    b = b || c.match(/^(20\d{2})/u)?.[1] + '届';
+    c = cleanMailEntity(c.replace(/^20\d{2}\s*届?/u, ''));
+  }
+  return { company_name: c || null, job_title: t || null, recruitment_batch: b || null };
+}
+
 export function extractMailFields({ subject = '', bodyText = '', fromAddress = '', fromName = '' }) {
   const text = `${subject}\n${bodyText}`;
   const company = firstValidEntity(text, /(?:公司|企业|雇主|company)\s*[:：]\s*([^\n，,。;；]{2,40})/gi);
@@ -169,14 +228,24 @@ export function extractMailFields({ subject = '', bodyText = '', fromAddress = '
     subjectTitle = dotted[2].trim();
   }
   const subjectNatural = subject.match(/^(?:20\d{2}届?(?:校园招聘|校招|春招|秋招|社招)?[-—·\s]*)?(.{2,40}?)[-—·｜|\s]*(?:在线)?(?:测评|笔试|面试|录用|投递)(?:邀请|通知|安排|结果|成功)/u)?.[1];
+  const subjectEmployer = subject.match(/^([^\s，,。；;:：【\]]{2,24}?)(?=\s*(?:20\d{2}|校园招聘|校招|春招|秋招|社招|招聘))/u)?.[1];
   const fromCompany = cleanMailEntity(String(fromName || '').replace(/(?:校园招聘|校园招聘团队|招聘团队|校招团队|招聘中心|人力资源|HR团队|招聘)$/iu, ''));
   const domain = String(fromAddress || '').split('@')[1]?.toLowerCase() || null;
   const domainCompany = companyIdentity('', domain);
   const batch = (text.match(/20\d{2}\s*届?(?:校园招聘|校招|春招|秋招|社招)?/)?.[0] || '').replace(/\s+/g, '') || null;
+  const subjectCore = subject.replace(/[\s\-—·｜|]*(?:在线)?(?:测评|笔试|面试|录用|投递)(?:邀请|通知|安排|结果|成功)(?:通知)?$/u, '').trim();
+  const subjectComposite = /^20\d{2}/.test(subjectCore) ? cleanMailEntity(subjectCore) : null;
+  const compositeCompany = company || cleanMailEntity(naturalCompany || '') || cleanMailEntity(subjectCompany || '') || cleanMailEntity(subjectEmployer || '') || fromCompany || domainCompany || subjectComposite;
+  const subjectNaturalCore = subjectNatural && !/20\d{2}|校园招聘|校招|社招|招聘/i.test(subjectNatural)
+    ? (subjectNatural.match(new RegExp(`(${COMPOSITE_ROLE_WORDS})$`, 'u'))?.[1] || subjectNatural)
+    : null;
+  const rawSubjectTitle = cleanMailEntity(subjectTitle || '', { title: true })
+    || cleanMailEntity(subjectNaturalCore || '', { title: true });
+  const split = splitCompositeEntity(compositeCompany, title || rawSubjectTitle, batch);
   return {
-    company_name: clipText(company || cleanMailEntity(naturalCompany || '') || cleanMailEntity(subjectCompany || '') || fromCompany || domainCompany || '', 80) || null,
-    job_title: clipText(title || cleanMailEntity(subjectTitle || '', { title: true }) || cleanMailEntity(subjectNatural || '', { title: true }), 100) || null,
-    recruitment_batch: batch,
+    company_name: clipText(split.company_name || '', 80) || null,
+    job_title: clipText(split.job_title || '', 100) || null,
+    recruitment_batch: split.recruitment_batch,
     site_application_id: applicationId ? clipText(applicationId, 60) : null,
     from_domain: domain,
     from_name: clipText(fromName, 80) || null
@@ -229,16 +298,23 @@ export function confirmedMailProgress(subject, bodyText, { fromName = '', fromDo
   const naturalCompany = core.match(/(?:感谢您|感谢你)(?:应聘|投递|申请)\s*[【「《“]?([^】」》”\n，,。；;「《【“]{2,24})/)?.[1]
     || core.match(/(?:欢迎加入|很高兴您加入|期待您加入)\s*([^，,。；;\n]{2,24})/)?.[1];
   const bracket = subject.match(/^[【\[]([^】\]]{2,30})[】\]]/u);
+  const subjectCore = subject.replace(/[\s\-—·｜|]*(?:在线)?(?:测评|笔试|面试|录用|投递)(?:邀请|通知|安排|结果|成功)(?:通知)?$/u, '').trim();
+  const subjectEmployer = subject.match(/^([^\s，,。；;:：【\]]{2,24}?)(?=\s*(?:20\d{2}|校园招聘|校招|春招|秋招|社招|招聘))/u)?.[1];
   const fromCompany = cleanMailEntity(String(fromName || '').replace(/(?:校园招聘|校园招聘团队|招聘团队|校招团队|招聘中心|人力资源|HR团队|招聘)$/iu, ''));
   const domainCompany = companyIdentity('', fromDomain);
-  const employer = cleanMailEntity(bodyCompany || naturalCompany || bracket?.[1] || '') || fromCompany || domainCompany;
+  const subjectComposite = /^20\d{2}/.test(subjectCore) ? cleanMailEntity(subjectCore) : null;
+  let employer = cleanMailEntity(bodyCompany || naturalCompany || bracket?.[1] || '') || cleanMailEntity(subjectEmployer || '') || fromCompany || domainCompany || subjectComposite;
 
   const bodyTitle = firstValidEntity(core, /(?:应聘岗位|应聘职位|岗位(?:名称)?|职位(?:名称)?)\s*[:：]\s*([^\n，,。；;]{2,60})/gi, { title: true })
     || firstValidEntity(core, /您(?:应聘|投递|申请)(?:的)?(?:[^「《【“\n]{0,12})?[「《【“]([^」》】”\n]{2,40})[」》】”](?:岗位|职位)?/g, { title: true })
     || firstValidEntity(core, /您(?:应聘|投递|申请)(?:的)?([^\n，,。；;]{2,30}?)(?:岗位|职位)/g, { title: true });
   const subjectTitle = subject.match(/^[【\[][^】\]]+[】\]]\s*(?:20\d{2}届?(?:校园招聘|校招|春招|秋招|社招)?[-—·\s]*)?(.{2,36}?)[-—·｜|\s]*(?:在线)?(?:测评|笔试|面试|录用|投递)(?:邀请|通知|安排|结果|成功)/u)?.[1];
-  const title = cleanMailEntity(bodyTitle || subjectTitle || '', { title: true });
-  const batch = (text.match(/20\d{2}\s*届?(?:校园招聘|校招|春招|秋招|社招)?/)?.[0] || '').replace(/\s+/g, '') || null;
+  let title = cleanMailEntity(bodyTitle || subjectTitle || '', { title: true });
+  let batch = (text.match(/20\d{2}\s*届?(?:校园招聘|校招|春招|秋招|社招)?/)?.[0] || '').replace(/\s+/g, '') || null;
+  const split = splitCompositeEntity(employer, title, batch);
+  employer = split.company_name;
+  title = split.job_title;
+  batch = split.recruitment_batch;
 
   if (!employer) return null;
   if (!title) {

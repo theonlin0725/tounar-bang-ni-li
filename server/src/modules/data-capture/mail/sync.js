@@ -5,7 +5,8 @@ import {
   AppError, decryptSecret, newId, normalizeWhitespace, nowIso, parseIso, safeJsonParse, sha256
 } from '../../../util.js';
 import {
-  confirmedMailProgress, classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, publicEvidence, stripHtml
+  confirmedMailProgress, classifyRecruitmentMail, extractMailFields, isRecruitmentHeader, isSelfOrNoiseMail,
+  mailBodyForModel, publicEvidence, stripHtml
 } from './parser.js';
 import { recordConfirmedMail, processMailEvent } from '../../../domain/applications.js';
 import { processIntakeEvent } from '../../recruitment-intake/workflow.js';
@@ -213,7 +214,7 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText, {
   let result;
   if (aiCandidate) {
     result = await processIntakeEvent(event, {
-      bodyText, subject: parsed.subject, fromDomain: fields.from_domain || '', fromName: fields.from_name || '',
+      bodyText: mailBodyForModel(bodyText), subject: parsed.subject, fromDomain: fields.from_domain || '', fromName: fields.from_name || '',
       receivedAt: event.occurred_at, statusText: parsed.classification.category
     });
     // AI 技术失败时保留强规则兜底；歧义/低置信度仍保留 AI 的待确认结论。
@@ -271,7 +272,7 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt, 
         result = recordConfirmedMail(existingEvent, parsed.confirmed);
       } else if (config.autoIntakeEnabled && bodyText.trim()) {
         result = await processIntakeEvent(existingEvent, {
-          bodyText, subject: parsed.subject, fromDomain: parsed.fields.from_domain || '',
+          bodyText: mailBodyForModel(bodyText), subject: parsed.subject, fromDomain: parsed.fields.from_domain || '',
           fromName: parsed.fields.from_name || '', receivedAt: existingEvent.occurred_at, statusText: parsed.classification.category
         });
       }
@@ -516,7 +517,16 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           ? message.internalDate.toISOString()
           : (parseIso(message.internalDate) || nowIso());
         let bodyText = '';
-        const tentativeHeader = historical.has(message.uid) || isRecruitmentHeader(subject, from.address, '');
+        if (isSelfOrNoiseMail({ subject, fromAddress: from.address, fromName: from.name, selfAddresses: [config.mailFrom] })) {
+          stats.scanned += 1;
+          stats.ignored += 1;
+          stats.remaining = Math.max(0, stats.total - stats.scanned);
+          stats.percent = Math.min(99, stats.total ? Math.floor((stats.scanned / stats.total) * 100) : 99);
+          lastProcessedUid = Math.max(lastProcessedUid, message.uid);
+          publish();
+          continue;
+        }
+        const tentativeHeader = historical.has(message.uid) || isRecruitmentHeader(subject, from.address, '', from.name);
         if (fresh.mode === 'recruitment_body' && tentativeHeader) {
           const html = findHtmlPart(message.bodyStructure);
           const plain = findTextPart(message.bodyStructure) || html;
@@ -533,9 +543,18 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
             }
           }
         }
+        if (isSelfOrNoiseMail({ subject, fromAddress: from.address, fromName: from.name, bodyText, selfAddresses: [config.mailFrom] })) {
+          stats.scanned += 1;
+          stats.ignored += 1;
+          stats.remaining = Math.max(0, stats.total - stats.scanned);
+          stats.percent = Math.min(99, stats.total ? Math.floor((stats.scanned / stats.total) * 100) : 99);
+          lastProcessedUid = Math.max(lastProcessedUid, message.uid);
+          publish();
+          continue;
+        }
         stage = 'ingest';
         const classification = classifyRecruitmentMail({
-          subject, fromDomain: from.address.split('@')[1] || '', bodyText, mode: fresh.mode
+          subject, fromDomain: from.address.split('@')[1] || '', fromName: from.name, bodyText, mode: fresh.mode
         });
         const fields = extractMailFields({ subject, bodyText, fromAddress: from.address, fromName: from.name });
         /* D09 第一阶段（2026-10-22）：规则拿不准时（不像招聘邮件 / 类别不明 / 公司名缺失），

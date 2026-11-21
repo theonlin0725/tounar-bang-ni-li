@@ -731,3 +731,50 @@ div.tn-jd-items { padding-left: 0; }
 .tn-mail-progress progress:not([value]) { accent-color: var(--muted); opacity: .75; }
 .tn-mail-progress.is-ok progress { accent-color: var(--ok); }
 .tn-mail-progress.is-error progress { accent-color: var(--danger); }
+
+/* 2026-11-22 台账主表精简：5 列、状态色块、极简行距 */
+table.tn-table { min-width: 760px; table-layout: fixed; }
+.tn-table th { background: #f7f8fa; color: #5c6573; font-weight: 600; padding: 13px 16px; border-bottom: 1px solid #eef0f3; }
+.tn-table td { padding: 15px 16px; border-bottom: 1px solid #eef0f3; }
+.tn-table th:nth-child(1) { width: 20%; }
+.tn-table th:nth-child(2) { width: 30%; }
+.tn-table th:nth-child(3) { width: 20%; }
+.tn-table th:nth-child(4) { width: 15%; }
+.tn-table th:nth-child(5) { width: 15%; }
+.tn-table-card { border-top: 1px solid var(--line); border-radius: var(--radius); }
+.tn-status-pill {
+  width: auto; min-width: 104px; max-width: 150px; appearance: none; -webkit-appearance: none;
+  border-radius: 8px; border: 1px solid transparent; padding: 5px 25px 5px 10px;
+  font-size: 12px; line-height: 1.45; font-weight: 600; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
+  background-size: 4px 4px, 4px 4px; background-repeat: no-repeat;
+}
+.tn-status-pill:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+.tn-status-pill.status-applied { background-color: #fff4df; color: #b86b00; border-color: #f5d89e; }
+.tn-status-pill.status-assessment { background-color: #e6f5f0; color: #1f7a63; border-color: #b8e3d5; }
+.tn-status-pill.status-interview { background-color: #e8f1ff; color: #1d5bbf; border-color: #bdd5ff; }
+.tn-status-pill.status-offer { background-color: #e7f7ec; color: #1b7a3d; border-color: #b7e4c7; }
+.tn-status-pill.status-rejected { background-color: #fdeceb; color: #c93b3b; border-color: #f8c6c3; }
+.tn-status-pill.status-closed { background-color: #f1f3f5; color: #5c6573; border-color: #d8dde4; }
+.tn-status-pill.status-pending { background-color: #f4f2ff; color: #5b46b8; border-color: #d9d2fc; }
+@media (max-width: 760px) {
+  table.tn-table { min-width: 0; display: block; table-layout: auto; }
+  .tn-table thead { display: none; }
+  .tn-table tbody { display: block; }
+  .tn-table tr.tn-row-click, .tn-table tr.tn-skeleton-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 12px; padding: 13px 14px; border-bottom: 1px solid #eef0f3;
+  }
+  .tn-table tr:last-child { border-bottom: none; }
+  .tn-table td { display: block; width: auto; padding: 0; border: none; min-width: 0; }
+  .tn-table td:nth-child(1) { grid-column: 1; grid-row: 1; font-weight: 600; }
+  .tn-table td:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .tn-table td:nth-child(3) { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .tn-table td:nth-child(4) { grid-column: 1; grid-row: 3; font-size: 12px; color: var(--muted); }
+  .tn-table td:nth-child(5) { grid-column: 2; grid-row: 3; text-align: right; font-size: 12px; color: var(--muted); }
+  .tn-table td:nth-child(4)::before { content: "已投 "; }
+  .tn-table td:nth-child(5)::before { content: "更新 "; }
+  .tn-table .tn-job-sub { margin-top: 2px; }
+  .tn-status-pill { min-width: 94px; max-width: 132px; }
+}

@@ -1,11 +1,11 @@
-/* 单页台账：三统计 + 工具条 + 四入口 + 投递明细表 + 分页。
+/* 单页台账：三统计 + 工具条 + 投递明细表 + 分页。
    口径：三统计来自同响应 stats（全台账，不随筛选变化）；筛选结果另显 filtered_total；
    所有天数按后台 Asia/Shanghai 口径；请求乱序用 reqSeq 丢弃旧响应。 */
 
 import { api, errorText } from '../api.js';
 import { App, isStale } from '../app.js?v=20261120-1';
 import {
-  h, clear, fmtDateTime, daysText, debounce, extLink, idemKey,
+  h, clear, fmtDateTime, debounce, idemKey,
   STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
 import { openDetail } from './detail.js?v=20261120-1';
@@ -38,14 +38,12 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     h('div', { class: 'tn-stats', id: 'tn-stats' }),
     h('div', { id: 'tn-banner' }),
     h('div', { class: 'tn-toolbar', id: 'tn-toolbar' }),
-    h('div', { class: 'tn-tabs', id: 'tn-tabs' }),
     h('div', { id: 'tn-content' }),
     h('div', { class: 'tn-freshness', id: 'tn-freshness' })
   );
   const statsEl = main.querySelector('#tn-stats');
   const bannerEl = main.querySelector('#tn-banner');
   const toolbarEl = main.querySelector('#tn-toolbar');
-  const tabsEl = main.querySelector('#tn-tabs');
   const contentEl = main.querySelector('#tn-content');
   const freshnessEl = main.querySelector('#tn-freshness');
 
@@ -123,26 +121,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     );
   }
 
-  /* ---------- 入口 tab ---------- */
-  function buildTabs() {
-    clear(tabsEl);
-    const counts = state.counts || {};
-    const tabs = [
-      ['applied', '投递明细', null],
-      ['viewed', '看过没投', counts.viewed],
-      ['reviews', '待确认', counts.pending_review],
-      ['archived', '已归档', counts.archived]
-    ];
-    for (const [id, label, count] of tabs) {
-      const active = state.view === id;
-      const btn = h('button', {
-        class: `tn-tab${active ? ' active' : ''}`, type: 'button', 'data-test': `tab-${id}`,
-        onclick: () => switchView(id)
-      }, label, count != null ? h('span', { class: 'tn-tab-count', text: String(count) }) : null);
-      tabsEl.append(btn);
-    }
-  }
-
   /* ---------- 表格 ---------- */
   function renderTable() {
     clear(contentEl);
@@ -166,9 +144,8 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     const scroll = h('div', { class: 'tn-table-scroll' });
     const table = h('table', { class: 'tn-table', 'data-test': 'ledger-table' });
     table.append(h('thead', {}, h('tr', {},
-      h('th', { text: '公司' }), h('th', { text: '岗位' }), h('th', { text: 'JD 摘要' }),
-      h('th', { text: '投递渠道' }), h('th', { text: '状态' }), h('th', { text: '已投天数' }),
-      h('th', { text: '查看岗位' }), h('th', { text: '更新时间' })
+      h('th', { text: '公司' }), h('th', { text: '岗位' }), h('th', { text: '状态' }),
+      h('th', { text: '已投天数' }), h('th', { text: '更新时间' })
     )));
     const tbody = h('tbody', {});
     for (const item of state.items) tbody.append(renderRow(item));
@@ -178,6 +155,19 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     contentEl.append(card);
   }
 
+  function dayText(days) {
+    if (days === null || days === undefined) return '—';
+    if (days <= 0) return '今天';
+    return `${days} 天`;
+  }
+  function dayTitle(item) {
+    if (!item.days_since_applied_anchor) return '没有可用的投递/进展日期';
+    const basis = item.days_since_applied_basis === 'stage_received_at'
+      ? '进展收件日期' : item.days_since_applied_basis === 'created_at'
+        ? '加入投递明细日期' : item.applied_at_precision === 'inferred_before'
+          ? '邮件收件日期' : '投递日期';
+    return `基准日期：${fmtDate(item.days_since_applied_anchor)}（${basis}）`;
+  }
   function renderRow(item) {
     const tr = h('tr', { class: `tn-row-click${highlighted.has(item.id) ? ' tn-row-updated' : ''}`, 'data-test': 'ledger-row', 'data-app-id': item.id });
     tr.addEventListener('click', () => openDetailFor(item.id));
@@ -195,19 +185,16 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
           text: '补充信息', onclick: (e) => { e.stopPropagation(); openDetailFor(item.id, true); }
         }) : null),
       h('td', {}, fieldNode('job_title'), subParts.length ? h('div', { class: 'tn-job-sub', text: subParts.join(' · ') }) : null),
-      h('td', {}, fieldNode('jd_summary', 'tn-jd clip')),
-      h('td', { text: item.channel || '未知' }),
       h('td', {}, statusEditor(item),
         roundText ? h('span', { class: 'tn-round', text: `· ${roundText}` }) : null,
         item.due_for_review && state.view === 'applied' ? h('span', { class: 'tn-flag tn-flag-due', text: '待回看' }) : null
       ),
       h('td', {}, h('span', {
         class: `tn-days${item.due_for_review ? ' tn-days-late' : ''}`,
-        text: item.applied_at_precision === 'inferred_before' ? `≤ ${fmtDate(item.applied_at)}（据邮件推断）` : daysText(item.days_since_applied)
+        title: dayTitle(item),
+        text: dayText(item.days_since_applied)
       })),
-      h('td', {}, linkCell(item.job_url, '查看岗位', '—')),
-      h('td', {}, h('div', { text: fmtDateTime(item.updated_at) }),
-        h('div', { class: 'tn-scope-note', text: '台账更新时间' }))
+      h('td', {}, h('span', { title: fmtDateTime(item.updated_at), text: fmtDate(item.updated_at) }))
     );
     return tr;
   }
@@ -219,16 +206,13 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
       || item.company_name === '面试' || item.job_title === '面试';
   }
 
-  function linkCell(url, label, missing) {
-    if (!url) return h('span', { class: 'tn-link-disabled', title: '记录中没有安全链接，可在详情里纠错补充', text: missing });
-    const a = extLink(url, label);
-    a.addEventListener('click', (e) => e.stopPropagation());
-    return a;
-  }
-
   function statusEditor(item) {
     const dateRequired = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected']);
-    const select = h('select', { class: 'tn-select tn-select-sm tn-status-edit', 'data-test': 'ledger-status-edit', 'data-status-app-id': item.id });
+    const select = h('select', { class: `tn-select tn-select-sm tn-status-edit tn-status-pill status-${item.status}`, 'data-test': 'ledger-status-edit', 'data-status-app-id': item.id });
+    const setStatusClass = (status) => {
+      for (const value of new Set([...STATUS_ORDER, item.status])) select.classList.remove(`status-${value}`);
+      select.classList.add(`status-${status}`);
+    };
     const options = state.view === 'viewed'
       ? ['pending', 'applied', 'assessment', 'interview', 'offer', 'rejected', 'closed']
       : ['applied', 'assessment', 'interview', 'offer', 'rejected', 'closed'];
@@ -242,6 +226,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
 
     function reset() {
       select.value = item.status;
+      setStatusClass(item.status);
       dateWrap.hidden = true;
       save.hidden = true;
       dateInput.value = '';
@@ -263,7 +248,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
         if (state.view === 'viewed' && target !== 'pending' && target !== 'closed') {
           state.view = 'applied'; state.cursor = null; state.cursorStack = []; state.items = [];
           notifyView('applied');
-          buildTabs();
         }
         await doLoad();
       } catch (err) {
@@ -282,6 +266,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     select.addEventListener('click', (e) => e.stopPropagation());
     select.addEventListener('change', () => {
       const target = select.value;
+      setStatusClass(target);
       if (dateRequired.has(target) && !item.applied_at) {
         dateWrap.hidden = false; save.hidden = false; dateInput.focus();
       } else {
@@ -331,7 +316,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     const tbody = h('tbody', {});
     for (let i = 0; i < 6; i += 1) {
       tbody.append(h('tr', { class: 'tn-skeleton-row' },
-        ...Array.from({ length: 6 }, () => h('td', {}, h('div', { class: 'tn-skeleton', style: { width: `${60 + Math.random() * 120}px` } })))
+        ...Array.from({ length: 5 }, () => h('td', {}, h('div', { class: 'tn-skeleton', style: { width: `${60 + Math.random() * 120}px` } })))
       ));
     }
     table.append(tbody);
@@ -418,7 +403,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
 
   function refreshChrome() {
     renderStats();
-    buildTabs();
     renderBanner();
     if (state.view === 'reviews') return;
     renderTable();
@@ -483,7 +467,6 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
     state.items = [];
     state.error = null;
     notifyView(id);
-    buildTabs();
     if (id === 'reviews') {
       renderBanner();
       clear(contentEl);
@@ -560,11 +543,9 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   /* ---------- 首次加载 ---------- */
   buildToolbar();
   renderStats();
-  buildTabs();
   await doLoad();
   if ((state.view === 'reviews' || panel === 'reviews') && !isStale(gen)) {
     state.view = 'reviews';
-    buildTabs();
     renderBanner();
     clear(contentEl);
     renderReviews(contentEl, {

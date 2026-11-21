@@ -9,8 +9,8 @@ import { chatJsonCompletion } from './llm.js';
 const SYSTEM = `你是招聘进展判断器，不是聊天助手。只输出一个 JSON 对象，不要 Markdown。
 输入会给出邮件原文、已抽取字段和候选台账。你要判断：
 1. 这是否是当前用户本人已经发生的招聘进展（收到笔试/测评/面试邀请、录用、拒绝都算；招聘流程说明、广告、转发、历史引用、未来条件句不算）。
-2. 阶段：applied/assessment/interview/offer/rejected/closed/no_status。只有原文明确支持才选择。
-3. 抽取出的公司、岗位是否被原文直接支持，字段是否错位。
+2. 阶段：applied/assessment/interview/offer/rejected/closed/no_status。只有原文明确支持才选择。正文可能是“首部 + 尾部”拼接，仍以正文抬头/表格/落款和主题为主，from_name/from_domain 仅作辅助。
+3. 抽取出的公司、岗位是否被原文直接支持，字段是否错位；纯数字发件人、recruitment/careers/hr、ATS/测评平台名、自身产品 Tounar/帮你理 都不能视为有效公司。
 4. 相对候选记录的当前状态，这条信息是 new / duplicate_or_old / uncertain。
 5. 这条进展属于哪个候选（c0、c1…）；不能确定选 uncertain，没有候选匹配选 no_match。不要为了凑匹配选同公司的其他岗位。
 

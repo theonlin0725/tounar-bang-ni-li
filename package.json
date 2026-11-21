@@ -22,6 +22,7 @@
     "plugin:tryrun": "node tools/tryrun-plugin.mjs",
     "remind": "node --env-file-if-exists .env server/scripts/run-reminders.js",
     "mail:sync": "node --env-file-if-exists .env server/scripts/run-mail-sync.js",
+    "mail:cleanup": "node --env-file-if-exists .env server/scripts/cleanup-mail-auto-ledger.js",
     "test:plugin-acceptance": "node tests/e2e/plugin-acceptance.mjs",
     "test:plugin-backend": "node tests/e2e/backend-access.mjs",
     "test:toast": "node tests/e2e/toast-feedback.mjs",

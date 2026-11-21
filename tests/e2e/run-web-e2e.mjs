@@ -199,7 +199,7 @@ try {
   await shot(page, '02-ledger-empty');
   await page.goto('/?panel=reviews');
   await page.waitForSelector('[data-test=reviews-view]');
-  check('P0-深链 打开待确认', await page.locator('[data-test=tab-reviews].active').count() === 1);
+  check('P0-深链 打开待确认', await page.locator('[data-test=nav-reviews].active').count() === 1);
   await page.goto('/');
   await page.waitForSelector('[data-test=open-manual]');
 
@@ -322,7 +322,7 @@ try {
     !!(appBDetail.json?.data?.last_reviewed_at), `last_reviewed_at=${appBDetail.json?.data?.last_reviewed_at}`);
   await page.click('[data-test=detail-drawer] .tn-drawer-close');
 
-  await page.click('[data-test=tab-viewed]');
+  await page.click('[data-test=nav-viewed]');
   const viewedRow = page.locator('[data-test=ledger-row]', { hasText: '青禾网络' });
   await viewedRow.waitFor({ state: 'visible' });
   check('W-12 「看过没投」tab 展示插件强证据浏览（不计入累计投递）',
@@ -335,7 +335,7 @@ try {
       && (await page.textContent('[data-test=page-title]')).trim() === '看过没投');
 
   /* ================= 5. 待确认：真实 409 竞态 + 正常确认 ================= */
-  await page.click('[data-test=tab-reviews]');
+  await page.click('[data-test=nav-reviews]');
   await page.waitForSelector('[data-test=review-card]');
   await waitFor(async () => (await page.locator('[data-test=review-card]').count()) >= 2, { label: '两张复核卡片' });
   check('W-13d 待确认页签同步侧栏一级入口和页标题',
@@ -408,7 +408,7 @@ try {
   const appC = (appCList.json?.data?.items || []).find((x) => x.company_name === '青禾网络');
   check('W-15 补录后创建/更新为已投，列表清空', !!appC && appC.status === 'applied', `app=${appC?.id || 'missing'} status=${appC?.status || 'missing'}`);
 
-  await page.click('[data-test=tab-applied]');
+  await page.click('[data-test=nav-ledger]');
   await page.waitForFunction(() => document.querySelector('[data-test=stat-total]')?.textContent.trim() === '3');
   const statusList = (await server.request('/api/v1/ledger?view=applied&limit=100', { cookie: apiCookie })).json?.data?.items || [];
   const statusApp = statusList.find((x) => x.company_name === '云杉数据');
@@ -417,10 +417,27 @@ try {
     await statusRow.waitFor();
     await page.waitForSelector('[data-test=ledger-table]');
     const headers = await page.locator('[data-test=ledger-table] th').allTextContents();
-    const jobHref = await statusRow.locator('a', { hasText: '查看岗位' }).getAttribute('href');
-    check('W-16a 台账只保留一个“查看岗位”入口，且指向岗位详情',
-      !headers.includes('投递链接') && headers.includes('查看岗位') && jobHref === 'https://jobs.example.com/yunshan/dp-intern',
-      `headers=${headers.join('|')} href=${jobHref}`);
+    check('W-16a 台账主表精简为 5 列，不再重复展示 JD/渠道/链接',
+      headers.length === 5 && headers.includes('状态') && !headers.includes('JD 摘要')
+        && !headers.includes('投递渠道') && !headers.includes('查看岗位')
+        && (await page.locator('#tn-tabs').count()) === 0,
+      `headers=${headers.join('|')}`);
+    const statusSelect = statusRow.locator('[data-test=ledger-status-edit]');
+    const statusClass = await statusSelect.getAttribute('class');
+    const dayCell = (await statusRow.locator('td').nth(3).textContent()).trim();
+    const updatedCell = statusRow.locator('td').nth(4);
+    check('W-16a1 状态色块、纯天数与仅日期更新时间',
+      /status-(?:applied|assessment|interview|offer|rejected|closed|pending)/.test(statusClass)
+        && /^(?:今天|\d+ 天|—)$/.test(dayCell)
+        && /^\d{4}-\d{2}-\d{2}$/.test((await updatedCell.textContent()).trim())
+        && /\d{2}:\d{2}/.test((await updatedCell.locator('span').getAttribute('title')) || ''),
+      `class=${statusClass} days=${dayCell} updated=${(await updatedCell.textContent()).trim()}`);
+    await statusRow.locator('td').first().click();
+    await page.waitForSelector('[data-test=detail-drawer]');
+    const jobHref = await page.locator('[data-test=detail-drawer] a', { hasText: '查看岗位' }).getAttribute('href');
+    check('W-16a2 岗位链接只在详情抽屉保留，且指向岗位详情',
+      jobHref === 'https://jobs.example.com/yunshan/dp-intern', `href=${jobHref}`);
+    await page.click('[data-test=detail-drawer] .tn-drawer-close');
     await statusRow.locator('[data-test=ledger-status-edit]').selectOption('interview');
     const dateInput = statusRow.locator('[data-test=ledger-status-date]');
     if (await dateInput.isVisible().catch(() => false)) {
@@ -429,6 +446,7 @@ try {
     }
     await waitToast(page, '状态已更新');
     await page.waitForFunction(({ id }) => document.querySelector(`[data-test=ledger-status-edit][data-status-app-id="${id}"]`)?.value === 'interview', { id: statusApp.id });
+    check('W-16b1 状态切换后色块类名即时更新', await page.locator(`[data-test=ledger-status-edit][data-status-app-id="${statusApp.id}"]`).evaluate((el) => el.classList.contains('status-interview')));
     const edited = await server.request(`/api/v1/applications/${statusApp.id}`, { cookie: apiCookie });
     check('W-16b 台账状态直接编辑并保留人工修改历史',
       edited.json?.data?.status === 'interview' && edited.json?.data?.manual_status_at
@@ -440,6 +458,20 @@ try {
     await waitToast(page, '状态已更新');
     await page.waitForFunction(({ id }) => document.querySelector(`[data-test=ledger-status-edit][data-status-app-id="${id}"]`)?.value === 'applied', { id: statusApp.id });
   }
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(250);
+  const ledgerMobile = await page.evaluate(() => ({
+    doc: document.documentElement.scrollWidth,
+    inner: window.innerWidth,
+    tableScroll: document.querySelector('.tn-table-scroll')?.scrollWidth || 0,
+    tableClient: document.querySelector('.tn-table-scroll')?.clientWidth || 0
+  }));
+  check('W-16b2 台账窄屏重排为卡片且无横向溢出',
+    ledgerMobile.doc <= ledgerMobile.inner + 1 && ledgerMobile.tableScroll <= ledgerMobile.tableClient + 1,
+    JSON.stringify(ledgerMobile));
+  await shot(page, '06b-ledger-mobile');
+  await page.setViewportSize({ width: 1440, height: 1000 });
   const qingheRow = page.locator('[data-test=ledger-row]', { hasText: '青禾网络' });
   await qingheRow.waitFor({ state: 'visible' });
   check('W-16 复核确认后台账刷新（累计投递=3，无重复记录）',

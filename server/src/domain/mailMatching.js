@@ -6,9 +6,23 @@ const COMPANIES = [
   ['阿里巴巴',['阿里巴巴','阿里','alibaba','淘宝','天猫','阿里云'],['alibaba.com','alibaba-inc.com','aliyun.com']],
   ['美团',['美团','meituan'],['meituan.com']],['京东',['京东','jd','jingdong'],['jd.com']],
   ['小米',['小米','xiaomi'],['xiaomi.com']],['百度',['百度','baidu'],['baidu.com']],
-  ['网易',['网易','netease'],['service.netease.com','corp.netease.com','netease.com','campus.163.com','hr.163.com']]
+  ['网易',['网易','netease'],['service.netease.com','corp.netease.com','netease.com','campus.163.com','hr.163.com']],
+  ['招商银行',['招商银行','cmbchina','95555'],['cmbchina.com','95555.com']]
 ];
 const tidy=s=>String(s||'').toLowerCase().replace(/[\s·•,.，。()（）]/g,'').replace(/(?:股份)?有限公司$|集团$|校园招聘$|招聘$/g,'');
+export function companyMatchIdentity(name) {
+  let text = String(name || '').trim();
+  for (let i = 0; i < 2; i += 1) {
+    text = text
+      .replace(/^20\d{2}\s*届?\s*/u, '')
+      .replace(/(?:校园招聘|校招测评|校招|社招|秋招|春招|招聘组|招聘团队|招聘中心|招聘|测评|笔试|面试通知|面试|通知|提醒)(?:组|团队|中心)?$/u, '')
+      .replace(/(?:管理培训生|管培生|实习生|工程师|产品经理|项目经理|运营|设计师|研究员|分析师|顾问|开发|算法|测试|财务|人力|销售|市场|策划)(?:岗位|职位|项目)?$/u, '')
+      .trim();
+  }
+  if (!text || /^(?:\d+|tounar|帮你理|recruitment|careers?|campus|hr|noreply|no-reply|通知|提醒|面试通知|招聘)$/i.test(text)) return null;
+  return companyIdentity(text);
+}
+
 export function companyIdentity(name, domain='') {
   const n=tidy(name), d=String(domain||'').toLowerCase();
   const named=COMPANIES.find(c=>c[1].some(a=>tidy(a)===n));
@@ -124,6 +138,24 @@ export function resolveMailApplication(ownerId, fields = {}) {
   }
   if (sameJob.length === 1) return { target: sameJob[0], candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: false, reason: 'company_title' };
   if (sameJob.length > 1) return { target: null, candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: true, reason: 'company_title' };
+  // 占位岗位名（如“2027（待补充岗位）”）不是真实岗位身份。只有同公司唯一活跃记录时，
+  // 后续明确岗位名才可安全补全它；多个活跃记录仍按新岗位处理，避免误合并。
+  const active = sameCompany.filter((a) => !TERMINAL.has(a.status));
+  const titleSources = all(`SELECT application_id, confidence FROM application_field_sources
+    WHERE owner_id = ? AND field = 'job_title'`, [ownerId]);
+  const lowTitle = new Map(titleSources.map((row) => [row.application_id, row.confidence]));
+  const placeholders = active.filter((a) => {
+    const title = String(a.job_title || '');
+    return lowTitle.get(a.id) === 'low' || /待补充|待核对|未知|^20\d{2}（/u.test(title);
+  });
+  if (active.length === 1 && !/待补充|待核对|未知/.test(String(fields.job_title || '')) && placeholders.length === 1) {
+    return {
+      target: placeholders[0],
+      candidates: [asCandidate(placeholders[0], 'company_placeholder_title', 0.82)],
+      ambiguous: false,
+      reason: 'company_placeholder_title'
+    };
+  }
   // 同公司但没有当前岗位：这是一条新岗位线索，交给上游自动新建；不能把其他岗位误当候选。
   return { target: null, candidates: [], ambiguous: false, reason: 'new_job_same_company' };
 }

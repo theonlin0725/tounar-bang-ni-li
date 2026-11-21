@@ -1,7 +1,7 @@
 import { config } from '../../config.js';
 import { all, getApplication, markApplicationChanged, one, run, transaction } from '../../db.js';
 import {
-  applyStatusTransition, createApplication, createReviewForEvent, fillMissingFields
+  applyStatusTransition, createApplication, createReviewForEvent, fillMissingFields, resolveSupersededReviews
 } from '../../domain/applications.js';
 import { companyIdentity, similarJob, resolveMailApplication } from '../../domain/mailMatching.js';
 import {
@@ -9,6 +9,7 @@ import {
   nowIso, parseIso, safeJsonParse
 } from '../../util.js';
 import { extractRecruitmentSignal } from './llm.js';
+import { cleanMailEntity, splitCompositeEntity } from '../data-capture/mail/parser.js';
 import { judgeIntake } from './judge.js';
 
 const STATUS_SET = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected', 'closed']);
@@ -150,6 +151,10 @@ function reviewFor({ event, kind, reasonCode, summary, ex, status, candidates, a
     ...(ex.recruitment_batch ? { recruitment_batch: ex.recruitment_batch } : {}),
     ...(ex.site_application_id ? { site_application_id: ex.site_application_id } : {}),
     ...(ex.job_url ? { job_url: ex.job_url } : {}),
+    ...(ex.location ? { location: ex.location } : {}),
+    ...(ex.round_label ? { round_label: ex.round_label } : {}),
+    ...(ex.interview_scheduled_at ? { interview_scheduled_at: ex.interview_scheduled_at } : {}),
+    ...(ex.deadline_at ? { deadline_at: ex.deadline_at } : {}),
     status: status || 'pending',
     ...(appliedAt ? { applied_at: appliedAt, applied_at_precision: precision || 'inferred_before' } : {})
   };
@@ -163,6 +168,10 @@ function reviewFor({ event, kind, reasonCode, summary, ex, status, candidates, a
       recruitment_batch: ex.recruitment_batch || p.recruitment_batch,
       site_application_id: ex.site_application_id || p.site_application_id,
       job_url: ex.job_url || p.job_url,
+      location: ex.location || p.location,
+      round_label: ex.round_label || p.round_label,
+      interview_scheduled_at: ex.interview_scheduled_at || p.interview_scheduled_at,
+      deadline_at: ex.deadline_at || p.deadline_at,
       status_text: p.status_text
     },
     evidence: {
@@ -215,6 +224,10 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       receivedAt: p.source_received_at || event.occurred_at, ruleFields: rules
     });
     extracted = llm.extraction;
+    const split = splitCompositeEntity(extracted.company_name, extracted.job_title, extracted.recruitment_batch);
+    extracted.company_name = split.company_name || cleanMailEntity(p.company_name || '') || cleanMailEntity(p.from_name || '') || null;
+    extracted.job_title = split.job_title || cleanMailEntity(extracted.job_title || '', { title: true }) || null;
+    extracted.recruitment_batch = split.recruitment_batch || extracted.recruitment_batch || null;
     runRowModel = { llm_model: llm.model };
     finishRun(runRow, { llm_model: llm.model, extraction_json: JSON.stringify(extracted) });
     if (!extracted.is_recruitment) {
@@ -330,6 +343,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       if (status && target.status === status) {
         finishRun(runRow, { status: 'completed', decision: 'no_change', reason_code: 'AI_NO_STATUS_CHANGE', application_id: target.id, before_status: target.status, after_status: target.status });
         run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?", [target.id, nowIso(), event.id, event.owner_id]);
+        resolveSupersededReviews(event.owner_id, target, event);
         return { state: 'applied', application: target, change: 'unchanged' };
       }
     }
@@ -338,12 +352,25 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       run("UPDATE events SET processing_state='ignored', review_reason='AI_DUPLICATE_OR_OLD', processed_at=? WHERE id=? AND owner_id=?", [nowIso(), event.id, event.owner_id]);
       return { state: 'ignored', reason: 'duplicate_or_old' };
     }
-    const lowConfidence = processDescription || judged.actual_progress < config.autoIntakeMinProgress
-      || judged.evidence_support < config.autoIntakeMinEvidence;
+    const companyOnlyAuto = source === 'mail' && !target && !extracted.job_title && Boolean(extracted.company_name)
+      && !processDescription && ['applied', 'assessment', 'interview'].includes(status)
+      && judged.actual_progress >= config.autoIntakeMinProgress
+      && judged.evidence_support >= config.autoIntakeMinEvidence - 0.1;
+    const lowConfidence = (processDescription || judged.actual_progress < config.autoIntakeMinProgress
+      || judged.evidence_support < config.autoIntakeMinEvidence) && !companyOnlyAuto;
     if (lowConfidence) {
       const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_PROGRESS_UNCERTAIN', summary: '这条招聘线索的进展或证据不够确定，请确认', ex: extracted, status: status || 'pending', candidates, extracted, judged });
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_PROGRESS_UNCERTAIN' });
       return { state: 'pending', review };
+    }
+    const mailText = `${subject || p.subject_excerpt || ''}\n${bodyText || p.ai_body_excerpt || p.body_excerpt || ''}`;
+    const referralOnly = source === 'mail'
+      && /(?:内推成功|成功内推|内推确认|内推邀请函|已被成功内推)/i.test(mailText)
+      && !/(?:邀请您参加|面试邀请|面试通知|笔试邀请|笔试通知|测评邀请|测评通知|录用通知|offer\s*letter)/i.test(mailText);
+    if (!status && referralOnly) {
+      finishRun(runRow, { status: 'ignored', decision: 'ignored', reason_code: 'AI_REFERRAL_ONLY' });
+      run("UPDATE events SET processing_state='ignored', review_reason='AI_REFERRAL_ONLY', processed_at=? WHERE id=? AND owner_id=?", [nowIso(), event.id, event.owner_id]);
+      return { state: 'ignored', reason: 'referral_only' };
     }
     if (!status) {
       const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_STATUS_UNCERTAIN', summary: '系统识别到招聘进展，但无法确定具体阶段', ex: extracted, status: 'pending', candidates, extracted, judged });
@@ -432,6 +459,8 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       app = fillMissingFields(app, {
         ...eventPayload(event), company_name: extracted.company_name, job_title: extracted.job_title,
         recruitment_batch: extracted.recruitment_batch, job_url: extracted.job_url,
+        location: extracted.location, round_label: extracted.round_label,
+        interview_scheduled_at: extracted.interview_scheduled_at, deadline_at: extracted.deadline_at,
         site_application_id: extracted.site_application_id
       }, event.id, event.source_method === 'plugin' ? 'plugin' : 'mail');
       if (!app.has_applied && APPLIED_SET.has(status)) {
@@ -440,7 +469,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
           has_applied: 1, ...(appliedAt ? { applied_at: appliedAt, applied_at_precision: precision } : {})
         }, { reason: '招聘进展确证申请' });
       }
-      const evt = { ...event, payload: { ...eventPayload(event), ...(appliedAt ? { applied_at: appliedAt, applied_at_precision: precision } : {}) } };
+      const evt = { ...event, payload: { ...eventPayload(event), ...(appliedAt ? { applied_at: appliedAt, applied_at_precision: precision } : {}), interview_scheduled_at: extracted.interview_scheduled_at || eventPayload(event).interview_scheduled_at || null, deadline_at: extracted.deadline_at || eventPayload(event).deadline_at || null } };
       const transition = applyStatusTransition(app, status, evt, { sourceMethod: event.source_method === 'plugin' ? 'plugin' : 'mail', reviewTerminal: false });
       if (!transition.ok) {
         const review = reviewFor({ event, kind: 'status_conflict', reasonCode: transition.review?.reasonCode || 'AI_STATUS_CONFLICT', summary: transition.review?.summary || '状态冲突，请确认', ex: extracted, status, candidates, appliedAt, precision, extracted, judged });
@@ -450,6 +479,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       const after = transition.app;
       finishRun(runRow, { status: 'completed', decision: 'updated', reason_code: 'AI_AUTO_UPDATE', application_id: after.id, before_status: target.status, after_status: after.status });
       run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?", [after.id, nowIso(), event.id, event.owner_id]);
+      resolveSupersededReviews(event.owner_id, after, event);
       return { state: 'applied', application: after, change: transition.changed ? 'updated' : 'unchanged' };
     }
     // 新建：必须有可追溯身份；空白公司/岗位本身不阻止创建。
@@ -461,6 +491,10 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       company_name: extracted.company_name,
       job_title: inferredTitle,
       recruitment_batch: extracted.recruitment_batch,
+      location: extracted.location,
+      round_label: extracted.round_label,
+      interview_scheduled_at: extracted.interview_scheduled_at,
+      deadline_at: extracted.deadline_at,
       site_application_id: extracted.site_application_id,
       job_url: extracted.job_url,
       channel: event.source_method === 'plugin' ? '插件' : '邮件',
@@ -483,6 +517,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
     });
     run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?", [app.id, nowIso(), event.id, event.owner_id]);
     finishRun(runRow, { status: 'completed', decision: 'created', reason_code: 'AI_AUTO_CREATE', application_id: app.id, before_status: null, after_status: app.status });
+    resolveSupersededReviews(event.owner_id, app, event);
     return { state: 'applied', application: app, change: 'created' };
   } catch (err) {
     return retryRun(runRow, event, err);
