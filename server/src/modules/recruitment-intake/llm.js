@@ -8,12 +8,13 @@ const SYSTEM = `你是招聘进展信息提取器，不是聊天助手。只输�
 2. 区分：实际进展(actual_progress)、招聘流程说明(process_description)、广告/推广(advertisement)、转发/历史引用(forwarded_or_historical)、其他(other)。
    “招聘流程包括笔试、面试”“如果你通过会通知”等是流程说明，不是用户已发生的进展；
    但“邀请你参加笔试/测评/面试”“请于某日前完成测评”是已发生的邀请/进展，即使考试尚未进行，也属于 actual_progress。
-3. status 只能是 applied/assessment/interview/offer/rejected/closed/unknown。
+3. 公司可结合主题、正文落款、发件人显示名 from_name 和企业发件域名识别；公共邮箱域名不是公司。收到笔试/测评/面试/录用/拒绝通知即表示用户已投递该岗位，应直接输出对应状态。
+4. status 只能是 applied/assessment/interview/offer/rejected/closed/unknown。
    applied 仅用于明确的投递成功/申请已收到；offer 仅用于明确录用；rejected 仅用于明确未通过/拒绝。
    assessment 指笔试或测评；interview 指面试邀请或已面试。旧邮件、一般招聘宣传、求职建议不算。
-4. event_time 只在原文明确给出日期/时间时填写 ISO 8601；不要用收信时间代替。
-5. evidence 中每条 quote 必须逐字出现在原文中；没有证据就不要写该字段。
-6. 对不确定的地方写入 uncertainties，不要猜。
+5. event_time 只在原文明确给出日期/时间时填写 ISO 8601；不要用收信时间代替。
+6. evidence 中每条 quote 必须逐字出现在原文中；没有证据就不要写该字段。
+7. 对不确定的地方写入 uncertainties，不要猜。
 JSON 结构：
 {
  "is_recruitment": true/false,
@@ -112,12 +113,12 @@ function normalize(raw, sourceText) {
   };
 }
 
-export async function extractRecruitmentSignal({ source, subject = '', bodyText = '', statusText = '', fromDomain = '', receivedAt = '', ruleFields = {} }) {
+export async function extractRecruitmentSignal({ source, subject = '', bodyText = '', statusText = '', fromDomain = '', fromName = '', receivedAt = '', ruleFields = {} }) {
   const sourceText = [subject, statusText, bodyText].filter(Boolean).join('\n');
   const { data, content } = await chatJsonCompletion({
     system: SYSTEM,
     user: JSON.stringify({
-      source, subject, from_domain: fromDomain, received_at: receivedAt,
+      source, subject, from_domain: fromDomain, from_name: fromName, received_at: receivedAt,
       status_text: statusText, body_text: String(bodyText || '').slice(0, 8000),
       rule_extracted: ruleFields
     })

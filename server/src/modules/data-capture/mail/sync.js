@@ -207,10 +207,12 @@ async function runEventPipeline(connection, mailId, eventId, parsed, bodyText, {
   const fields = parsed.fields;
   const event = one('SELECT * FROM events WHERE id = ?', [eventId]);
   event.payload = JSON.parse(event.payload_json);
-  const facts = parsed.confirmed || confirmedMailProgress(parsed.subject, bodyText);
+  const facts = parsed.confirmed || confirmedMailProgress(parsed.subject, bodyText, {
+    fromName: fields.from_name || '', fromDomain: fields.from_domain || ''
+  });
   const result = facts ? recordConfirmedMail(event, facts) : aiCandidate
     ? await processIntakeEvent(event, {
-      bodyText, subject: parsed.subject, fromDomain: fields.from_domain || '',
+      bodyText, subject: parsed.subject, fromDomain: fields.from_domain || '', fromName: fields.from_name || '',
       receivedAt: event.occurred_at, statusText: parsed.classification.category
     })
     : processMailEvent(event);
@@ -265,7 +267,7 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt, 
       } else if (config.autoIntakeEnabled && bodyText.trim()) {
         result = await processIntakeEvent(existingEvent, {
           bodyText, subject: parsed.subject, fromDomain: parsed.fields.from_domain || '',
-          receivedAt: existingEvent.occurred_at, statusText: parsed.classification.category
+          fromName: parsed.fields.from_name || '', receivedAt: existingEvent.occurred_at, statusText: parsed.classification.category
         });
       }
       if (result?.state === 'applied' && result.application?.id) {
@@ -306,10 +308,14 @@ async function ingestMessage(connection, message, parsed, bodyText, receivedAt, 
     job_title: fields.job_title,
     site_application_id: fields.site_application_id,
     from_domain: fields.from_domain,
+    from_name: fields.from_name || null,
     subject_excerpt: publicEvidence({ subject: parsed.subject, bodyText, mode: connection.mode }).subject_excerpt,
     body_excerpt: publicEvidence({ subject: parsed.subject, bodyText, mode: connection.mode }).body_excerpt,
     read_mode: connection.mode,
     body_review_version: connection.mode === 'recruitment_body' ? 1 : 0,
+    company_only_progress: parsed.confirmed?.company_only_progress === true,
+    title_inferred: parsed.confirmed?.title_inferred === true,
+    recruitment_batch: parsed.confirmed?.recruitment_batch || null,
     ai_body_excerpt: normalizeWhitespace(bodyText, 4000) || null,
     round_label: classification.round_label,
     interview_scheduled_at: classification.interview_scheduled_at
@@ -511,7 +517,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
         const classification = classifyRecruitmentMail({
           subject, fromDomain: from.address.split('@')[1] || '', bodyText, mode: fresh.mode
         });
-        const fields = extractMailFields({ subject, bodyText, fromAddress: from.address });
+        const fields = extractMailFields({ subject, bodyText, fromAddress: from.address, fromName: from.name });
         /* D09 第一阶段（2026-10-22）：规则拿不准时（不像招聘邮件 / 类别不明 / 公司名缺失），
            调用 WorkBuddy 云端大模型兜底。LLM 置信度封顶 0.88，结果只进待确认队列，
            永远不会触发 D08 的自动终态；云端失败静默回退纯规则结果。 */
@@ -532,7 +538,7 @@ export async function syncConnection(connectionId, { ownerId = null } = {}) {
           }
         }
         const parsed = { uidvalidity: uidValidity, subject, classification, fields, tentativeHeader,
-          confirmed: confirmedMailProgress(subject, bodyText), backfill: historical.has(message.uid) };
+          confirmed: confirmedMailProgress(subject, bodyText, { fromName: from.name, fromDomain: from.address.split('@')[1] || '' }), backfill: historical.has(message.uid) };
         const ingested = await ingestMessage(fresh, {
           uid: message.uid,
           messageId: message.envelope?.messageId || null

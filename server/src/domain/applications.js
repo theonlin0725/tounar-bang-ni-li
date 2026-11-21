@@ -375,6 +375,12 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
     last_progress_at: changedAt,
     manual_status_at: null
   };
+  if (['assessment', 'interview'].includes(targetStatus)) {
+    const stageRaw = event.payload?.source_received_at || event.occurred_at || eventEvidenceAt(event) || changedAt;
+    const stageReceived = parseIso(stageRaw) || changedAt;
+    updates.stage_received_at = stageRaw;
+    updates.stage_anchor_at = maxIso(stageReceived, targetStatus === 'interview' ? parseIso(event.payload?.interview_scheduled_at) : null);
+  }
   if (!app.applied_at) {
     const appliedAt = eventAppliedAt(event);
     if (appliedAt) {
@@ -823,7 +829,7 @@ export function recordConfirmedMail(event, facts) {
     const match = resolveMailApplication(event.owner_id, fields);
     const target = match.target;
     const conflict = target && ((target.company_name && companyIdentity(target.company_name) !== companyIdentity(facts.company_name))
-      || (target.job_title && !similarJob(target.job_title, facts.job_title)));
+      || (match.reason !== 'single_active_company' && target.job_title && facts.job_title && !similarJob(target.job_title, facts.job_title)));
     if (match.ambiguous || conflict) {
       return { state: 'pending', review: createReviewForEvent(event, {
         kind: 'ambiguous_match', reasonCode: 'MAIL_IDENTITY_CONFLICT', summary: '请核对岗位归属或字段冲突',
@@ -855,7 +861,9 @@ export function recordConfirmedMail(event, facts) {
         [target.id, nowIso(), event.id, event.owner_id]);
       return { state: 'ignored', application: target, change: 'unchanged', reason: 'older_than_current' };
     }
-    if (!target && (!facts.company_name || !facts.job_title || !facts.status)) {
+    const companyOnly = !target && facts.company_only_progress && !facts.job_title
+      && ['applied', 'assessment', 'interview'].includes(facts.status);
+    if (!target && (!facts.company_name || (!facts.job_title && !companyOnly) || !facts.status)) {
       return { state: 'pending', review: createReviewForEvent(event, {
         kind: 'mail_progress', reasonCode: 'AI_IDENTITY_INSUFFICIENT',
         summary: '识别到招聘进展，但公司或岗位身份不足，请确认',
@@ -868,10 +876,19 @@ export function recordConfirmedMail(event, facts) {
     let app = target;
     let change = 'unchanged';
     if (!app) {
+      const inferredTitle = companyOnly
+        ? (facts.recruitment_batch ? `${facts.recruitment_batch}（待补充岗位）` : '待补充岗位')
+        : facts.job_title;
       app = createApplication({ ownerId: event.owner_id, fields: {
-        ...fields, applied_at: at, applied_at_precision: 'inferred_before', channel: '邮件',
+        ...fields, job_title: inferredTitle, applied_at: at, applied_at_precision: 'inferred_before', channel: '邮件',
         round_label: event.payload.round_label, interview_scheduled_at: event.payload.interview_scheduled_at
       }, eventId: event.id, sourceMethod: 'mail', status: facts.status, at });
+      if (companyOnly) {
+        run(`INSERT OR REPLACE INTO application_field_sources
+          (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
+          VALUES (?, ?, 'job_title', 'mail', ?, ?, 'low', 'mail_company_only')`,
+        [app.id, event.owner_id, event.id, nowIso()]);
+      }
       change = 'created';
     } else if ((!app.manual_status_at || at > app.manual_status_at)
       && (!app.last_progress_at || at >= app.last_progress_at)
@@ -900,7 +917,8 @@ export function processMailEvent(event) {
     const stage = stageOfStatus(status);
     const candidates = findProgressCandidates(event.owner_id, fields, { source, stage });
     const classification = Math.max(0, Math.min(1, Number(p.confidence ?? (source === 'plugin' && event.evidence_level === 'strong' ? 0.88 : 0)) || 0));
-    const match = candidates.length === 1 ? candidates[0].confidence : 0.5;
+    const match = candidates.length === 1 ? candidates[0].confidence
+      : (candidates.length === 0 && source === 'mail' && fields.company_name && (fields.job_title || fields.company_only_progress) ? 0.9 : 0.5);
     const total = classification * match;
     if (!status) {
       if (source === 'plugin') return { state: 'pending', review: createReviewForEvent(event, {
@@ -920,6 +938,35 @@ export function processMailEvent(event) {
       kind: 'mail_progress', reasonCode: 'MAIL_MATCH_UNCONFIRMED', summary: '请确认这条招聘进展属于哪条申请',
       ...details, suggested, fields, evidence, progressCandidates: candidates
     }) });
+    // 0 候选不代表身份不足：明确公司 + 岗位（或公司级统一测评）+ 状态时，
+    // 直接建立投递明细，不能把“台账里还没有”误报成“阶段需拆分”。
+    const mailMatch = source === 'mail' ? resolveMailApplication(event.owner_id, fields) : null;
+    const companyOnly = source === 'mail' && !fields.job_title && fields.company_only_progress
+      && ['applied', 'assessment', 'interview'].includes(status);
+    const createThreshold = TERMINAL.has(status) ? config.autoTerminalConfidence : config.autoProgressConfidence;
+    if (source === 'mail' && candidates.length === 0 && !mailMatch?.target && !mailMatch?.ambiguous
+      && fields.company_name && status && (fields.job_title || companyOnly) && total >= createThreshold) {
+      const inferredTitle = companyOnly
+        ? (fields.recruitment_batch ? `${fields.recruitment_batch}（待补充岗位）` : '待补充岗位')
+        : fields.job_title;
+      const created = createApplication({
+        ownerId: event.owner_id,
+        fields: {
+          ...fields, company_name: fields.company_name, job_title: inferredTitle,
+          applied_at: event.occurred_at, applied_at_precision: 'inferred_before', channel: '邮件'
+        },
+        eventId: event.id, sourceMethod: 'mail', status, at: event.occurred_at
+      });
+      if (companyOnly) {
+        run(`INSERT OR REPLACE INTO application_field_sources
+          (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
+          VALUES (?, ?, 'job_title', 'mail', ?, ?, 'low', 'mail_company_only')`,
+        [created.id, event.owner_id, event.id, nowIso()]);
+      }
+      run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?",
+        [created.id, nowIso(), event.id, event.owner_id]);
+      return { state: 'applied', application: created, change: 'created' };
+    }
     if (candidates.length !== 1) {
       if (candidates.length > 1) return review({ kind:'ambiguous_match', reasonCode:'MULTIPLE_APPLICATION_CANDIDATES', summary:'有多条可能的申请，请明确选择' });
       if (stage) return review({ kind:'mail_progress', reasonCode:'STAGE_SPLIT_REQUIRED',

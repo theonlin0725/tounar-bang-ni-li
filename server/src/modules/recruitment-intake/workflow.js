@@ -14,6 +14,7 @@ import { judgeIntake } from './judge.js';
 const STATUS_SET = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected', 'closed']);
 const APPLIED_SET = new Set(['applied', 'assessment', 'interview', 'offer', 'rejected']);
 const TERMINAL_SET = new Set(['offer', 'rejected', 'closed']);
+const STATUS_RANK = { pending: 0, applied: 1, assessment: 2, interview: 3, offer: 4, rejected: 4, closed: 5 };
 
 function sourceAt(event) {
   const p = event.payload || {};
@@ -193,7 +194,7 @@ function statusThreshold(status) {
   return TERMINAL_SET.has(status) ? Math.max(config.autoIntakeMinTerminal, config.autoIntakeMinStatus) : config.autoIntakeMinStatus;
 }
 
-export async function processIntakeEvent(event, { bodyText = '', subject = '', fromDomain = '', statusText = '' } = {}) {
+export async function processIntakeEvent(event, { bodyText = '', subject = '', fromDomain = '', fromName = '', statusText = '' } = {}) {
   if (!config.autoIntakeEnabled) throw new AppError(409, 'AUTO_INTAKE_DISABLED', '自动入账未启用');
   const runRow = startRun(event);
   const p = eventPayload(event);
@@ -209,7 +210,7 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
   try {
     const llm = await extractRecruitmentSignal({
       source: event.source_method || 'mail', subject: subject || p.subject_excerpt || '',
-      fromDomain: fromDomain || p.from_domain || '', statusText: statusText || p.status_text || '',
+      fromDomain: fromDomain || p.from_domain || '', fromName: fromName || p.from_name || '', statusText: statusText || p.status_text || '',
       bodyText: bodyText || p.ai_body_excerpt || p.body_excerpt || '',
       receivedAt: p.source_received_at || event.occurred_at, ruleFields: rules
     });
@@ -311,9 +312,9 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_FIELD_CONFLICT' });
       return { state: 'pending', review };
     }
+    const targetAt = target ? (parseIso(target.manual_status_at) || parseIso(target.last_status_changed_at) || parseIso(target.stage_received_at)) : null;
+    const incomingAt = evidenceAt(event);
     if (target) {
-      const targetAt = parseIso(target.manual_status_at) || parseIso(target.last_status_changed_at) || parseIso(target.stage_received_at);
-      const incomingAt = evidenceAt(event);
       if (target.manual_status_at && incomingAt && Date.parse(incomingAt) <= Date.parse(target.manual_status_at)) {
         finishRun(runRow, { status: 'completed', decision: 'no_change', reason_code: 'AI_MANUAL_PROTECTED', application_id: target.id, before_status: target.status, after_status: target.status });
         run("UPDATE events SET application_id=?, processing_state='ignored', review_reason='AI_MANUAL_PROTECTED', processed_at=? WHERE id=? AND owner_id=?", [target.id, nowIso(), event.id, event.owner_id]);
@@ -377,9 +378,13 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       return { state: 'pending', review };
     }
     if (newness === 'uncertain' && target) {
-      const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_NEWNESS_UNCERTAIN', summary: '无法确认这条进展和现有记录的新旧关系，请确认', ex: extracted, status, candidates, extracted, judged });
-      finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_NEWNESS_UNCERTAIN' });
-      return { state: 'pending', review };
+      const forward = status && (STATUS_RANK[status] ?? 0) > (STATUS_RANK[target.status] ?? 0)
+        && (!targetAt || !incomingAt || Date.parse(incomingAt) >= Date.parse(targetAt));
+      if (!forward) {
+        const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_NEWNESS_UNCERTAIN', summary: '无法确认这条进展和现有记录的新旧关系，请确认', ex: extracted, status, candidates, extracted, judged });
+        finishRun(runRow, { status: 'review', decision: 'review', reason_code: 'AI_NEWNESS_UNCERTAIN' });
+        return { state: 'pending', review };
+      }
     }
     if (!target && chosen === 'no_match' && candidates.length > 0) {
       const review = reviewFor({ event, kind: 'ambiguous_match', reasonCode: 'AI_NO_MATCH_WITH_CANDIDATES', summary: '系统找到相似岗位，但判断不属于其中任何一条，请确认是否新增', ex: extracted, status, candidates, extracted, judged });
@@ -395,8 +400,12 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
         return { state: 'pending', review };
       }
     }
+    const companyOnlyAllowed = source === 'mail' && !target && !extracted.job_title
+      && Boolean(extracted.company_name)
+      && ['applied', 'assessment', 'interview'].includes(status)
+      && judged.actual_progress >= config.autoIntakeMinProgress;
     const identityReady = source === 'mail'
-      ? Boolean(extracted.company_name && extracted.job_title)
+      ? Boolean(extracted.company_name && extracted.job_title) || companyOnlyAllowed
       : identityReliable(extracted);
     if (!target && !identityReady) {
       const review = reviewFor({ event, kind: 'mail_progress', reasonCode: 'AI_IDENTITY_INSUFFICIENT', summary: '识别到招聘进展，但岗位身份不足，请确认', ex: extracted, status, candidates, extracted, judged });
@@ -442,10 +451,13 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       return { state: 'applied', application: after, change: transition.changed ? 'updated' : 'unchanged' };
     }
     // 新建：必须有可追溯身份；空白公司/岗位本身不阻止创建。
+    const inferredTitle = !extracted.job_title && companyOnlyAllowed
+      ? (extracted.recruitment_batch ? `${extracted.recruitment_batch}（待补充岗位）` : '待补充岗位')
+      : extracted.job_title;
     const fields = {
       ...eventPayload(event),
       company_name: extracted.company_name,
-      job_title: extracted.job_title,
+      job_title: inferredTitle,
       recruitment_batch: extracted.recruitment_batch,
       site_application_id: extracted.site_application_id,
       job_url: extracted.job_url,
@@ -454,11 +466,19 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
       applied_at_precision: appliedAt ? precision : undefined
     };
     delete fields.source_mail_id; delete fields.confidence; delete fields.mapped_status;
-    const app = transaction(() => createApplication({
-      ownerId: event.owner_id, fields, eventId: event.id,
-      sourceMethod: event.source_method === 'plugin' ? 'plugin' : 'mail',
-      status, at
-    }));
+    const app = transaction(() => {
+      const created = createApplication({
+        ownerId: event.owner_id, fields, eventId: event.id,
+        sourceMethod: event.source_method === 'plugin' ? 'plugin' : 'mail',
+        status, at
+      });
+      if (!extracted.job_title && companyOnlyAllowed) {
+        run(`INSERT OR REPLACE INTO application_field_sources
+          (application_id, owner_id, field, source_method, event_id, updated_at, confidence, source_detail)
+          VALUES (?, ?, 'job_title', 'mail', ?, ?, 'low', 'mail_company_only')`, [created.id, event.owner_id, event.id, nowIso()]);
+      }
+      return created;
+    });
     run("UPDATE events SET application_id=?, processing_state='applied', review_reason=NULL, processed_at=? WHERE id=? AND owner_id=?", [app.id, nowIso(), event.id, event.owner_id]);
     finishRun(runRow, { status: 'completed', decision: 'created', reason_code: 'AI_AUTO_CREATE', application_id: app.id, before_status: null, after_status: app.status });
     return { state: 'applied', application: app, change: 'created' };
@@ -484,7 +504,7 @@ export async function retryPendingIntakes(limit = 10) {
     try {
       results.push(await processIntakeEvent(event, {
         subject: event.payload.subject_excerpt || '', statusText: event.payload.status_text || '',
-        fromDomain: event.payload.from_domain || '', bodyText: event.payload.ai_body_excerpt || event.payload.body_excerpt || ''
+        fromDomain: event.payload.from_domain || '', fromName: event.payload.from_name || '', bodyText: event.payload.ai_body_excerpt || event.payload.body_excerpt || ''
       }));
     } catch (err) {
       results.push({ state: 'retry', error: err?.code || err?.message });

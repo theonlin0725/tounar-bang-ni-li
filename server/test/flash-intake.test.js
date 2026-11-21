@@ -49,6 +49,12 @@ before(async () => {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '多岗位科技', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/新机会/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '新机会科技', job_title: '后端实习生', status: 'interview', evidence: [{ field: 'status', quote: '面试邀请' }], uncertainties: [] };
+      } else if (/单活跃公司/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '单活跃公司', job_title: null, recruitment_batch: '2027届校招', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/歧义公司/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '歧义公司', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/公司级测评/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '网易', job_title: null, recruitment_batch: '2027届校招', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/确认科技/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '确认科技', job_title: '确认岗位', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else {
@@ -171,6 +177,37 @@ it('人工确认复用 Flash 判断与服务端归属，不依赖 Jev', async ()
   assert.equal(res.analysis.judge_mode, 'flash');
   assert.equal(res.trace.jev.via, 'flash');
   assert.equal(db.one('SELECT status FROM applications WHERE id=?', [target.id]).status, 'assessment');
+});
+
+it('公司级统一测评邮件无岗位名：无台账时自动建账，名称低置信度可覆盖', async () => {
+  const e = event('公司级测评：网易 2027届校招测评邀请，请完成在线测评。', { company: '网易' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.change, 'created');
+  assert.equal(result.application.company_name, '网易');
+  assert.match(result.application.job_title, /待补充岗位/);
+  const source = db.one("SELECT confidence,source_detail FROM application_field_sources WHERE application_id=? AND field='job_title'", [result.application.id]);
+  assert.equal(source.confidence, 'low');
+  assert.equal(source.source_detail, 'mail_company_only');
+});
+
+it('公司级统一测评邮件命中唯一未终态同公司记录：原地升级不新建', async () => {
+  const target = app('单活跃公司', '游戏策划', 'pending');
+  const e = event('公司级测评：单活跃公司校招测评邀请，请完成在线测评。', { company: '单活跃公司' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'applied', JSON.stringify(result));
+  assert.equal(result.application.id, target.id);
+  assert.equal(db.one('SELECT status FROM applications WHERE id=?', [target.id]).status, 'assessment');
+  assert.equal(db.one('SELECT has_applied FROM applications WHERE id=?', [target.id]).has_applied, 1);
+});
+
+it('同公司已有两个未终态岗位时，公司级无岗位名测评仍进待确认', async () => {
+  app('歧义公司', '岗位A', 'applied');
+  app('歧义公司', '岗位B', 'applied');
+  const e = event('公司级测评：歧义公司测评邀请，请完成在线测评。', { company: '歧义公司' });
+  const result = await workflow.processIntakeEvent(payload(e));
+  assert.equal(result.state, 'pending', JSON.stringify(result));
+  assert.equal(result.review.reason_code, 'AI_COMPANY_ONLY');
 });
 
 it('邮件与插件判断开关相互独立', () => {

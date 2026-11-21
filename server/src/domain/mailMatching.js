@@ -6,7 +6,7 @@ const COMPANIES = [
   ['阿里巴巴',['阿里巴巴','阿里','alibaba','淘宝','天猫','阿里云'],['alibaba.com','alibaba-inc.com','aliyun.com']],
   ['美团',['美团','meituan'],['meituan.com']],['京东',['京东','jd','jingdong'],['jd.com']],
   ['小米',['小米','xiaomi'],['xiaomi.com']],['百度',['百度','baidu'],['baidu.com']],
-  ['网易',['网易','netease'],['service.netease.com','corp.netease.com','netease.com']]
+  ['网易',['网易','netease'],['service.netease.com','corp.netease.com','netease.com','campus.163.com','hr.163.com']]
 ];
 const tidy=s=>String(s||'').toLowerCase().replace(/[\s·•,.，。()（）]/g,'').replace(/(?:股份)?有限公司$|集团$|校园招聘$|招聘$/g,'');
 export function companyIdentity(name, domain='') {
@@ -43,6 +43,10 @@ export function findProgressCandidates(ownerId, fields, { source='mail', stage: 
   if(!company)return [];
   const same=rows.filter(a=>companyIdentity(a.company_name)===company);
   const similar=same.filter(a=>similarJob(a.job_title,fields.job_title));
+  if(similar.length===0 && source==='mail' && fields.job_title){
+    // 同公司的新岗位不是“公司歧义”：交给调用方按新岗位新建。
+    return [];
+  }
   if(similar.length){
     const stage=fields.stage||stageOption||null;
     if(stage){
@@ -84,12 +88,24 @@ export function resolveMailApplication(ownerId, fields = {}) {
   if (!company) return { target: null, candidates: [], ambiguous: false, reason: 'none' };
   const sameCompany = rows.filter((a) => companyIdentity(a.company_name) === company);
   if (!fields.job_title) {
-    return {
-      target: null,
-      candidates: sameCompany.map((a) => asCandidate(a, 'company_only', 0.4)),
-      ambiguous: sameCompany.length > 0,
-      reason: sameCompany.length ? 'company_only' : 'none'
-    };
+    const active = sameCompany.filter((a) => !TERMINAL.has(a.status));
+    if (active.length === 1) {
+      return {
+        target: active[0],
+        candidates: [asCandidate(active[0], 'single_active_company', 0.85)],
+        ambiguous: false,
+        reason: 'single_active_company'
+      };
+    }
+    if (active.length >= 2) {
+      return {
+        target: null,
+        candidates: active.map((a) => asCandidate(a, 'company_only', 0.5)),
+        ambiguous: true,
+        reason: 'company_only'
+      };
+    }
+    return { target: null, candidates: [], ambiguous: false, reason: 'none' };
   }
   const sameJob = sameCompany.filter((a) => similarJob(a.job_title, fields.job_title));
   if (fields.recruitment_batch) {
@@ -108,11 +124,6 @@ export function resolveMailApplication(ownerId, fields = {}) {
   }
   if (sameJob.length === 1) return { target: sameJob[0], candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: false, reason: 'company_title' };
   if (sameJob.length > 1) return { target: null, candidates: sameJob.map((a) => asCandidate(a, 'company_title', 0.9)), ambiguous: true, reason: 'company_title' };
-  // 公司命中但没有岗位证据：绝不自动挑一条，全部交人工。
-  return {
-    target: null,
-    candidates: sameCompany.map((a) => asCandidate(a, 'company_only', 0.4)),
-    ambiguous: sameCompany.length > 0,
-    reason: sameCompany.length ? 'company_only' : 'none'
-  };
+  // 同公司但没有当前岗位：这是一条新岗位线索，交给上游自动新建；不能把其他岗位误当候选。
+  return { target: null, candidates: [], ambiguous: false, reason: 'new_job_same_company' };
 }

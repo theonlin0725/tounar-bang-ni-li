@@ -82,7 +82,7 @@ describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失�
       const uniqueCount = encoderForTest().firstScanProcessedCount(connection.id, 'test-uid-validity', 1);
       console.log(JSON.stringify({
         ingested: Boolean(result.event || result.mail), duplicate: duplicate.duplicate === true,
-        recovered: recovered.recovered === true && Boolean(recovered.result?.review),
+        recovered: recovered.recovered === true && recovered.result?.state === 'applied',
         duplicate_after_recovery: duplicateAfterRecovery.duplicate === true && duplicateAfterRecovery.recovered !== true,
         review_count: Number(reviewCount), unique_first_scan_processed: Number(uniqueCount)
       }));
@@ -93,7 +93,7 @@ describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失�
     });
     assert.deepEqual(JSON.parse(stdout.trim().split('\n').at(-1)), {
       ingested: true, duplicate: true, recovered: true, duplicate_after_recovery: true,
-      review_count: 1, unique_first_scan_processed: 1
+      review_count: 0, unique_first_scan_processed: 1
     });
   });
 
@@ -179,6 +179,76 @@ describe('招聘邮箱只读连接生命周期（无真实 IMAP：只验证失�
     assert.equal(result.has_applied, 1);
     assert.equal(result.review_after, 'resolved');
     assert.equal(result.mail_state, 'applied');
+  });
+
+  it('D3 离线 processMailEvent 0 候选时也能自动建立投递明细', async () => {
+    const script = `
+      import { one } from './server/src/db.js';
+      import { processMailEvent } from './server/src/domain/applications.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      const owner = connection.owner_id;
+      const event = { id: 'evt_offline_auto_create', owner_id: owner, source_method: 'mail', occurred_at: '2026-11-03T00:00:00Z',
+        payload: { company_name: '离线自动公司', job_title: '后端实习生', mapped_status: 'assessment',
+          status_text: '在线测评', confidence: 0.94, source_received_at: '2026-11-03T00:00:00Z', from_domain: 'hr.example.com' } };
+      const result = processMailEvent(event);
+      const app = one("SELECT * FROM applications WHERE owner_id=? AND company_name='离线自动公司'", [owner]);
+      console.log(JSON.stringify({ state: result.state, created: result.change, status: app?.status || null, has_applied: Number(app?.has_applied || 0) }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(result.state, 'applied');
+    assert.equal(result.created, 'created');
+    assert.equal(result.status, 'assessment');
+    assert.equal(result.has_applied, 1);
+  });
+
+  it('同公司新岗位不误判歧义；单活跃公司可推进；多活跃才待确认', async () => {
+    const script = `
+      import { one } from './server/src/db.js';
+      import { createApplication, recordConfirmedMail } from './server/src/domain/applications.js';
+      import { resolveMailApplication } from './server/src/domain/mailMatching.js';
+      const connection = one("SELECT * FROM mail_connections WHERE status <> 'disconnected' ORDER BY created_at LIMIT 1");
+      const owner = connection.owner_id;
+      const make = (company, title, status='pending') => createApplication({ ownerId: owner, sourceMethod: 'manual', status,
+        fields: { company_name: company, job_title: title, applied_at: '2026-10-01T00:00:00Z', applied_at_precision: 'date' }, at: '2026-10-01T00:00:00Z' });
+      const a = make('路由公司', '游戏策划');
+      const newJob = resolveMailApplication(owner, { company_name: '路由公司', job_title: '产品经理' });
+      const single = resolveMailApplication(owner, { company_name: '路由公司' });
+      const b = make('路由公司', '数据分析');
+      const multi = resolveMailApplication(owner, { company_name: '路由公司' });
+      const pending = make('单活跃公司', '游戏策划', 'pending');
+      const event = { id: 'evt_company_only_upgrade', owner_id: owner, occurred_at: '2026-11-02T00:00:00Z',
+        payload: { from_domain: 'hr.example.com', subject_excerpt: '测评邀请', body_excerpt: '请完成测评' } };
+      const upgrade = recordConfirmedMail(event, { company_name: '单活跃公司', job_title: null, company_only_progress: true, status: 'assessment' });
+      const upgraded = one('SELECT status,has_applied,stage_received_at,stage_anchor_at FROM applications WHERE id=?', [pending.id]);
+      console.log(JSON.stringify({ new_job_reason: newJob.reason, new_job_target: Boolean(newJob.target), new_job_ambiguous: newJob.ambiguous,
+        single_reason: single.reason, single_target: single.target?.id === a.id,
+        multi_ambiguous: multi.ambiguous, multi_target: Boolean(multi.target),
+        upgrade_state: upgrade.state, upgrade_id: upgrade.application?.id === pending.id,
+        upgraded_status: upgraded?.status, upgraded_has_applied: Number(upgraded?.has_applied || 0),
+        stage_received: Boolean(upgraded?.stage_received_at), stage_anchor: Boolean(upgraded?.stage_anchor_at) }));
+    `;
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: fileURLToPath(new URL('../..', import.meta.url)),
+      env: { ...process.env, DATA_DIR: server.dir, APP_ENV: 'test', CLOUD_LLM_ENABLED: 'false', AUTO_INTAKE_ENABLED: 'false' }
+    });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1));
+    assert.equal(result.new_job_reason, 'new_job_same_company');
+    assert.equal(result.new_job_target, false);
+    assert.equal(result.new_job_ambiguous, false);
+    assert.equal(result.single_reason, 'single_active_company');
+    assert.equal(result.single_target, true);
+    assert.equal(result.multi_ambiguous, true);
+    assert.equal(result.multi_target, false);
+    assert.equal(result.upgrade_state, 'applied');
+    assert.equal(result.upgrade_id, true);
+    assert.equal(result.upgraded_status, 'assessment');
+    assert.equal(result.upgraded_has_applied, 1);
+    assert.equal(result.stage_received, true);
+    assert.equal(result.stage_anchor, true);
   });
 
   it('相似岗位名命中后按同一流程推进，不因严格标题不等误报冲突', async () => {
@@ -424,6 +494,28 @@ describe('邮件解析纯函数（fixtures 单测，不访问网络）', () => {
     });
     assert.equal(missing.company_name, null);
     assert.equal(missing.job_title, null);
+  });
+
+  it('S1/S2/S4：页脚免责声明不误杀，中文自然语言岗位与公司级无岗位名可提取', () => {
+    const body = '您好，感谢您应聘网易「游戏策划」岗位，请于11月25日前完成测评。如您已取消应聘请忽略。\\n招聘流程：网申→测评→面试';
+    const s1 = confirmedMailProgress('【网易】2027届校招在线测评通知', body, {
+      fromName: '网易校园招聘', fromDomain: 'service.netease.com'
+    });
+    assert.equal(s1.company_name, '网易');
+    assert.equal(s1.job_title, '游戏策划');
+    assert.equal(s1.status, 'assessment');
+    assert.equal(s1.recruitment_batch, '2027届校招');
+    const s2 = confirmedMailProgress('【网易】2027届校招线上测评通知', '请于 11 月 25 日前完成综合素质测评', {
+      fromName: '网易校园招聘', fromDomain: 'service.netease.com'
+    });
+    assert.equal(s2.company_name, '网易');
+    assert.equal(s2.job_title, null);
+    assert.equal(s2.company_only_progress, true);
+    const s4 = confirmedMailProgress('【网易】产品经理在线测评通知', '请于 11 月 25 日前完成测评', {
+      fromName: '网易招聘', fromDomain: 'service.netease.com'
+    });
+    assert.equal(s4.job_title, '产品经理');
+    assert.equal(s4.company_only_progress, undefined);
   });
 
   it('离线强规则只接受明确个人进展，忽略转发/流程/条件句', () => {
