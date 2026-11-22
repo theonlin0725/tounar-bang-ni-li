@@ -1,0 +1,87 @@
+# 帮你理 Tounar 文档索引
+
+**当前版本**：v1.0.0（本地自测稳定版）  
+**插件版本**：0.2.11  
+**更新日期**：2026-11-22
+
+> `docs/` 保留了项目从 beta 到 v1.0.0 的过程记录。历史文档默认保留原路径，不移动、不删除，避免破坏测试引用和旧链接。新同学从本页「当前使用」开始即可。
+
+---
+
+## 1. 当前使用（先读这些）
+
+| 文档 | 内容 |
+|---|---|
+| [README](../README.md) | 项目定位、功能、快速启动、产品自测与边界 |
+| [SELF-TEST-GUIDE-V1.0.0](SELF-TEST-GUIDE-V1.0.0.md) | 产品同学 4 大模块 (a)(b)(c)(d) 逐步自测 |
+| [AI-DEPLOY-AND-TEST-RUNBOOK](AI-DEPLOY-AND-TEST-RUNBOOK.md) | AI 助手部署、环境预检、隔离启动、自动回归与排障 |
+| [RELEASE-V1.0.0-AUDIT-RESULT-20261122](RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) | v1.0.0 版本、回归、产物与已知边界 |
+| [MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122](MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md) | 44 封邮件全链路泛化基准结果 |
+| [DECISIONS-D01-D13](DECISIONS-D01-D13.md) | 产品决策与冻结口径 |
+| [REQUIREMENTS-TRACEABILITY](REQUIREMENTS-TRACEABILITY.md) | 需求追踪矩阵 |
+| [CURRENT-WORK-STATUS](CURRENT-WORK-STATUS.md) | 历史工作状态参考（以 v1.0.0 验收记录为准） |
+
+---
+
+## 2. 架构与模块说明
+
+| 文档 | 内容 |
+|---|---|
+| [AUTO-INTAKE-WORKFLOW](AUTO-INTAKE-WORKFLOW.md) | 邮件/插件事件 → 模型判断 → 服务端校验 → 台账/待确认 |
+| [MAIL-CAPTURE-AND-STATUS-RESULT-20261121](MAIL-CAPTURE-AND-STATUS-RESULT-20261121.md) | 多邮箱、实时进度、自动入账整体交付 |
+| [MAIL-AUTO-LEDGER-UPGRADE-RESULT-20261121](MAIL-AUTO-LEDGER-UPGRADE-RESULT-20261121.md) | 自动建账、同公司归属与待确认互斥 |
+| [MAIL-STAGE-SYNC-FIX-20261121](MAIL-STAGE-SYNC-FIX-20261121.md) | 终态冲突、单封异常隔离与同步游标修复 |
+| [MAIL-E2E-GENERALIZATION-BENCHMARK-PLAN-20261122](MAIL-E2E-GENERALIZATION-BENCHMARK-PLAN-20261122.md) | 本地 SMTP/IMAP 基准设计与评分约束 |
+| [LEDGER-FRONTEND-REDESIGN-PLAN-20261122](LEDGER-FRONTEND-REDESIGN-PLAN-20261122.md) | 台账 5 列、状态色块、天数与移动端设计 |
+| [SIDEBAR-AND-RESUME-MATCH-ACCEPTANCE-20261120](SIDEBAR-AND-RESUME-MATCH-ACCEPTANCE-20261120.md) | 侧栏、简历库、单岗匹配验收 |
+| [CAREER-AI-IMPLEMENTATION](CAREER-AI-IMPLEMENTATION.md) | 简历上传、分析、六维匹配与面试题实现 |
+| [data-capture README](../server/src/modules/data-capture/README.md) | 插件采集/邮件抓取模块 |
+| [career-ai README](../server/src/modules/career-ai/README.md) | 简历与 AI 分析模块 |
+| [mail-push README](../server/src/modules/mail-push/README.md) | 提醒与邮件投递模块 |
+| [web README](../web/README.md) | 前端结构与本地运行 |
+
+---
+
+## 3. v1.0.0 交付与验收
+
+| 文档 | 内容 |
+|---|---|
+| [RELEASE-V1.0.0-AUDIT-RESULT-20261122](RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) | 封板验收总记录 |
+| [V1.0.0-RELEASE-AUDIT-AND-FREEZE-PLAN-20261122](V1.0.0-RELEASE-AUDIT-AND-FREEZE-PLAN-20261122.md) | 封板审查项与发布流程 |
+| [MAIL-GENERALIZATION-AND-STATUS-UPDATE-REFINEMENT-RESULT-20261122](MAIL-GENERALIZATION-AND-STATUS-UPDATE-REFINEMENT-RESULT-20261122.md) | 跨阶段轮次、证据门禁、基准真实性收口 |
+| [MAIL-LLM-GENERALIZATION-AND-LEDGER-REDESIGN-RESULT-20261122](MAIL-LLM-GENERALIZATION-AND-LEDGER-REDESIGN-RESULT-20261122.md) | 邮件泛化与台账改版总结果 |
+| [GITHUB-V1.0.0-STABILITY-AUDIT-AND-RESTRUCTURE-PLAN-20261122](GITHUB-V1.0.0-STABILITY-AUDIT-AND-RESTRUCTURE-PLAN-20261122.md) | GitHub 门面与分支改造方案 |
+| [SIDEBAR-AND-RESUME-MATCH-RESULT-20261120](SIDEBAR-AND-RESUME-MATCH-RESULT-20261120.md) | 侧栏/匹配改造结果 |
+| [MAIL-SELFTEST-GUIDE](MAIL-SELFTEST-GUIDE.md) | 邮箱自测辅助说明 |
+| [LOCAL-ACCEPTANCE-CHECKLIST](LOCAL-ACCEPTANCE-CHECKLIST.md) | 本机验收清单 |
+| [REAL-DATA-ACCEPTANCE](REAL-DATA-ACCEPTANCE.md) | 真实数据隔离验收原则 |
+
+---
+
+## 4. 部署与运维
+
+| 文档 | 内容 |
+|---|---|
+| [DEPLOY](DEPLOY.md) | 部署基础说明 |
+| [DEPLOY-PHASE3-RUNBOOK](DEPLOY-PHASE3-RUNBOOK.md) | Phase 3 部署步骤 |
+| [DEPLOY-LIVE-VERIFICATION](DEPLOY-LIVE-VERIFICATION.md) | 线上验证记录（历史） |
+| [LOCAL-AGENT-HANDOFF](LOCAL-AGENT-HANDOFF.md) | 本机接手/环境说明（历史入口） |
+| [PHASE3-P1-LOCAL-ACCESS](PHASE3-P1-LOCAL-ACCESS.md) | 本地访问与端口 |
+| [PHASE3-P2-REAL-DATA](PHASE3-P2-REAL-DATA.md) | 真实数据接入 |
+| [PHASE3-P3-P4-STATUS](PHASE3-P3-P4-STATUS.md) | Phase 3/4 状态 |
+| [BETA-PLUGIN-INSTALL](BETA-PLUGIN-INSTALL.md) | 插件安装旧版说明（版本以 README 为准） |
+
+---
+
+## 5. 历史评审与开发记录（保留原路径）
+
+以下为 beta/阶段开发过程中的记录，可能包含已过期的版本号、旧 UI 描述或当时未完成项。**不作为 v1.0.0 当前行为依据**：
+
+- 交付与阶段：`DELIVERY-REPORT.md`、`PHASE2-DELIVERY.md`、`PHASE2-ACCEPTANCE.md`、`PHASE2-RELEASE-PLAN.md`、`PROJECT-PROGRESS-20261026.md`、`LOCAL-VERIFICATION.md`
+- 插件与采集：`PLUGIN-*.md`、`SELF-CAPTURE-*.md`、`SITE-ADAPTER-EVIDENCE.md`、`RECRUITMENT-DIRECTORY-REVIEW.md`、`RECRUITMENT-URL-FIX-20261118.md`、`CAMPUS-*.md`
+- 邮件/自动入账：`MAIL-*-PLAN-*.md`、`MAIL-*-RESULT-*.md`、`MAIL-INTAKE-REPAIR-*.md`、`MAIL-ADMIN-IMPLEMENTATION.md`、`MAIL-STAGE-RULES.md`
+- 前端/匹配：`FRONTEND-*.md`、`CAPTURE-AND-MATCH-*.md`、`SIDEBAR-*.md`、`JD-MODEL-LOCAL-REVIEW.md`
+- 决策/契约：`C1-A1-CONTRACT.md`、`CONFIRM-INTAKE-WORKFLOW-20261101.md`、`HISTORICAL-FIELD-REPAIR-20261101.md`
+- 评审与自测证据：`review/`、`acceptance/`、`evidence/`、`dify/`
+
+未在本页逐条列出的历史文件仍保留在 `docs/` 原位置；需要追溯时可直接搜索文件名或 `git log -- docs/`。`.tmp/` 下的报告/截图/日志属于本地证据，不进入仓库。
