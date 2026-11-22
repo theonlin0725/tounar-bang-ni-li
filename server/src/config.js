@@ -57,7 +57,7 @@ export const config = {
   // 不设置则完全不影响本机与普通域名。
   shareCode: process.env.SHARE_CODE || '',
   appEnv: process.env.APP_ENV || 'development',
-  appVersion: process.env.APP_VERSION || 'phase3-20261024e',
+  appVersion: process.env.APP_VERSION || '1.0.0',
   allowedEmails,
   adminEmails: new Set((process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
   testMailRecipients: new Set((process.env.TEST_MAIL_RECIPIENTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
