@@ -4,6 +4,7 @@ import { api, errorText } from '../api.js';
 import { isStale } from '../app.js?v=20261120-1';
 import { h, clear, toast, fmtDateTime, openModal, idemKey, debounce } from '../util.js';
 import { openDetail } from './detail.js?v=20261120-1';
+import { renderResumeRewrite } from './resume-rewrite.js';
 
 const MATCH_LABELS = { high: '相对匹配高', medium: '相对匹配中', low: '相对匹配低', insufficient: '资料不足' };
 const MATCH_CLASS = { high: 'ok', medium: 'warn', low: 'muted', insufficient: 'muted' };
@@ -62,7 +63,7 @@ function external(url, label = '打开原岗位') {
   return h('a', { class: 'tn-btn tn-btn-sm', href: url, target: '_blank', rel: 'noopener noreferrer', text: label });
 }
 
-export async function renderCareer(container, { gen, applicationId = null, section = null, reportId = null } = {}) {
+export async function renderCareer(container, { gen, applicationId = null, section = null, reportId = null, draftId = null } = {}) {
   const root = h('div', { class: 'tn-career', 'data-test': 'career-view' });
   container.append(root);
   let resume = null;
@@ -77,6 +78,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
   let resumeRequests = 0;
   let analyzingResumeIds = new Set();
   let status = null;
+  let profile = null;
   let busy = false;
   let recommendation = null;
   let matchApps = [];
@@ -97,11 +99,13 @@ export async function renderCareer(container, { gen, applicationId = null, secti
   let resumeSuggestionsOpen = false;
   const active = () => !isStale(gen) && root.isConnected;
   const showingResume = section === 'resume';
+  const showingRewrite = section === 'rewrite';
   const aiNotice = h('div', { class: 'tn-ai-notice', 'data-test': 'ai-status' });
-  const matchSection = h('section', { class: 'tn-ai-card tn-match-card', 'data-test': 'match-section', id: 'tn-match-section', hidden: showingResume });
+  const matchSection = h('section', { class: 'tn-ai-card tn-match-card', 'data-test': 'match-section', id: 'tn-match-section', hidden: showingResume || showingRewrite });
   const resumeSection = h('section', { class: 'tn-ai-card', 'data-test': 'resume-section', id: 'tn-resume-section', hidden: !showingResume });
-  const recommendSection = h('section', { class: 'tn-ai-card', 'data-test': 'recommend-section', id: 'tn-recommend-section', hidden: showingResume });
-  root.append(aiNotice, matchSection, resumeSection, recommendSection);
+  const recommendSection = h('section', { class: 'tn-ai-card', 'data-test': 'recommend-section', id: 'tn-recommend-section', hidden: showingResume || showingRewrite });
+  const rewriteSection = h('section', { class: 'tn-ai-card tn-rewrite-section', 'data-test': 'rewrite-section', id: 'tn-rewrite-section', hidden: !showingRewrite });
+  root.append(aiNotice, matchSection, resumeSection, recommendSection, rewriteSection);
 
   function setBusy(value) {
     busy = value;
@@ -166,16 +170,23 @@ export async function renderCareer(container, { gen, applicationId = null, secti
 
   async function load() {
     try {
-      const [statusRes, currentRes, listRes] = await Promise.all([
-        api.get('/api/v1/ai/status'), api.get('/api/v1/resumes/current'), api.get('/api/v1/resumes?limit=20')
+      const [statusRes, currentRes, listRes, profileRes] = await Promise.all([
+        api.get('/api/v1/ai/status'), api.get('/api/v1/resumes/current'), api.get('/api/v1/resumes?limit=20'),
+        api.get('/api/v1/profile')
       ]);
       if (!active()) return;
       status = statusRes.data;
       resume = currentRes.data;
       versions = listRes.data || [];
+      profile = profileRes.data?.profile || null;
       resumeNextCursor = listRes.page?.next_cursor || null;
       resumeHasMore = !!listRes.page?.has_more;
       renderNotice();
+      if (showingRewrite) {
+        rewriteSection.hidden = false;
+        await renderResumeRewrite(rewriteSection, { gen, applicationId, draftId });
+        return;
+      }
       await loadMatchApps({ reset: true });
       if (!active()) return;
       renderResume();
@@ -227,6 +238,61 @@ export async function renderCareer(container, { gen, applicationId = null, secti
     );
   }
 
+  function profileStatusLabel() {
+    return profile?.status === 'confirmed' ? '已确认画像' : '未建立画像';
+  }
+  function openProfileEditor() {
+    const field = (label, key, value, placeholder = '') => {
+      const input = h('input', { class: 'tn-input', value: value || '', placeholder, 'data-test': `profile-${key}` });
+      return { key, input, node: h('label', { class: 'tn-profile-field' }, h('span', { text: label }), input) };
+    };
+    const direction = field('职业发展方向', 'career_direction', profile?.career_direction, '产品经理 / 数据分析 / AI 产品');
+    const locations = field('期望地点（用顿号或逗号分隔）', 'preferred_locations', (profile?.preferred_locations || []).join('、'), '上海、深圳');
+    const industries = field('行业偏好', 'industry_preferences', (profile?.industry_preferences || []).join('、'), '互联网、金融科技');
+    const companies = field('企业偏好', 'company_preferences', (profile?.company_preferences || []).join('、'), '大厂、外企、成长型公司');
+    const salary = field('薪资期望', 'salary_expectation', profile?.salary_expectation, '月薪 20k–25k / 年包 30w+');
+    const mode = field('工作方式', 'work_mode', profile?.work_mode, '线下面对面 / 混合办公 / 远程');
+    const fields = [direction, locations, industries, companies, salary, mode];
+    const form = h('div', { class: 'tn-profile-form' }, ...fields.map((item) => item.node));
+    const save = h('button', { class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'profile-save', text: '保存并确认画像', onclick: async () => {
+      save.disabled = true;
+      const body = {};
+      for (const item of fields) {
+        const value = item.input.value.trim();
+        if (['preferred_locations', 'industry_preferences', 'company_preferences'].includes(item.key)) body[item.key] = value.split(/[、,，;；\n]/).map((x) => x.trim()).filter(Boolean);
+        else body[item.key] = value;
+      }
+      try {
+        const response = await api.put('/api/v1/profile', { ...body, status: 'confirmed' }, { idempotencyKey: idemKey('profile') });
+        profile = response.data?.profile || profile;
+        handle.close();
+        renderMatch();
+        toast('求职画像已保存，后续匹配会参考这些偏好', 'ok');
+      } catch (error) {
+        save.disabled = false;
+        toast('画像保存失败：' + errorText(error), 'err');
+      }
+    } });
+    const handle = openModal({
+      title: '编辑求职画像', subtitle: '确认后写入匹配分析上下文；不会把模型推测当成偏好',
+      testid: 'profile-editor',
+      body: h('div', {}, h('p', { class: 'tn-small tn-muted', text: '可以只填目前明确的维度，其余留空。' }), form),
+      footer: h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '取消', onclick: () => handle.close() }), save)
+    });
+  }
+  function renderProfileCard() {
+    const confirmed = profile?.status === 'confirmed';
+    return h('section', { class: 'tn-profile-card', 'data-test': 'career-profile-card' },
+      h('div', { class: 'tn-profile-card-main' },
+        h('div', { class: 'tn-profile-card-head' }, h('span', { class: 'tn-ai-card-kicker', text: '求职画像' }),
+          h('span', { class: `tn-state-pill ${confirmed ? 'state-ok' : 'state-warn'}`, text: profileStatusLabel() })),
+        h('strong', { text: confirmed ? (profile.summary_text || '已确认求职偏好') : '还没有确认求职画像' }),
+        h('div', { class: 'tn-small tn-muted', text: confirmed ? [profile.career_direction, profile.preferred_locations?.join('/'), profile.salary_expectation, profile.work_mode].filter(Boolean).join(' · ') : '完成画像后，六维匹配会结合地点、薪资、行业、企业类型与工作方式偏好。' })),
+      h('div', { class: 'tn-profile-card-actions' },
+        h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'profile-edit', text: confirmed ? '编辑画像' : '手动填写', onclick: openProfileEditor }),
+        h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'profile-ai', href: '/?panel=assistant&onboarding=profile', text: '用 AI 助手梳理' }))
+    );
+  }
   function renderMatch() {
     const wasSearchFocused = document.activeElement?.getAttribute('data-test') === 'match-app-search';
     const searchCaret = wasSearchFocused ? document.activeElement.selectionStart : null;
@@ -237,6 +303,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       h('div', {}, h('h2', { text: '单岗位匹配分析' }),
         h('p', { class: 'tn-small tn-muted', style: { margin: '4px 0 0' }, text: '帮你选择合适的岗位' }))
     ));
+    matchSection.append(renderProfileCard());
     const search = h('input', {
       class: 'tn-input tn-match-search', type: 'search', value: matchAppQuery,
       placeholder: '搜索公司 / 岗位 / 城市 / 批次', 'data-test': 'match-app-search',
@@ -593,6 +660,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-interview', text: interview?.status === 'running' ? '生成中…' : '生成面试问题', disabled: interview?.status === 'running', onclick: runInterviewQuestions }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-detail', text: '查看岗位详情', onclick: () => openDetail(report.result?.job?.application_id || matchAppId, { gen, onChanged: () => loadMatchAppsOnly() }) }),
       h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-ask-assistant', href: `/?panel=assistant&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}&resume=${encodeURIComponent(report.result?.resume?.id || resume?.id || '')}`, text: '问 AI 助手' }),
+      h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-open-rewrite', href: `/?panel=career&section=rewrite&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}`, text: '按 JD 改写简历' }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-rerun-action', text: '重新运行匹配分析', disabled: matchBusy, onclick: () => runMatch({ parent: report.id }) })
     );
     wrap.append(actions);
@@ -870,7 +938,8 @@ export async function renderCareer(container, { gen, applicationId = null, secti
   function currentVersionActions(v) {
     return h('div', { class: 'tn-action-row' },
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'resume-analyze', text: analyzingResumeIds.has(v.id) ? '分析中…' : (v.status === 'failed' ? '重试分析' : '重新分析'), disabled: analyzingResumeIds.has(v.id), onclick: () => analyzeResume(v.id, { force: true }) }),
-      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'resume-edit', text: '修正文本', onclick: () => startResumeEdit(v.id) })
+      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'resume-edit', text: '修正文本', onclick: () => startResumeEdit(v.id) }),
+      h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'resume-export-docx', href: `/api/v1/resumes/${encodeURIComponent(v.id)}/export.docx`, text: '下载 Word' })
     );
   }
   function versionRow(v) {
@@ -883,6 +952,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
         h('div', { class: 'tn-tiny tn-faint', text: `版本 ID：${v.id}` })),
       h('div', { class: 'tn-resume-version-actions' },
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'resume-version-view', text: resumePreviewId === v.id ? '返回当前' : '查看', onclick: () => resumePreviewId === v.id ? closeResumePreview() : loadResumePreview(v.id) }),
+        h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'resume-version-export', href: `/api/v1/resumes/${encodeURIComponent(v.id)}/export.docx`, text: 'Word' }),
         v.is_current ? h('span', { class: 'tn-state-pill state-ok', text: '当前版本' }) : h('button', { class: 'tn-btn tn-btn-sm tn-btn-primary', type: 'button', 'data-test': 'resume-version-current', text: '设为当前', onclick: () => setCurrentResume(v.id) })
       ));
   }
@@ -982,6 +1052,10 @@ export async function renderCareer(container, { gen, applicationId = null, secti
   }
   function renderResume() {
     clear(resumeSection);
+    resumeSection.append(h('div', { class: 'tn-career-subtabs', 'data-test': 'resume-subtabs' },
+      h('a', { href: '/?panel=career&section=resume', class: 'tn-career-subtab active', text: '我的简历' }),
+      h('a', { href: '/?panel=career&section=rewrite', class: 'tn-career-subtab', text: '简历改写' })
+    ));
     const current = resume;
     const file = h('input', { type: 'file', multiple: true, accept: '.pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain', 'data-test': 'resume-file', hidden: true });
     file.addEventListener('change', () => { const files = [...file.files || []]; file.value = ''; if (files.length) uploadResumeFiles(files); });

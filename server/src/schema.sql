@@ -499,7 +499,7 @@ CREATE TABLE IF NOT EXISTS agent_pending_actions (
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   resolved_at TEXT,
-  CHECK (action_type IN ('update_status','rewrite_resume')),
+  CHECK (action_type IN ('update_status','rewrite_resume','update_profile')),
   CHECK (status IN ('pending','confirmed','cancelled','expired','failed'))
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pending_owner ON agent_pending_actions(owner_id, status, created_at DESC);
@@ -544,12 +544,50 @@ CREATE TABLE IF NOT EXISTS resumes (
   parent_resume_id TEXT,
   target_application_id TEXT,
   rewrite_summary_json TEXT,
+  export_docx_path TEXT,
+  layout_meta_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (status IN ('parsed','analyzing','ready','failed'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_resume_current ON resumes(owner_id) WHERE is_current = 1;
 CREATE INDEX IF NOT EXISTS idx_resumes_owner ON resumes(owner_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  owner_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  preferred_locations_json TEXT NOT NULL DEFAULT '[]',
+  salary_expectation TEXT,
+  work_mode TEXT,
+  career_direction TEXT,
+  industry_preferences_json TEXT NOT NULL DEFAULT '[]',
+  company_preferences_json TEXT NOT NULL DEFAULT '[]',
+  summary_text TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  onboarding_completed_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('draft','confirmed'))
+);
+
+CREATE TABLE IF NOT EXISTS resume_rewrite_drafts (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
+  application_id TEXT REFERENCES applications(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'ready',
+  jd_analysis_json TEXT,
+  alignment_json TEXT,
+  blocks_json TEXT,
+  report_json TEXT,
+  proposed_name TEXT,
+  result_resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('ready','failed','confirmed'))
+);
+CREATE INDEX IF NOT EXISTS idx_rewrite_drafts_owner ON resume_rewrite_drafts(owner_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS ai_reports (
   id TEXT PRIMARY KEY,

@@ -90,6 +90,25 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'update_profile',
+      description: '创建或更新六维求职画像待确认单（地点、薪资、工作方式、职业方向、行业偏好、企业偏好）；确认前不写库。',
+      parameters: {
+        type: 'object',
+        properties: {
+          preferred_locations: { type: 'array', items: { type: 'string' } },
+          salary_expectation: { type: 'string' },
+          work_mode: { type: 'string' },
+          career_direction: { type: 'string' },
+          industry_preferences: { type: 'array', items: { type: 'string' } },
+          company_preferences: { type: 'array', items: { type: 'string' } },
+          summary_text: { type: 'string' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'rewrite_resume',
       description: '按目标岗位 JD 与匹配缺口生成简历逐段改写方案，创建待确认操作；绝不覆盖原简历，确认后才新建版本。',
       parameters: {
@@ -230,9 +249,34 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
     });
     return { summary: `已生成 ${prepared.length} 条状态修改待确认单`, data: { action }, refs: [{ type: 'action', id: action.id, label: '状态修改确认' }] };
   }
+  if (toolName === 'update_profile') {
+    const array = (value) => (Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]/)).map((item) => clean(item, 40)).filter(Boolean).slice(0, 12);
+    const profile = {
+      preferred_locations: array(args.preferred_locations),
+      salary_expectation: clean(args.salary_expectation, 120),
+      work_mode: clean(args.work_mode, 80),
+      career_direction: clean(args.career_direction, 160),
+      industry_preferences: array(args.industry_preferences),
+      company_preferences: array(args.company_preferences),
+      summary_text: clean(args.summary_text, 240)
+    };
+    if (!Object.values(profile).some((value) => Array.isArray(value) ? value.length : Boolean(value))) toolError('画像内容为空，请先收集至少一个维度');
+    const action = createPendingAction({
+      ownerId, sessionId, actionType: 'update_profile', payload: { profile },
+      summary: {
+        title: '保存求职画像', profile,
+        fields: [
+          ['职业发展方向', profile.career_direction], ['期望地点', profile.preferred_locations.join('、')],
+          ['薪资期望', profile.salary_expectation], ['工作方式', profile.work_mode],
+          ['行业偏好', profile.industry_preferences.join('、')], ['企业偏好', profile.company_preferences.join('、')]
+        ].filter(([, value]) => value)
+      }
+    });
+    return { summary: '已生成求职画像确认卡，等待确认保存', data: { action }, refs: [{ type: 'action', id: action.id, label: '求职画像确认' }] };
+  }
   if (toolName === 'rewrite_resume') {
     const appId = clean(args.application_id, 100) || contextApplicationId;
-    if (!appId) toolError('请指定目标岗位');
+    if (!appId) throw new AppError(409, 'APPLICATION_REQUIRED', '当前上下文是全部岗位，请先选择目标岗位，或点击下方岗位选择器后再改写简历', { retryable: false });
     const resume = args.resume_id
       ? getResume(ownerId, args.resume_id, { includeText: true })
       : (contextResumeId ? getResume(ownerId, contextResumeId, { includeText: true }) : currentResume(ownerId));
@@ -248,7 +292,7 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
         full_rewritten_text: rewrite.full_rewritten_text, model: rewrite.model
       },
       summary: {
-        title: '保存简历定向改写版本', application: `${app.company_name || ''} · ${app.job_title || ''}`,
+        title: '保存简历定向改写版本', application: `${app.company_name || ''} · ${app.job_title || ''}`, target_application_id: appId,
         source_resume: resume.filename, section_count: rewrite.sections.length,
         preview: rewrite.sections.slice(0, 3), version_label: rewrite.version_label
       }

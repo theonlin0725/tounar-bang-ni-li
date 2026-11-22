@@ -113,7 +113,7 @@ export async function confirmPluginConnection({webFirst = false, existingBinding
         if (!result.paired) throw new Error('网页已确认，插件尚未完成连接，请在插件检查状态');
         if (gen !== App.gen || closed) return;
         try {sessionStorage.removeItem(dismissKey());} catch {}
-        if (webFirst) { modal.close(); openSiteManager({onboarding:true}); return; }
+        if (webFirst) { modal.close(); openSiteManager({onboarding:true, onClose: maybeProfileOnboarding}); return; }
         clear(body);
         body.append(h('p', {text:'连接成功！接下来选择允许采集的招聘网站。'}), h('button', {class:'tn-btn tn-btn-primary', text:'去授权招聘网站', onclick:() => {modal.close(); openSiteManager();}}));
       } catch (error) { message.textContent = errorText(error); }
@@ -125,9 +125,18 @@ export async function confirmPluginConnection({webFirst = false, existingBinding
   } catch (error) { if (!closed && gen === App.gen) { clear(body); body.append(h('p', {text:errorText(error)})); } }
 }
 
-export function openSiteManager({onboarding = false} = {}) {
+export function openSiteManager({onboarding = false, onClose = null} = {}) {
   const card = createSiteAccessCard({manager:!onboarding});
-  return openModal({title:'招聘网站授权', subtitle:'管理当前浏览器的采集权限', body:card.element, stacked:true, testid:'site-access-modal', onClose:card.dispose});
+  return openModal({title:'招聘网站授权', subtitle:'管理当前浏览器的采集权限', body:card.element, stacked:true, testid:'site-access-modal', onClose:() => { card.dispose(); onClose?.(); }});
+}
+
+async function maybeProfileOnboarding() {
+  try {
+    const response = await api.get('/api/v1/profile');
+    if (response.data?.profile?.status === 'confirmed') return;
+    if (!location.pathname.startsWith('/') || location.search.includes('panel=assistant')) return;
+    location.assign('/?panel=assistant&onboarding=profile');
+  } catch { /* onboarding must never block normal navigation */ }
 }
 
 export function createSiteAccessCard({manager = false} = {}) {

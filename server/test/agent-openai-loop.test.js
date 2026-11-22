@@ -28,6 +28,11 @@ describe('v1.1.0 Agent OpenAI-compatible tool loop', () => {
       requestBodies.push(body);
       if (Array.isArray(body.tools) && body.tools.some((tool) => tool.function?.name === 'filter_applications')) sawTools = true;
       const userText = body.messages?.filter((message) => message.role === 'user').at(-1)?.content || '';
+      if (String(userText).includes('fail-model')) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'fake upstream failure' } }));
+        return;
+      }
       const lastRole = body.messages?.at(-1)?.role;
       const loop = String(userText).includes('loop');
       const multi = String(userText).includes('multi');
@@ -94,6 +99,26 @@ describe('v1.1.0 Agent OpenAI-compatible tool loop', () => {
     const messages = (await server.request(`/api/v1/agent/sessions/${session.id}/messages`, { cookie })).json.data.messages;
     assert.equal(messages.some((message) => message.role === 'assistant' && message.content.includes('模型完成')), true);
     assert.equal(messages.some((message) => message.content.includes('tool_call_id')), false);
+  });
+
+  it('模型超时/失败时仍落盘可见错误消息与重试文本，不静默消失', async () => {
+    const session = (await server.request('/api/v1/agent/sessions', { method: 'POST', cookie, body: {} })).json.data;
+    const response = await fetch(`${server.base}/api/v1/agent/sessions/${session.id}/chat`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: server.base, Cookie: cookie },
+      body: JSON.stringify({ message: 'fail-model please' })
+    });
+    const text = await response.text();
+    const events = text.split('\n\n').map((block) => {
+      const event = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7);
+      const data = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+      return { event, data: data ? JSON.parse(data) : null };
+    }).filter((item) => item.event);
+    const message = events.find((item) => item.event === 'message')?.data?.message;
+    assert.equal(message?.meta?.is_error, true);
+    assert.equal(message?.meta?.retry_text, 'fail-model please');
+    assert.ok(events.some((item) => item.event === 'error'));
+    const stored = (await server.request(`/api/v1/agent/sessions/${session.id}/messages`, { cookie })).json.data.messages;
+    assert.ok(stored.some((item) => item.role === 'assistant' && item.meta?.is_error === true));
   });
 
   it('切换岗位后旧 JD 不再进入模型上下文，仅保留边界后的消息', async () => {

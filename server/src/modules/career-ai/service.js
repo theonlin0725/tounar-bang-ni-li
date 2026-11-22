@@ -4,6 +4,7 @@ import {
   AppError, clipText, newId, normalizeWhitespace, nowIso, safeJsonParse
 } from '../../util.js';
 import { extractResumeText, MAX_RESUME_TEXT } from './resume-parser.js';
+import { profileForMatch, profilePayload } from '../profile/service.js';
 import { aiAvailable, analyzeResumeProfile, generateInterviewQuestions, matchJob, recommendJobs } from './llm.js';
 
 const MATCH_DIMENSIONS = ['hard_gate', 'skills', 'experience', 'industry', 'preference', 'achievements'];
@@ -29,31 +30,36 @@ function projection(row, { includeText = false } = {}) {
     parent_resume_id: row.parent_resume_id || null,
     target_application_id: row.target_application_id || null,
     rewrite_summary: row.rewrite_summary_json ? safeJsonParse(row.rewrite_summary_json, null) : null,
+    export_docx_path: row.export_docx_path || null,
+    layout_meta: row.layout_meta_json ? safeJsonParse(row.layout_meta_json, null) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...(includeText ? { text: row.text } : { text_preview: String(row.text || '').slice(0, 800) })
   };
 }
 
-function storeResume({ ownerId, filename, mime, size, text, truncated, makeCurrent = true, parentResumeId = null, targetApplicationId = null, rewriteSummary = null }) {
+function storeResume({ ownerId, filename, mime, size, text, truncated, makeCurrent = true, parentResumeId = null, targetApplicationId = null, rewriteSummary = null, layoutMeta = null }) {
   return transaction(() => {
     const id = newId('resume');
     const at = nowIso();
     if (makeCurrent) run('UPDATE resumes SET is_current = 0 WHERE owner_id = ? AND is_current = 1', [ownerId]);
     run(`INSERT INTO resumes
       (id, owner_id, filename, mime, size, text, text_chars, profile_json, status, is_current,
-       parent_resume_id, target_application_id, rewrite_summary_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'parsed', ?, ?, ?, ?, ?, ?)`,
+       parent_resume_id, target_application_id, rewrite_summary_json, layout_meta_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'parsed', ?, ?, ?, ?, ?, ?, ?)`,
     [id, ownerId, normalizeWhitespace(filename || '简历', 200) || '简历', clipText(mime, 120) || null,
       size, text, text.length, makeCurrent ? 1 : 0, parentResumeId || null, targetApplicationId || null,
-      rewriteSummary ? JSON.stringify(rewriteSummary) : null, at, at]);
+      rewriteSummary ? JSON.stringify(rewriteSummary) : null, layoutMeta ? JSON.stringify(layoutMeta) : null, at, at]);
     return { ...projection(one('SELECT * FROM resumes WHERE id = ? AND owner_id = ?', [id, ownerId]), { includeText: true }), truncated: !!truncated };
   });
 }
 
 export async function createResumeFromBuffer({ ownerId, filename, mime, buffer }) {
   const parsed = await extractResumeText({ filename, mime, buffer });
-  return storeResume({ ownerId, filename, mime, size: buffer.length, text: parsed.text, truncated: parsed.truncated });
+  return storeResume({
+    ownerId, filename, mime, size: buffer.length, text: parsed.text, truncated: parsed.truncated,
+    layoutMeta: { format: parsed.format, source_filename: filename, source_mime: mime || null, profile: 'standard' }
+  });
 }
 
 export async function createResumeFromText({ ownerId, text, filename = '粘贴的简历' }) {
@@ -93,7 +99,8 @@ export function createResumeVersionFromText({
   return storeResume({
     ownerId, filename: filename || '简历 · 定向改写版', mime: 'text/plain',
     size: Buffer.byteLength(clean), text: clean.slice(0, MAX_RESUME_TEXT), truncated: clean.length > MAX_RESUME_TEXT,
-    makeCurrent: !!setCurrent, parentResumeId, targetApplicationId, rewriteSummary
+    makeCurrent: !!setCurrent, parentResumeId, targetApplicationId, rewriteSummary,
+    layoutMeta: { format: 'rewritten_text', source_mime: 'text/plain', profile: 'standard' }
   });
 }
 
@@ -251,6 +258,7 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
   const { row: resume, profile } = resumeId
     ? requireReadyResumeById(ownerId, resumeId)
     : requireReadyResume(ownerId);
+  const userProfile = profileForMatch(ownerId);
   const jdText = String(app.jd_text || app.jd_summary || '').trim();
   if (!jdText) throw new AppError(409, 'JD_REQUIRED', '这个岗位还没有 JD，无法做单岗位匹配；请先在详情里补充岗位 JD。', { retryable: false });
   if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法进行岗位匹配', { retryable: false });
@@ -276,7 +284,8 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
       text_chars: resume.text_chars, profile, text: String(resume.text || '').slice(0, 16000)
     },
     corrections: corrections.map(correctionProjection),
-    confirmed_preferences: corrections.filter((c) => c.dimension === 'preference').map(correctionProjection)
+    confirmed_preferences: corrections.filter((c) => c.dimension === 'preference').map(correctionProjection),
+    user_profile: userProfile ? profilePayload(userProfile) : null
   };
   const reportId = startReport({
     ownerId, kind: 'match', resumeId: resume.id, applicationIds: [id],
@@ -285,7 +294,8 @@ export async function matchApplication({ ownerId, applicationId, parentReportId 
   try {
     const result = await matchJob({
       profile, resumeText: String(resume.text || ''), job,
-      corrections: corrections.map(correctionProjection)
+      corrections: corrections.map(correctionProjection),
+      userProfile: userProfile ? profilePayload(userProfile) : null
     });
     result.job = {
       application_id: app.id, company_name: app.company_name, job_title: app.job_title,

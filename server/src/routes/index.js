@@ -12,6 +12,9 @@ import {
   sessionCookie, verifyOtp
 } from '../auth.js';
 import { withIdempotency } from '../idempotency.js';
+import { getProfile, saveProfile } from '../modules/profile/service.js';
+import { confirmRewriteDraft, generateRewriteDraft, getRewriteDraft, updateRewriteDraft } from '../modules/career-ai/rewrite-workbench.js';
+import { readResumeDocx, writeResumeDocx } from '../modules/career-ai/docx-exporter.js';
 import {
   applicationDetail, ledgerResponse, reviewDetail, reviewList
 } from '../domain/ledger.js';
@@ -415,6 +418,21 @@ export function registerRoutes() {
   });
 
   // ---------- resume / AI career analysis ----------
+  // ---------- v1.1.1 user profile ----------
+  route('GET', '/api/v1/profile', (req) => {
+    const auth = requireAuth(req);
+    return { data: getProfile(auth.ownerId) };
+  });
+  route('PUT', '/api/v1/profile', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId,
+      scope: 'profile.save',
+      req,
+      handler: () => ({ data: { profile: saveProfile(auth.ownerId, req.body || {}, { status: req.body?.status === 'draft' ? 'draft' : 'confirmed' }) } })
+    });
+  });
+
   route('GET', '/api/v1/ai/status', (req) => {
     const auth = requireAuth(req);
     return { data: aiStatus(auth.ownerId) };
@@ -457,6 +475,53 @@ export function registerRoutes() {
   route('PUT', '/api/v1/resumes/:id/text', (req) => {
     const auth = requireAuth(req);
     return { data: correctResumeText(auth.ownerId, req.params.id, req.body.text) };
+  });
+  route('POST', '/api/v1/resumes/rewrite/drafts', async (req) => {
+    const auth = requireAuth(req);
+    const body = req.body || {};
+    const draft = await generateRewriteDraft({
+      ownerId: auth.ownerId, resumeId: body.resume_id, applicationId: body.application_id,
+      requirements: body.requirements || ''
+    });
+    return jsonStatus(201, { data: draft });
+  });
+  route('GET', '/api/v1/resumes/rewrite/drafts/:id', (req) => {
+    const auth = requireAuth(req);
+    return { data: getRewriteDraft(auth.ownerId, req.params.id) };
+  });
+  route('PATCH', '/api/v1/resumes/rewrite/drafts/:id', (req) => {
+    const auth = requireAuth(req);
+    return { data: updateRewriteDraft(auth.ownerId, req.params.id, req.body || {}) };
+  });
+  route('POST', '/api/v1/resumes/rewrite/drafts/:id/confirm', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId,
+      scope: `resume.rewrite.confirm:${req.params.id}`,
+      req,
+      handler: () => ({ data: confirmRewriteDraft(auth.ownerId, req.params.id, req.body || {}) })
+    });
+  });
+  route('GET', '/api/v1/resumes/:id/export.docx', (req, res) => {
+    const auth = requireAuth(req);
+    const resume = getResume(auth.ownerId, req.params.id, { includeText: true });
+    let file = readResumeDocx(resume.export_docx_path);
+    if (!file) {
+      const written = writeResumeDocx({ ownerId: auth.ownerId, resumeId: resume.id, text: resume.text, title: resume.filename });
+      run('UPDATE resumes SET export_docx_path = ? WHERE id = ? AND owner_id = ?',
+        [written.relativePath, resume.id, auth.ownerId]);
+      file = readResumeDocx(written.relativePath);
+    }
+    if (!file) throw new AppError(404, 'EXPORT_NOT_FOUND', 'Word 文件生成失败，请重试');
+    const ascii = String(resume.filename || 'resume').replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/\.docx$/i, '') || 'resume';
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${ascii}.docx"; filename*=UTF-8''${encodeURIComponent(`${resume.filename || '简历'}.docx`)}`,
+      'Content-Length': String(file.buffer.length),
+      'Cache-Control': 'no-store'
+    });
+    res.end(file.buffer);
+    return null;
   });
   route('POST', '/api/v1/resumes/:id/current', (req) => {
     const auth = requireAuth(req);

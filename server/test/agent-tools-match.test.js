@@ -74,10 +74,12 @@ describe('v1.1.0 Agent match/interview tools', () => {
     const util = await import('../src/util.js');
     const career = await import('../src/modules/career-ai/service.js');
     const applications = await import('../src/domain/applications.js');
+    const profiles = await import('../src/modules/profile/service.js');
     const tools = await import('../src/modules/agent/tools.js');
     executeTool = tools.executeTool;
     db.run('INSERT INTO users (id, email_normalized, email_display, allowlisted, created_at) VALUES (?, ?, ?, 1, ?)',
       [ownerId, 'agent-tools@tounar.local', 'agent-tools@tounar.local', util.nowIso()]);
+    profiles.saveProfile(ownerId, { career_direction: '数据产品', preferred_locations: ['上海'], industry_preferences: ['互联网'] }, { status: 'confirmed' });
     resume = await career.createResumeFromText({ ownerId, text: resumeText, filename: 'Agent 匹配测试简历' });
     resume = await career.analyzeResume(ownerId, resume.id);
     assert.equal(resume.status, 'ready');
@@ -101,6 +103,11 @@ describe('v1.1.0 Agent match/interview tools', () => {
     assert.ok(first.data.report_id);
     assert.ok(first.data.result);
     assert.equal(Array.isArray(first.data.result.dimensions) ? first.data.result.dimensions.length : 0, 6);
+    const db = new (await import('node:sqlite')).DatabaseSync(path.join(dir, 'tounar.sqlite'));
+    try {
+      const row = db.prepare('SELECT context_json FROM ai_reports WHERE id = ?').get(first.data.report_id);
+      assert.equal(JSON.parse(row.context_json).user_profile.career_direction, '数据产品');
+    } finally { db.close(); }
     const second = await executeTool({ ownerId, sessionId: 'unit-session', toolName: 'analyze_match', args: { application_id: app.id } });
     assert.equal(second.summary, '已复用该岗位的六维匹配报告');
     assert.equal(second.data.report_id, first.data.report_id);

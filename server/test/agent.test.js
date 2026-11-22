@@ -71,6 +71,24 @@ describe('v1.1.0 Agent assistant / tools / controlled writes', () => {
     return result.actions[0];
   }
 
+  it('画像工具只生成确认单，确认后落盘六维画像并进入会话上下文', async () => {
+    const action = await actionFrom('帮我建立求职画像');
+    assert.equal(action.action_type, 'update_profile');
+    const before = (await server.request('/api/v1/profile', { cookie })).json.data;
+    assert.equal(before.profile, null);
+    const confirm = await server.request(`/api/v1/agent/actions/${action.id}/confirm`, {
+      method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-profile-confirm' }, body: {}
+    });
+    assert.equal(confirm.status, 200, confirm.text);
+    assert.equal(confirm.json.data.result.profile.status, 'confirmed');
+    const saved = (await server.request('/api/v1/profile', { cookie })).json.data.profile;
+    assert.equal(saved.career_direction, '产品经理');
+    assert.deepEqual(saved.preferred_locations, ['上海']);
+    const context = (await server.request(`/api/v1/agent/context?session_id=${session.id}`, { cookie })).json.data.context;
+    assert.equal(context.profile.status, 'confirmed');
+    assert.equal(context.profile.career_direction, '产品经理');
+  });
+
   it('上下文与会话 API 可用；筛选工具只读且不泄露工具原始 JSON', async () => {
     const context = await server.request('/api/v1/agent/context?session_id=' + session.id, { cookie });
     assert.equal(context.status, 200);

@@ -57,7 +57,7 @@ export const config = {
   // 不设置则完全不影响本机与普通域名。
   shareCode: process.env.SHARE_CODE || '',
   appEnv: process.env.APP_ENV || 'development',
-  appVersion: process.env.APP_VERSION || '1.1.0',
+  appVersion: process.env.APP_VERSION || '1.1.1',
   allowedEmails,
   adminEmails: new Set((process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
   testMailRecipients: new Set((process.env.TEST_MAIL_RECIPIENTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
@@ -141,7 +141,7 @@ export const config = {
   agentApiKey: process.env.AGENT_API_KEY || process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || '',
   agentModel: process.env.AGENT_MODEL || process.env.OPENROUTER_MODEL || process.env.AI_MODEL || '',
   agentProvider: process.env.AGENT_API_URL ? 'agent_custom' : (process.env.OPENROUTER_API_KEY ? 'openrouter' : (process.env.AI_API_URL ? 'ai_compatible' : 'none')),
-  agentTimeoutMs: intEnv('AGENT_TIMEOUT_MS', 90000),
+  agentTimeoutMs: intEnv('AGENT_TIMEOUT_MS', 120000),
   // 招聘进展自动工作流：LLM 提取 → 判断（Jev 或 Flash 直判）→ 服务端校验 → 自动入账/更新/待确认。
   jevApiUrl: process.env.JEV_API_URL || 'https://api.typesafe.ai/v1/systemone',
   jevApiKey: process.env.JEV_API_KEY || '',

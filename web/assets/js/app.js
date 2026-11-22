@@ -26,7 +26,7 @@ function route() {
   const params = new URLSearchParams(location.search);
   return {
     name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
-    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun'), resume: params.get('resume'), report: params.get('report')
+    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun'), resume: params.get('resume'), report: params.get('report'), onboarding: params.get('onboarding'), draft: params.get('draft')
   };
 }
 
@@ -91,13 +91,13 @@ export async function enterApp(panel = null) {
     return;
   }
   if (activePanel === 'assistant') {
-    await renderAssistant(main, { gen, applicationId: currentRoute.applicationId, resumeId: currentRoute.resume });
+    await renderAssistant(main, { gen, applicationId: currentRoute.applicationId, resumeId: currentRoute.resume, onboarding: currentRoute.onboarding });
     return;
   }
   if (activePanel === 'career') {
     await renderCareer(main, {
       gen, apps: currentRoute.apps, applicationId: currentRoute.applicationId,
-      section: currentRoute.section, autorun: currentRoute.autorun, reportId: currentRoute.report
+      section: currentRoute.section, autorun: currentRoute.autorun, reportId: currentRoute.report, draftId: currentRoute.draft
     });
     if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
@@ -145,7 +145,7 @@ function navGroup(label) { return h('div', { class: 'tn-nav-group-label', text: 
 
 function navState({ panel, view, section }) {
   if (panel === 'assistant') return 'assistant';
-  if (panel === 'career') return section === 'resume' ? 'resume' : 'match';
+  if (panel === 'career') return ['resume', 'rewrite'].includes(section) ? 'resume' : 'match';
   if (panel === 'reviews' || view === 'reviews') return 'reviews';
   if (view === 'viewed') return 'viewed';
   if (view === 'archived') return 'archived';

@@ -1,6 +1,6 @@
 {
   "name": "tounar-bang-ni-li",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "Tounar 帮你理：投递线索整理与进度追踪",
@@ -41,7 +41,7 @@
     "test:campus-live": "node tests/e2e/campus-auto-live.mjs",
     "test:netease-game": "node tests/e2e/netease-game-fixtures.mjs",
     "test:mail-progress": "node tests/e2e/mail-progress.mjs",
-    "test:agent": "node --test --test-concurrency=1 server/test/agent.test.js server/test/agent-openai-loop.test.js server/test/agent-tools-match.test.js server/test/agent-config.test.js && node tests/e2e/agent-assistant.mjs",
+    "test:agent": "node --test --test-concurrency=1 server/test/agent.test.js server/test/agent-openai-loop.test.js server/test/agent-tools-match.test.js server/test/agent-config.test.js server/test/resume-rewrite-module.test.js && node tests/e2e/agent-assistant.mjs",
     "bench:mail-e2e": "node --env-file-if-exists .env tools/run-mail-e2e-benchmark.mjs"
   },
   "dependencies": {

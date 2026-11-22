@@ -4,6 +4,8 @@ import { currentResume, getResume, listResumes } from '../career-ai/service.js';
 import { applicationDetail, ledgerResponse } from '../../domain/ledger.js';
 import { setApplicationStatusManually } from '../../domain/reviews.js';
 import { createResumeVersionFromText } from '../career-ai/service.js';
+import { getProfile, profilePayload, saveProfile } from '../profile/service.js';
+import { writeResumeDocx } from '../career-ai/docx-exporter.js';
 
 export function sessionProjection(row) {
   if (!row) return null;
@@ -92,7 +94,7 @@ export function listPendingActions(ownerId, sessionId) {
   return all("SELECT * FROM agent_pending_actions WHERE owner_id = ? AND session_id = ? AND status = 'pending' ORDER BY created_at ASC", [ownerId, sessionId]).map(actionProjection);
 }
 export function createPendingAction({ ownerId, sessionId, messageId = null, actionType, payload, summary, ttlMinutes = 15 }) {
-  if (!['update_status', 'rewrite_resume'].includes(actionType)) throw new AppError(400, 'VALIDATION_ERROR', '未知写操作类型');
+  if (!['update_status', 'rewrite_resume', 'update_profile'].includes(actionType)) throw new AppError(400, 'VALIDATION_ERROR', '未知写操作类型');
   const id = newId('agact');
   const at = nowIso();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60000).toISOString();
@@ -162,6 +164,12 @@ export function confirmAction(ownerId, actionId, options = {}) {
       const finalStatus = ok ? 'confirmed' : 'failed';
       run("UPDATE agent_pending_actions SET status=?, result_json=?, resolved_at=? WHERE id=?", [finalStatus, JSON.stringify(result), nowIso(), row.id]);
       if (ok) bumpRevision();
+    } else if (row.action_type === 'update_profile') {
+      const profile = saveProfile(ownerId, payload.profile || {}, { status: 'confirmed' });
+      writeAgentAudit(ownerId, 'profile.save.agent', 'user_profile', ownerId, { action_id: row.id });
+      result = { action_type: row.action_type, profile, mutated_entities: ['profile'] };
+      run("UPDATE agent_pending_actions SET status='confirmed', result_json=?, resolved_at=? WHERE id=?", [JSON.stringify(result), nowIso(), row.id]);
+      bumpRevision();
     } else if (row.action_type === 'rewrite_resume') {
       const resumeId = payload.parent_resume_id || payload.resume_id;
       if (!resumeId) throw new AppError(400, 'VALIDATION_ERROR', '改写操作缺少原简历');
@@ -173,14 +181,15 @@ export function confirmAction(ownerId, actionId, options = {}) {
         rewriteSummary: { sections: payload.sections || [], target_application_id: target, created_from: 'agent' },
         setCurrent
       });
+      const docx = writeResumeDocx({ ownerId, resumeId: created.id, text: created.text, title: created.filename });
+      run('UPDATE resumes SET export_docx_path = ? WHERE id = ? AND owner_id = ?', [docx.relativePath, created.id, ownerId]);
       writeAgentAudit(ownerId, 'resume.rewrite.agent', 'resume', created.id, { parent_resume_id: resumeId, target_application_id: target, action_id: row.id });
       if (setCurrent) {
         run('UPDATE agent_sessions SET context_resume_id = ?, updated_at = ? WHERE id = ? AND owner_id = ?',
           [created.id, nowIso(), row.session_id, ownerId]);
         appendMessage({ ownerId, sessionId: row.session_id, role: 'context_boundary', content: `当前简历已切换为：${created.filename}`, meta: { context_resume_id: created.id } });
       }
-      const safeCreated = { ...created };
-      delete safeCreated.text;
+      const safeCreated = getResume(ownerId, created.id);
       result = { action_type: row.action_type, resume: safeCreated, mutated_entities: ['resumes'] };
       run("UPDATE agent_pending_actions SET status='confirmed', result_json=?, resolved_at=? WHERE id=?", [JSON.stringify(result), nowIso(), row.id]);
       bumpRevision();
@@ -194,6 +203,7 @@ export function agentContext(ownerId, session = null) {
   const resume = session?.context_resume_id ? getResume(ownerId, session.context_resume_id, { includeText: true }) : currentResume(ownerId);
   const focused = session?.context_application_id ? applicationDetail(ownerId, session.context_application_id).data : null;
   const ledger = ledgerResponse(ownerId, { view: 'applied', limit: 100 });
+  const profile = getProfile(ownerId).profile;
   const recent = ledger.data.items.slice(0, 8).map((app) => ({
     id: app.id, company_name: app.company_name, job_title: app.job_title,
     status: app.status, status_label: app.status_label, location: app.location,
@@ -215,6 +225,7 @@ export function agentContext(ownerId, session = null) {
       history: (focused.history || []).slice(0, 20)
     } : null,
     recent_applications: recent,
+    profile: profile ? { status: profile.status, ...profilePayload(profile) } : { status: 'missing' },
     counts: ledger.data.counts,
     stats: ledger.data.stats,
     data_revision: ledger.data.data_revision

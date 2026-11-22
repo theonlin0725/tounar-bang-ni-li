@@ -2,7 +2,7 @@ import { AppError } from '../../util.js';
 import { flushCloudPersistence } from '../../cloud/persistence.js';
 import { runAgentChat } from './orchestrator.js';
 import {
-  agentContext, archiveSession, cancelAction, confirmAction, createSession, getSession,
+  agentContext, appendMessage, archiveSession, cancelAction, confirmAction, createSession, getSession,
   listMessages, listPendingActions, listSessions, updateContext
 } from './store.js';
 
@@ -40,6 +40,8 @@ export async function streamAgentChat({ ownerId, sessionId, body, res, req = nul
   // normal JSON error contract and never masquerade as a 200 stream.
   if (!String(body?.message || '').trim()) throw new AppError(400, 'VALIDATION_ERROR', '请输入问题');
   getSession(ownerId, sessionId);
+  req?.setTimeout?.(0);
+  res.setTimeout?.(0);
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
@@ -49,7 +51,7 @@ export async function streamAgentChat({ ownerId, sessionId, body, res, req = nul
   if (res.flushHeaders) res.flushHeaders();
   const heartbeat = setInterval(() => {
     if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n');
-  }, 15000);
+  }, 8000);
   heartbeat.unref?.();
   try {
     const result = await runAgentChat({
@@ -72,10 +74,24 @@ export async function streamAgentChat({ ownerId, sessionId, body, res, req = nul
     sseWrite(res, 'done', { mutated_entities: result.mutated_entities || [], data_revision: result.data_revision });
   } catch (error) {
     const safe = error instanceof AppError;
+    const message = safe ? error.message : 'AI 助手处理失败，请稍后重试';
+    const retryText = [...listMessages(ownerId, sessionId)].reverse().find((item) => item.role === 'user')?.content || '';
+    let errorMessage = null;
+    try {
+      errorMessage = appendMessage({
+        ownerId, sessionId, role: 'assistant',
+        content: `本轮处理失败：${message}`,
+        meta: { is_error: true, retry_text: retryText, retryable: safe ? !!error.retryable : true }
+      });
+      sseWrite(res, 'message', {
+        message: errorMessage, actions: [], references: [], suggestions: [],
+        read_only: true, has_pending_write: false, is_error: true
+      });
+    } catch { /* keep the SSE error below even if the fallback message cannot be stored */ }
     sseWrite(res, 'error', {
-      code: safe ? error.code : 'AGENT_FAILED',
-      message: safe ? error.message : 'AI 助手处理失败，请稍后重试',
-      retryable: safe ? !!error.retryable : true
+      code: safe ? error.code : 'AGENT_FAILED', message,
+      retryable: safe ? !!error.retryable : true,
+      message_id: errorMessage?.id || null
     });
   } finally {
     clearInterval(heartbeat);

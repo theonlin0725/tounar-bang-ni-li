@@ -85,6 +85,48 @@ function migrateAiReports(instance) {
   addColumn('ai_reports', 'context_json', 'TEXT');
 }
 
+/* v1.1.1: agent_pending_actions 新增 update_profile 动作类型，旧 CHECK
+   只能重建表；旧 pending/confirmed 行完整保留（无入站外键）。 */
+function migrateAgentPendingActions(instance) {
+  const table = instance.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_pending_actions'").get();
+  const sql = String(table?.sql || '');
+  if (!sql || sql.includes("'update_profile'")) return;
+  instance.exec('PRAGMA foreign_keys = OFF');
+  try {
+    instance.exec(`BEGIN;
+      CREATE TABLE agent_pending_actions_v111 (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+        message_id TEXT REFERENCES agent_messages(id) ON DELETE SET NULL,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        summary_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result_json TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        CHECK (action_type IN ('update_status','rewrite_resume','update_profile')),
+        CHECK (status IN ('pending','confirmed','cancelled','expired','failed'))
+      );
+      INSERT INTO agent_pending_actions_v111
+        (id, session_id, message_id, owner_id, action_type, payload_json, summary_json,
+         status, result_json, expires_at, created_at, resolved_at)
+      SELECT id, session_id, message_id, owner_id, action_type, payload_json, summary_json,
+         status, result_json, expires_at, created_at, resolved_at FROM agent_pending_actions;
+      DROP TABLE agent_pending_actions;
+      ALTER TABLE agent_pending_actions_v111 RENAME TO agent_pending_actions;
+      CREATE INDEX IF NOT EXISTS idx_agent_pending_owner ON agent_pending_actions(owner_id, status, created_at DESC);
+      COMMIT;`);
+  } catch (err) {
+    try { instance.exec('ROLLBACK'); } catch { /* already rolled back */ }
+    throw err;
+  } finally {
+    instance.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 /* 轻量迁移：D06 冻结（2026-10-22）后新装库默认 daily；
    老库一次性把 weekly_monday 迁到 daily，并补 D08 的待确认摘要时间列。 */
 function migrate(instance) {
@@ -100,12 +142,15 @@ function migrate(instance) {
   addColumn('resumes', 'parent_resume_id', 'TEXT');
   addColumn('resumes', 'target_application_id', 'TEXT');
   addColumn('resumes', 'rewrite_summary_json', 'TEXT');
+  addColumn('resumes', 'export_docx_path', 'TEXT');
+  addColumn('resumes', 'layout_meta_json', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
   addColumn('applications', 'manual_status_at', 'TEXT');
   addColumn('ai_ingest_runs', 'rule_version', "TEXT NOT NULL DEFAULT 'auto-intake-v1'");
   addColumn('ai_ingest_runs', 'judge_mode', 'TEXT');
   migrateAiReports(instance);
+  migrateAgentPendingActions(instance);
   addColumn('ai_reports', 'interview_result_json', 'TEXT');
   addColumn('mail_connections', 'last_sync_stats_json', 'TEXT');
   addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");

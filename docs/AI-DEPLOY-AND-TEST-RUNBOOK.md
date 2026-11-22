@@ -1,8 +1,8 @@
-# 帮你理 Tounar v1.1.0：AI 部署与内测 Runbook
+# 帮你理 Tounar v1.1.1：AI 部署与内测 Runbook
 
 **适用对象**：Codex / Claude Code / Gemini / Cursor 等编程助手  
-**当前版本**：v1.1.0（AI 求职助手）
-**目标**：在不修改业务代码、不接触真实生产库的前提下，完成环境预检、隔离启动和 (a)–(e) 模块验活（e 为 AI 助手）。
+**当前版本**：v1.1.1（AI 助手 + 简历改写工作台）
+**目标**：在不修改业务代码、不接触真实生产库的前提下，完成环境预检、隔离启动和 (a)–(f) 模块验活（e 为 AI 助手/画像，f 为简历改写）。
 
 ---
 
@@ -96,12 +96,12 @@ npm run local:stop
 
 ```bash
 curl -fsS http://127.0.0.1:4310/api/v1/health
-# 期望：ok: true, version: "1.1.0"
+# 期望：ok: true, version: "1.1.1"
 ```
 
 ---
 
-## 3. 四模块自动验活
+## 3. 六模块自动验活
 
 ### (a) 插件采集
 
@@ -169,7 +169,7 @@ npm run test:career-ai
 
 ---
 
-## 4. Agent 助手验活（v1.1.0）
+## 4. Agent 助手验活（v1.1.1）
 
 ```bash
 npm run test:agent
@@ -245,7 +245,7 @@ npm run test:mail-admin
 ## 8. 完成条件
 
 - [ ] Node ≥ 24，依赖安装完成。
-- [ ] 健康接口 200 且 version=1.1.0。
+- [ ] 健康接口 200 且 version=1.1.1。
 - [ ] (a)(b)(c)(d) 模块验活完成，失败项有日志与归因。
 - [ ] `npm run test:web`、`test:career-ai`、`test:mail-progress` 至少抽跑通过。
 - [ ] 工作区没有 `.env`、SQLite、授权码、真实邮件正文或 `.tmp/` 证据入库。

@@ -28,7 +28,8 @@ ${JSON.stringify(context)}
 2. 修改投递状态或保存简历改写版本必须先调用对应工具生成待确认操作，再告诉用户需要确认；绝不能声称已经直接写入。
 3. 回答用自然、简洁的中文，先给结论，再给必要的依据/下一步。涉及岗位/报告/新版本时保留可读名称，工具内部 JSON 不要展示给用户。
 4. 如果用户没有指定岗位，优先使用当前上下文岗位；确实无法确定时只问一个澄清问题。
-5. 当前版本没有求职画像、投递策略分析或自定义提醒天数能力，不要假装提供。
+5. 当用户要建立或更新求职画像时，分 3–5 轮收集：职业发展方向+期望地点、行业+企业偏好、薪资+工作方式；用户一次答全可提前收敛。信息足够后必须调用 update_profile 生成确认卡，绝不能声称已保存。
+6. 画像只记录用户明确表达的偏好；缺失维度留空，不要推测。当前版本仍没有投递策略分析或自定义提醒天数能力。
 最多使用 ${MAX_STEPS} 次工具调用。`;
 }
 
@@ -76,7 +77,8 @@ function fakeAgentTurn({ messages, context }) {
   const contextApp = context?.application?.id || null;
   let name = 'filter_applications';
   let args = {};
-  if (/比较/.test(user)) { name = 'compare_jobs'; args = { application_ids: (context?.recent_applications || []).slice(0, 2).map((app) => app.id) }; }
+  if (/画像/.test(user)) { name = 'update_profile'; args = { career_direction: '产品经理', preferred_locations: ['上海'], industry_preferences: ['互联网'], company_preferences: ['成长型公司'], salary_expectation: '月薪 20k–25k', work_mode: '混合办公' }; }
+  else if (/比较/.test(user)) { name = 'compare_jobs'; args = { application_ids: (context?.recent_applications || []).slice(0, 2).map((app) => app.id) }; }
   else if (/搜索|查找.*岗位|找.*公司/.test(user)) { name = 'search_jobs'; args = { query: user.replace(/搜索|查找/g, '').trim() || '字节' }; }
   else if (/面试题/.test(user)) { name = 'generate_interview_questions'; args = { application_id: contextApp }; }
   else if (/匹配/.test(user)) { name = 'analyze_match'; args = { application_id: contextApp }; }
@@ -131,7 +133,8 @@ export async function runAgentChat({ ownerId, sessionId, userMessage, onStatus =
         messages.push({ role: 'tool', tool_call_id: call.id, name: 'unknown', content: JSON.stringify({ error: 'AGENT_TOOL_UNKNOWN', message: '模型返回了缺少名称的工具调用' }) });
         continue;
       }
-      onStatus(STATUS_TEXT[toolName] || '正在读取求职数据…');
+      onStatus(toolName === 'rewrite_resume' ? '正在读取岗位 JD 与原简历…' : (STATUS_TEXT[toolName] || '正在读取求职数据…'));
+      if (toolName === 'rewrite_resume') setTimeout(() => onStatus(STATUS_TEXT.rewrite_resume), 500);
       const args = safeJsonParse(call?.function?.arguments || '{}', {}) || {};
       const started = Date.now();
       try {
