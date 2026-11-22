@@ -26,22 +26,27 @@ function projection(row, { includeText = false } = {}) {
     error_code: row.error_code,
     error_message: row.error_message,
     is_current: !!row.is_current,
+    parent_resume_id: row.parent_resume_id || null,
+    target_application_id: row.target_application_id || null,
+    rewrite_summary: row.rewrite_summary_json ? safeJsonParse(row.rewrite_summary_json, null) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...(includeText ? { text: row.text } : { text_preview: String(row.text || '').slice(0, 800) })
   };
 }
 
-function storeResume({ ownerId, filename, mime, size, text, truncated }) {
+function storeResume({ ownerId, filename, mime, size, text, truncated, makeCurrent = true, parentResumeId = null, targetApplicationId = null, rewriteSummary = null }) {
   return transaction(() => {
     const id = newId('resume');
     const at = nowIso();
-    run('UPDATE resumes SET is_current = 0 WHERE owner_id = ? AND is_current = 1', [ownerId]);
+    if (makeCurrent) run('UPDATE resumes SET is_current = 0 WHERE owner_id = ? AND is_current = 1', [ownerId]);
     run(`INSERT INTO resumes
-      (id, owner_id, filename, mime, size, text, text_chars, profile_json, status, is_current, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'parsed', 1, ?, ?)`,
+      (id, owner_id, filename, mime, size, text, text_chars, profile_json, status, is_current,
+       parent_resume_id, target_application_id, rewrite_summary_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'parsed', ?, ?, ?, ?, ?, ?)`,
     [id, ownerId, normalizeWhitespace(filename || '简历', 200) || '简历', clipText(mime, 120) || null,
-      size, text, text.length, at, at]);
+      size, text, text.length, makeCurrent ? 1 : 0, parentResumeId || null, targetApplicationId || null,
+      rewriteSummary ? JSON.stringify(rewriteSummary) : null, at, at]);
     return { ...projection(one('SELECT * FROM resumes WHERE id = ? AND owner_id = ?', [id, ownerId]), { includeText: true }), truncated: !!truncated };
   });
 }
@@ -72,6 +77,26 @@ function decodeResumeCursor(value) {
     return { createdAt, id };
   } catch { return null; }
 }
+export function createResumeVersionFromText({
+  ownerId, text, filename, parentResumeId = null, targetApplicationId = null,
+  rewriteSummary = null, setCurrent = false
+}) {
+  const clean = String(text || '').replace(/\u0000/g, '').replace(/\r\n?/g, '\n').trim();
+  if (clean.length < 20) throw new AppError(422, 'RESUME_TEXT_TOO_SHORT', '改写后的简历文本太短，无法保存');
+  if (parentResumeId) {
+    const parent = one('SELECT id FROM resumes WHERE id = ? AND owner_id = ?', [parentResumeId, ownerId]);
+    if (!parent) throw new AppError(404, 'NOT_FOUND', '原简历版本不存在或不属于当前账号');
+  }
+  if (targetApplicationId && !getApplication(ownerId, targetApplicationId)) {
+    throw new AppError(404, 'NOT_FOUND', '目标岗位不存在或不属于当前账号');
+  }
+  return storeResume({
+    ownerId, filename: filename || '简历 · 定向改写版', mime: 'text/plain',
+    size: Buffer.byteLength(clean), text: clean.slice(0, MAX_RESUME_TEXT), truncated: clean.length > MAX_RESUME_TEXT,
+    makeCurrent: !!setCurrent, parentResumeId, targetApplicationId, rewriteSummary
+  });
+}
+
 export function listResumes(ownerId, { limit = 20, cursor = null } = {}) {
   const size = Math.max(1, Math.min(50, Number(limit) || 20));
   const at = decodeResumeCursor(cursor);
@@ -145,6 +170,12 @@ function requireReadyResume(ownerId) {
   if (row.status !== 'ready' || !profileOf(row)) throw new AppError(409, 'RESUME_NOT_READY', '当前简历尚未完成分析，请先在简历页分析或重试');
   return { row, profile: profileOf(row) };
 }
+function requireReadyResumeById(ownerId, resumeId) {
+  const row = one('SELECT * FROM resumes WHERE id = ? AND owner_id = ?', [String(resumeId || ''), ownerId]);
+  if (!row) throw new AppError(404, 'NOT_FOUND', '所选简历不存在或不属于当前账号');
+  if (row.status !== 'ready' || !profileOf(row)) throw new AppError(409, 'RESUME_NOT_READY', '所选简历尚未完成分析，请先在简历页分析或重试');
+  return { row, profile: profileOf(row) };
+}
 
 function reportProjection(row, { includeContext = true } = {}) {
   if (!row) return null;
@@ -157,6 +188,7 @@ function reportProjection(row, { includeContext = true } = {}) {
     report_version: row.report_version || null,
     status: row.status,
     result: safeJsonParse(row.result_json, null),
+    interview_result: row.interview_result_json ? safeJsonParse(row.interview_result_json, null) : null,
     ...(includeContext ? { context: safeJsonParse(row.context_json, null) } : {}),
     error_code: row.error_code,
     error_message: row.error_message,
@@ -211,12 +243,14 @@ function correctionProjection(row) {
   };
 }
 
-export async function matchApplication({ ownerId, applicationId, parentReportId = null }) {
+export async function matchApplication({ ownerId, applicationId, parentReportId = null, resumeId = null }) {
   const id = String(applicationId || '');
   if (!id) throw new AppError(400, 'VALIDATION_ERROR', '请选择一个台账岗位');
   const app = getApplication(ownerId, id);
   if (!app) throw new AppError(404, 'NOT_FOUND', '所选岗位不存在或不属于当前账号');
-  const { row: resume, profile } = requireReadyResume(ownerId);
+  const { row: resume, profile } = resumeId
+    ? requireReadyResumeById(ownerId, resumeId)
+    : requireReadyResume(ownerId);
   const jdText = String(app.jd_text || app.jd_summary || '').trim();
   if (!jdText) throw new AppError(409, 'JD_REQUIRED', '这个岗位还没有 JD，无法做单岗位匹配；请先在详情里补充岗位 JD。', { retryable: false });
   if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法进行岗位匹配', { retryable: false });
@@ -366,23 +400,28 @@ export function listMatchCorrections(ownerId, reportId) {
     .map(correctionProjection);
 }
 
-export async function interviewQuestionsForReport(ownerId, reportId) {
+export async function interviewQuestionsForReport(ownerId, reportId, { force = false } = {}) {
   const report = one("SELECT * FROM ai_reports WHERE id = ? AND owner_id = ? AND kind = 'match'", [String(reportId), ownerId]);
   if (!report) throw new AppError(404, 'NOT_FOUND', '匹配报告不存在或不属于当前账号');
   if (report.status !== 'ready') throw new AppError(409, 'REPORT_NOT_READY', '匹配报告尚未完成，暂时不能生成面试问题');
+  const cached = report.interview_result_json ? safeJsonParse(report.interview_result_json, null) : null;
+  if (cached?.questions?.length && !force) return cached;
   if (!aiAvailable()) throw new AppError(503, 'AI_NOT_CONFIGURED', '尚未配置 AI 模型，暂时无法生成面试问题', { retryable: false });
   const context = safeJsonParse(report.context_json, null);
   const result = safeJsonParse(report.result_json, null);
   if (!context?.resume?.profile || !context?.application) {
     throw new AppError(409, 'REPORT_CONTEXT_MISSING', '这份报告缺少岗位或简历快照，请重新运行匹配分析后再生成问题');
   }
-  return generateInterviewQuestions({
+  const questions = await generateInterviewQuestions({
     profile: context.resume.profile,
     job: context.application,
     report: result,
     resumeText: context.resume.text || '',
     confirmedText: (context.corrections || []).map((c) => c.user_text || '').join('\n')
   });
+  run('UPDATE ai_reports SET interview_result_json = ?, completed_at = COALESCE(completed_at, ?) WHERE id = ? AND owner_id = ?',
+    [JSON.stringify(questions), nowIso(), report.id, ownerId]);
+  return questions;
 }
 
 function resumeKeywords(profile) {

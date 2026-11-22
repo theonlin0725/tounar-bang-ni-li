@@ -62,7 +62,7 @@ function external(url, label = '打开原岗位') {
   return h('a', { class: 'tn-btn tn-btn-sm', href: url, target: '_blank', rel: 'noopener noreferrer', text: label });
 }
 
-export async function renderCareer(container, { gen, applicationId = null, section = null } = {}) {
+export async function renderCareer(container, { gen, applicationId = null, section = null, reportId = null } = {}) {
   const root = h('div', { class: 'tn-career', 'data-test': 'career-view' });
   container.append(root);
   let resume = null;
@@ -180,7 +180,10 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       if (!active()) return;
       renderResume();
       renderRecommend();
-      if (matchAppId) loadMatchHistory();
+      if (matchAppId) {
+        await loadMatchHistory();
+        if (reportId && active()) await loadMatchReport(reportId, { targetAppId: matchAppId });
+      }
       if (section === 'resume') requestAnimationFrame(() => resumeSection.scrollIntoView({ block: 'start', behavior: 'smooth' }));
     } catch (err) {
       if (active()) { clear(aiNotice); aiNotice.append(h('div', { class: 'tn-inline-msg err', text: '无法加载 AI 状态：' + errorMessage(err) })); }
@@ -589,6 +592,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       } }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-interview', text: interview?.status === 'running' ? '生成中…' : '生成面试问题', disabled: interview?.status === 'running', onclick: runInterviewQuestions }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-detail', text: '查看岗位详情', onclick: () => openDetail(report.result?.job?.application_id || matchAppId, { gen, onChanged: () => loadMatchAppsOnly() }) }),
+      h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-ask-assistant', href: `/?panel=assistant&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}&resume=${encodeURIComponent(report.result?.resume?.id || resume?.id || '')}`, text: '问 AI 助手' }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-rerun-action', text: '重新运行匹配分析', disabled: matchBusy, onclick: () => runMatch({ parent: report.id }) })
     );
     wrap.append(actions);
@@ -875,6 +879,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       h('div', { class: 'tn-resume-version-main' },
         h('strong', { text: name }),
         h('div', { class: 'tn-small tn-muted', text: `${fmtDateTime(v.created_at)} · ${v.text_chars || 0} 字 · ${resumeStatusText(v.status)}` }),
+        (v.parent_resume_id || v.target_application_id) ? h('div', { class: 'tn-tiny tn-muted', 'data-test': 'resume-ai-rewrite-source', text: `AI 定向改写版本 · 原版本 ${String(v.parent_resume_id || '').slice(-8)}${v.target_application_id ? ` · 目标岗位 ${String(v.target_application_id).slice(-8)}` : ''}${v.rewrite_summary?.sections?.length ? ` · ${v.rewrite_summary.sections.length} 段对比` : ''}` }) : null,
         h('div', { class: 'tn-tiny tn-faint', text: `版本 ID：${v.id}` })),
       h('div', { class: 'tn-resume-version-actions' },
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'resume-version-view', text: resumePreviewId === v.id ? '返回当前' : '查看', onclick: () => resumePreviewId === v.id ? closeResumePreview() : loadResumePreview(v.id) }),
@@ -967,7 +972,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
     const v = resumePreview;
     return h('div', { class: 'tn-resume-preview', 'data-test': 'resume-preview' },
       h('div', { class: 'tn-resume-preview-head' },
-        h('div', {}, h('strong', { text: v.filename }), h('div', { class: 'tn-small tn-muted', text: `预览版本 · ${fmtDateTime(v.created_at)} · ${v.text_chars || 0} 字 · ${resumeStatusText(v.status)}` }), h('div', { class: 'tn-tiny tn-faint', text: `版本 ID：${v.id}` })),
+        h('div', {}, h('strong', { text: v.filename }), h('div', { class: 'tn-small tn-muted', text: `预览版本 · ${fmtDateTime(v.created_at)} · ${v.text_chars || 0} 字 · ${resumeStatusText(v.status)}` }), (v.parent_resume_id || v.target_application_id) ? h('div', { class: 'tn-tiny tn-muted', text: `AI 定向改写版本 · 原版本 ${String(v.parent_resume_id || '').slice(-8)}${v.target_application_id ? ` · 目标岗位 ${String(v.target_application_id).slice(-8)}` : ''}` }) : null, h('div', { class: 'tn-tiny tn-faint', text: `版本 ID：${v.id}` })),
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '关闭预览', onclick: closeResumePreview })),
       h('pre', { class: 'tn-resume-preview-text', text: v.text || '这个版本没有可预览文本。' }),
       h('div', { class: 'tn-action-row' },

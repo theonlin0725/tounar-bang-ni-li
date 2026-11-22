@@ -40,6 +40,10 @@ import {
 } from '../modules/career-ai/service.js';
 
 import { registerMailAdminRoutes } from '../modules/mail-push/admin.js';
+import {
+  cancelAgentAction, confirmAgentAction, createAgentSession, deleteAgentSession, getAgentContext,
+  getAgentMessages, getAgentSessions, streamAgentChat, updateAgentContext
+} from '../modules/agent/api.js';
 
 function optionalAuth(req) {
   try {
@@ -512,6 +516,55 @@ export function registerRoutes() {
   route('GET', '/api/v1/ai/reports/:id', (req) => {
     const auth = requireAuth(req);
     return { data: getReport(auth.ownerId, req.params.id) };
+  });
+
+  // ---------- v1.1.0 agent assistant ----------
+  route('GET', '/api/v1/agent/context', (req) => {
+    const auth = requireAuth(req);
+    return { data: getAgentContext(auth.ownerId, req.query.get('session_id') || null) };
+  });
+  route('GET', '/api/v1/agent/sessions', (req) => {
+    const auth = requireAuth(req);
+    return { data: getAgentSessions(auth.ownerId) };
+  });
+  route('POST', '/api/v1/agent/sessions', (req) => {
+    const auth = requireAuth(req);
+    return jsonStatus(201, { data: createAgentSession(auth.ownerId, req.body || {}) });
+  });
+  route('PATCH', '/api/v1/agent/sessions/:id/context', (req) => {
+    const auth = requireAuth(req);
+    return { data: updateAgentContext(auth.ownerId, req.params.id, req.body || {}) };
+  });
+  route('DELETE', '/api/v1/agent/sessions/:id', (req) => {
+    const auth = requireAuth(req);
+    return { data: deleteAgentSession(auth.ownerId, req.params.id) };
+  });
+  route('GET', '/api/v1/agent/sessions/:id/messages', (req) => {
+    const auth = requireAuth(req);
+    return { data: getAgentMessages(auth.ownerId, req.params.id) };
+  });
+  route('POST', '/api/v1/agent/sessions/:id/chat', async (req, res) => {
+    const auth = requireAuth(req);
+    await streamAgentChat({ ownerId: auth.ownerId, sessionId: req.params.id, body: req.body || {}, res, req });
+    return null;
+  });
+  route('POST', '/api/v1/agent/actions/:id/confirm', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId,
+      scope: `agent.action.confirm:${req.params.id}`,
+      req,
+      handler: () => ({ data: confirmAgentAction(auth.ownerId, req.params.id, req.body || {}) })
+    });
+  });
+  route('POST', '/api/v1/agent/actions/:id/cancel', (req) => {
+    const auth = requireAuth(req);
+    return withIdempotency({
+      ownerId: auth.ownerId,
+      scope: `agent.action.cancel:${req.params.id}`,
+      req,
+      handler: () => ({ data: cancelAgentAction(auth.ownerId, req.params.id) })
+    });
   });
 
   // ---------- mail ----------

@@ -57,7 +57,7 @@ export const config = {
   // 不设置则完全不影响本机与普通域名。
   shareCode: process.env.SHARE_CODE || '',
   appEnv: process.env.APP_ENV || 'development',
-  appVersion: process.env.APP_VERSION || '1.0.0',
+  appVersion: process.env.APP_VERSION || '1.1.0',
   allowedEmails,
   adminEmails: new Set((process.env.ADMIN_EMAILS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
   testMailRecipients: new Set((process.env.TEST_MAIL_RECIPIENTS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean)),
@@ -126,10 +126,22 @@ export const config = {
   aiLlmTimeoutMs: intEnv('AI_LLM_TIMEOUT_MS', 60000),
   aiMaxJobs: intEnv('AI_MAX_JOBS', 12),
   // 可选：OpenAI 兼容模型网关（服务端持有 key；未配置时回退现有 WorkBuddy 云端客户端）
-  aiApiUrl: process.env.AI_API_URL || '',
-  aiApiKey: process.env.AI_API_KEY || '',
-  aiModel: process.env.AI_MODEL || '',
-  aiProvider: process.env.AI_PROVIDER || (process.env.AI_API_URL ? 'openai_compatible' : 'workbuddy_cloud'),
+  // OpenRouter-only deployments also need the existing career-ai/mail paths;
+  // reuse the same server-side gateway when dedicated AI_* credentials are absent.
+  aiApiUrl: process.env.AI_API_URL || (process.env.OPENROUTER_API_KEY
+    ? (process.env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1/chat/completions') : ''),
+  aiApiKey: process.env.AI_API_KEY || (process.env.OPENROUTER_API_KEY ? process.env.OPENROUTER_API_KEY : ''),
+  aiModel: process.env.AI_MODEL || (process.env.OPENROUTER_API_KEY ? (process.env.OPENROUTER_MODEL || process.env.AGENT_MODEL || '') : ''),
+  aiProvider: process.env.AI_PROVIDER || ((process.env.AI_API_URL || process.env.OPENROUTER_API_KEY) ? 'openai_compatible' : 'workbuddy_cloud'),
+  // v1.1.0 Agent assistant: explicit AGENT_* > OpenRouter > existing AI_*.
+  agentApiUrl: process.env.AGENT_API_URL
+    || (process.env.OPENROUTER_API_KEY
+      ? (process.env.OPENROUTER_API_URL || 'https://openrouter.ai/api/v1/chat/completions')
+      : (process.env.AI_API_URL || '')),
+  agentApiKey: process.env.AGENT_API_KEY || process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || '',
+  agentModel: process.env.AGENT_MODEL || process.env.OPENROUTER_MODEL || process.env.AI_MODEL || '',
+  agentProvider: process.env.AGENT_API_URL ? 'agent_custom' : (process.env.OPENROUTER_API_KEY ? 'openrouter' : (process.env.AI_API_URL ? 'ai_compatible' : 'none')),
+  agentTimeoutMs: intEnv('AGENT_TIMEOUT_MS', 90000),
   // 招聘进展自动工作流：LLM 提取 → 判断（Jev 或 Flash 直判）→ 服务端校验 → 自动入账/更新/待确认。
   jevApiUrl: process.env.JEV_API_URL || 'https://api.typesafe.ai/v1/systemone',
   jevApiKey: process.env.JEV_API_KEY || '',

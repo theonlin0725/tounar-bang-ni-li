@@ -441,6 +441,69 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_owner ON audit_log(owner_id, created_at DESC);
 
+
+-- v1.1.0 Agent assistant: sessions/messages/tool audits/pending write actions.
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT,
+  context_resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
+  context_application_id TEXT REFERENCES applications(id) ON DELETE SET NULL,
+  summary_text TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner ON agent_sessions(owner_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  meta_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  CHECK (role IN ('user','assistant','context_boundary'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_messages_session ON agent_messages(session_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS agent_tool_runs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  message_id TEXT REFERENCES agent_messages(id) ON DELETE SET NULL,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool_name TEXT NOT NULL,
+  input_json TEXT NOT NULL DEFAULT '{}',
+  output_summary_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'ok',
+  latency_ms INTEGER,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  created_at TEXT NOT NULL,
+  CHECK (status IN ('ok','error'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_runs_session ON agent_tool_runs(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_runs_created ON agent_tool_runs(created_at);
+
+CREATE TABLE IF NOT EXISTS agent_pending_actions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES agent_sessions(id) ON DELETE CASCADE,
+  message_id TEXT REFERENCES agent_messages(id) ON DELETE SET NULL,
+  owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  summary_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  result_json TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  CHECK (action_type IN ('update_status','rewrite_resume')),
+  CHECK (status IN ('pending','confirmed','cancelled','expired','failed'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_pending_owner ON agent_pending_actions(owner_id, status, created_at DESC);
+
 INSERT OR IGNORE INTO meta (key, value) VALUES ('data_revision', '1');
 INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1');
 
@@ -478,6 +541,9 @@ CREATE TABLE IF NOT EXISTS resumes (
   error_code TEXT,
   error_message TEXT,
   is_current INTEGER NOT NULL DEFAULT 0,
+  parent_resume_id TEXT,
+  target_application_id TEXT,
+  rewrite_summary_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (status IN ('parsed','analyzing','ready','failed'))
@@ -496,6 +562,7 @@ CREATE TABLE IF NOT EXISTS ai_reports (
   context_json TEXT,
   status TEXT NOT NULL DEFAULT 'running',
   result_json TEXT,
+  interview_result_json TEXT,
   error_code TEXT,
   error_message TEXT,
   created_at TEXT NOT NULL,

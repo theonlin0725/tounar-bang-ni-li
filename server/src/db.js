@@ -97,12 +97,16 @@ function migrate(instance) {
   addColumn('applications', 'jd_status', "TEXT NOT NULL DEFAULT 'missing'");
   addColumn('applications', 'capture_source', 'TEXT');
   addColumn('applications', 'stage_received_at', 'TEXT');
+  addColumn('resumes', 'parent_resume_id', 'TEXT');
+  addColumn('resumes', 'target_application_id', 'TEXT');
+  addColumn('resumes', 'rewrite_summary_json', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
   addColumn('applications', 'manual_status_at', 'TEXT');
   addColumn('ai_ingest_runs', 'rule_version', "TEXT NOT NULL DEFAULT 'auto-intake-v1'");
   addColumn('ai_ingest_runs', 'judge_mode', 'TEXT');
   migrateAiReports(instance);
+  addColumn('ai_reports', 'interview_result_json', 'TEXT');
   addColumn('mail_connections', 'last_sync_stats_json', 'TEXT');
   addColumn('application_field_sources', 'confidence', "TEXT NOT NULL DEFAULT 'medium' CHECK (confidence IN ('low','medium','high'))");
   addColumn('application_field_sources', 'source_detail', 'TEXT');

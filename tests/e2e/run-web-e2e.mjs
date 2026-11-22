@@ -190,6 +190,7 @@ try {
   check('W-02a 侧栏一级入口齐全，投递台账为当前页',
     (await page.locator('[data-test=nav-ledger].active').count()) === 1
       && (await page.locator('[data-test=nav-reviews]').count()) === 1
+      && (await page.locator('[data-test=nav-assistant]').count()) === 1
       && (await page.locator('[data-test=nav-match]').count()) === 1
       && (await page.locator('[data-test=nav-resume]').count()) === 1
       && (await page.locator('[data-test=open-mail-admin]').count()) === 0);

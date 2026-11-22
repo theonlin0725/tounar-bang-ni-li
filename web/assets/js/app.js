@@ -8,6 +8,7 @@ import { renderLogin } from './views/login.js';
 import { renderLedger } from './views/ledger.js?v=20261120-1';
 import { renderLanding } from './views/landing.js';
 import { renderCareer } from './views/career.js';
+import { renderAssistant } from './views/assistant.js';
 import { renderSettingsPage } from './views/settings.js';
 
 export const App = {
@@ -25,7 +26,7 @@ function route() {
   const params = new URLSearchParams(location.search);
   return {
     name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
-    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun')
+    apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun'), resume: params.get('resume'), report: params.get('report')
   };
 }
 
@@ -89,10 +90,14 @@ export async function enterApp(panel = null) {
     else if (activePanel === 'plugin-sites') openSiteManager();
     return;
   }
+  if (activePanel === 'assistant') {
+    await renderAssistant(main, { gen, applicationId: currentRoute.applicationId, resumeId: currentRoute.resume });
+    return;
+  }
   if (activePanel === 'career') {
     await renderCareer(main, {
       gen, apps: currentRoute.apps, applicationId: currentRoute.applicationId,
-      section: currentRoute.section, autorun: currentRoute.autorun
+      section: currentRoute.section, autorun: currentRoute.autorun, reportId: currentRoute.report
     });
     if (!isStale(gen)) promptPluginConnection({automatic:true});
     return;
@@ -111,6 +116,7 @@ const NAV_ICONS = {
   reviews: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4h12v9H9l-4 3v-3H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 8h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
   match: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="13" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M9.2 10h1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
   resume: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5h7l3 3v10H5zM12 3.5v3h3M7.5 9h5M7.5 12h5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+  assistant: '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9l-4 3v-3H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 7.5h6M7 10h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   settings: '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>'
 };
 function navIcon(name) {
@@ -138,6 +144,7 @@ function navButton({ label, test, icon = null, onclick, sub = false }) {
 function navGroup(label) { return h('div', { class: 'tn-nav-group-label', text: label }); }
 
 function navState({ panel, view, section }) {
+  if (panel === 'assistant') return 'assistant';
   if (panel === 'career') return section === 'resume' ? 'resume' : 'match';
   if (panel === 'reviews' || view === 'reviews') return 'reviews';
   if (view === 'viewed') return 'viewed';
@@ -177,6 +184,7 @@ function buildShell({ panel, view, section, gen }) {
   }, navIcon('reviews'), h('span', { class: 'tn-nav-label', text: '待确认' }), pendingBadge);
   const analysis = h('div', { class: 'tn-nav-section' },
     navGroup('分析'),
+    navLink({ href: '/?panel=assistant', label: 'AI 助手', test: 'nav-assistant', active: nav === 'assistant', icon: 'assistant' }),
     navLink({ href: '/?panel=career&section=match', label: '匹配分析', test: 'nav-match', active: nav === 'match', icon: 'match' }),
     navLink({ href: '/?panel=career&section=resume', label: '简历库', test: 'nav-resume', active: nav === 'resume', icon: 'resume' })
   );
@@ -210,7 +218,7 @@ function buildShell({ panel, view, section, gen }) {
     'aria-controls': 'tn-sidebar', 'aria-expanded': 'false', 'aria-label': '打开导航菜单',
     onclick: () => toggleMobileNav(true)
   }, h('span', { class: 'tn-menu-lines', 'aria-hidden': 'true' }));
-  const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
+  const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'assistant' ? 'AI 求职助手' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
     : view === 'viewed' ? '看过没投' : view === 'archived' ? '已归档'
       : view === 'settings' ? '设置' : '投递台账';
   const pageTitleEl = h('h1', { class: 'tn-topbar-title', 'data-test': 'page-title', text: titleFor(nav) });
@@ -264,7 +272,7 @@ function buildShell({ panel, view, section, gen }) {
       if (isActive) node.setAttribute('aria-current', 'page');
       else node.removeAttribute('aria-current');
     }
-    for (const test of ['nav-match', 'nav-resume', 'nav-settings']) {
+    for (const test of ['nav-assistant', 'nav-match', 'nav-resume', 'nav-settings']) {
       const node = sidebar.querySelector(`[data-test="${test}"]`);
       if (!node) continue;
       node.classList.remove('active');
@@ -302,6 +310,12 @@ function buildShell({ panel, view, section, gen }) {
   }
   const onCounts = (event) => { if (!isStale(gen) && shell.isConnected) applyCounts(event.detail); };
   window.addEventListener('tounar:counts', onCounts);
+  window.addEventListener('tounar:data-changed', () => {
+    if (isStale(gen) || !shell.isConnected) return;
+    api.get('/api/v1/ledger?view=applied&limit=1')
+      .then((res) => { if (!isStale(gen) && shell.isConnected) applyCounts(res.data?.counts); })
+      .catch(() => { /* 保持未知，不显示假 0 */ });
+  });
   api.get('/api/v1/ledger?view=applied&limit=1').then((res) => {
     if (!isStale(gen) && shell.isConnected) applyCounts(res.data?.counts);
   }).catch(() => { /* 保持未知，不显示 0 */ });

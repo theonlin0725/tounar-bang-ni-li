@@ -66,9 +66,13 @@ export async function runTick({ force = false, mail = false, reminders = false, 
   if (running) return { skipped: 'tick_in_progress' };
   running = true;
   const started = Date.now();
-  const summary = { started_at: nowIso(), mail: null, reminders: null, browse_archive: null, deletions: null, auto_intake_retry: null };
+  const summary = { started_at: nowIso(), mail: null, reminders: null, browse_archive: null, deletions: null, auto_intake_retry: null, agent_tool_cleanup: null };
   try {
     summary.browse_archive = archiveStaleBrowsed(now);
+    try {
+      const deleted = run("DELETE FROM agent_tool_runs WHERE created_at < ?", [new Date(now.getTime() - 30 * 86400000).toISOString()]);
+      summary.agent_tool_cleanup = { deleted: Number(deleted.changes || 0), keep_days: 30 };
+    } catch (err) { summary.agent_tool_cleanup = { error: err.message }; }
     summary.deletions = await recoverDeletionJobs();
     try { summary.auto_intake_retry = await retryPendingIntakes(5); } catch (err) { summary.auto_intake_retry = { error: err.message }; }
 

@@ -51,6 +51,22 @@ export function ledgerResponse(ownerId, query = {}) {
   if (source && !['plugin', 'mail', 'manual'].includes(source)) throw new AppError(400, 'VALIDATION_ERROR', 'source 无效');
   const dueFilter = ['1', 'true'].includes(String(query.due_for_review || '').toLowerCase());
   const q = String(query.q || '').trim().slice(0, 100);
+  const parseDateBoundary = (value, endOfDay) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return Date.parse(`${raw}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}+08:00`);
+    return Date.parse(raw);
+  };
+  const appliedFrom = parseDateBoundary(query.applied_from, false);
+  const appliedToRaw = parseDateBoundary(query.applied_to, true);
+  if (query.applied_from && !Number.isFinite(appliedFrom)) throw new AppError(400, 'VALIDATION_ERROR', 'applied_from 日期格式无效');
+  if (query.applied_to && !Number.isFinite(appliedToRaw)) throw new AppError(400, 'VALIDATION_ERROR', 'applied_to 日期格式无效');
+  let inactiveDays = null;
+  if (query.inactive_days !== undefined && query.inactive_days !== null && String(query.inactive_days).trim() !== '') {
+    const raw = Number(query.inactive_days);
+    if (!Number.isInteger(raw) || raw < 1 || raw > 365) throw new AppError(400, 'VALIDATION_ERROR', 'inactive_days 必须是 1–365 的整数');
+    inactiveDays = raw;
+  }
   const limit = Math.min(100, Math.max(1, Number.parseInt(query.limit || '20', 10) || 20));
   const cursor = decodeCursor(query.cursor);
   const preferences = getPreferences(ownerId);
@@ -73,6 +89,10 @@ export function ledgerResponse(ownerId, query = {}) {
     .filter((a) => matchesQuery(a, q))
     .filter((a) => !status || a.status === status)
     .filter((a) => !source || safeJsonParse(a.source_methods_json, []).includes(source))
+    .filter((a) => !appliedFrom || (a.applied_at && Date.parse(a.applied_at) >= appliedFrom))
+    .filter((a) => !appliedToRaw || (a.applied_at && Date.parse(a.applied_at) <= appliedToRaw))
+    .filter((a) => !inactiveDays || (!TERMINAL.has(a.status)
+      && (!(a.last_progress_at || a.applied_at) || Date.parse(a.last_progress_at || a.applied_at) <= asOf.getTime() - inactiveDays * 86400000)))
     .filter((a) => !dueFilter || isDueForReview(a, preferences.review_threshold_days, asOf) || stageFollowupState(a, preferences.stage_followup_days, asOf).due);
   if (query.sort === 'applied_desc') {
     rows = [...rows].sort((a, b) => String(b.applied_at || '').localeCompare(String(a.applied_at || '')));
@@ -104,7 +124,7 @@ export function ledgerResponse(ownerId, query = {}) {
         mail_status: mail?.status || null,
         plugin_last_received_at: plugin?.last_event_at || null
       },
-      filters: { view, q, status, source, due_for_review: dueFilter }
+      filters: { view, q, status, source, due_for_review: dueFilter, applied_from: query.applied_from || null, applied_to: query.applied_to || null, inactive_days: inactiveDays }
     }
   };
 }

@@ -1,15 +1,15 @@
 # 帮你理 Tounar
 
-> **v1.0.0 · 本地自测稳定版**  
+> **v1.1.0 · AI 求职助手开发版**
 > 浏览器插件自动采集招聘岗位 → 多邮箱同步招聘进展 → 台账与待确认管理 → 单岗位简历六维匹配。
 
-**Git 自测分支**：`tounar-1.0.0`
+**Git 开发分支**：`tounar-1.1.0`
 
-[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [文档索引](docs/INDEX.md)
+[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [v1.1.0 Agent 方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) · [实现结果](docs/AGENT-ASSISTANT-V1.1.0-RESULT.md) · [文档索引](docs/INDEX.md)
 
 | 项目 | 当前状态 |
 |---|---|
-| 主应用 | **v1.0.0（本地自测稳定版）** |
+| 主应用 | **v1.1.0（AI 求职助手开发版）** |
 | 浏览器插件 | **0.2.11** |
 | 运行环境 | **Node.js ≥ 24**（使用内置 `node:sqlite`，无需安装数据库） |
 | 真实邮箱 | QQ / Foxmail 已完成真实端到端验证 |
@@ -52,6 +52,15 @@
   - 自身产品邮件、账单、物流、营销等噪声拦截；
   - 单封异常隔离，不中断整箱同步。
 - 提供全链路泛化基准 `npm run bench:mail-e2e` 和存量脏邮件清理脚本 `npm run mail:cleanup`。
+
+### 1.4 AI 求职助手 v1.1.0
+
+- 左侧「AI 助手」入口，支持自然语言查询、岗位详情/JD 问答、多岗位对比、单岗位六维匹配、面试题生成。
+- 写操作（批量改投递状态、按 JD 改写简历并新建版本）先在对话中展示确认卡，用户明确确认后才落库。
+- 当前上下文条可切换简历与岗位；切换岗位写入上下文边界，避免旧岗位 JD 污染新轮次。
+- 工具原始 JSON 只进入服务端审计表，不塞进对话消息；前端只显示轻量执行状态和最终自然语言结论。
+- 模型配置优先 `AGENT_API_*`，其次 `OPENROUTER_*`，最后复用 `AI_API_*`；服务端 key 不进入浏览器。
+- AI 简历改写只生成新版本，不覆盖原简历；未勾选“设为当前”时保留原当前简历。
 
 ---
 
@@ -162,7 +171,9 @@ AI 手册包含：
 | `npm run test:self-page` | 插件排除自身页面（6 项） |
 | `npm run bench:mail-e2e` | 44 封合成邮件全链路泛化基准 |
 | `npm run mail:cleanup` | 只读预览历史脏邮件台账清理；`--apply` 才写库 |
+| `npm run test:agent` | AI 助手服务端单测 + Playwright 验活 |
 | `npm run build:plugin` | 重新打包 0.2.11 插件 ZIP |
+| `node tools/smoke-agent-openrouter.mjs` | OpenRouter 四场景真实联调（需 `OPENROUTER_API_KEY`） |
 | `npm run eval:intake` | 使用真实模型评估自动入账（隔离库） |
 
 ---
@@ -182,19 +193,18 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 
 ## 7. 未开发功能与已知边界
 
-### 未开发功能（规划中，不属于 v1.0.0）
+### 未开发功能（规划中，不属于 v1.1.0）
 
-1. **AI 求职助手（Agent 对话工作台）**：自然语言查台账、跨页上下文、写操作二次确认与工具调度。
-2. **AI 简历定向改写（rewrite_resume）**：按目标 JD 逐段改写并保存为新简历版本；当前仅支持手动编辑与匹配建议。
-3. **独立求职画像（user_profiles）**：结构化偏好持久化和对话更新。
-4. **投递策略与转化漏斗分析（analyze_strategy）**：阶段转化率、时间趋势和自定义提醒分析。
+1. **独立求职画像（user_profiles）**：结构化偏好持久化和对话更新。
+2. **投递策略与转化漏斗分析（analyze_strategy）**：阶段转化率、时间趋势和自定义提醒分析。
+3. **单岗位自定义提醒天数**：当前使用全局提醒设置。
 
 ### 已知外部与测试边界
 
 - 网易 163 / 126 / yeah.net 代码已支持，但**尚未完成真实公网授权码联调**；当前真实邮箱证据仅来自 QQ。
 - 招聘站点适配持续演进；未逐站验证的冷门站点依赖通用规则 + 模型兜底，不保证 100% 站点零遗漏。
-- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.0.0 业务功能无关。
-- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.0.0 发版门禁。
+- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.1.0 业务功能无关。
+- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.1.0 发版门禁。
 - 真实个人邮箱、授权码、邮件正文、`.env`、SQLite 与 `.tmp/` 证据均不提交进仓库。
 
 ---
@@ -202,6 +212,8 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 ## 8. 文档入口
 
 - [产品自测指引 v1.0.0](docs/SELF-TEST-GUIDE-V1.0.0.md)
+- [v1.1.0 Agent 开发方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md)
+- [v1.1.0 Agent 实现结果](docs/AGENT-ASSISTANT-V1.1.0-RESULT.md)
 - [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md)
 - [v1.0.0 封板验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md)
 - [全链路邮件泛化基准结果](docs/MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md)

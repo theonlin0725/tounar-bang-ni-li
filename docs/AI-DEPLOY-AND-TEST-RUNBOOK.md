@@ -1,7 +1,8 @@
-# 帮你理 Tounar v1.0.0：AI 部署与内测 Runbook
+# 帮你理 Tounar v1.1.0：AI 部署与内测 Runbook
 
 **适用对象**：Codex / Claude Code / Gemini / Cursor 等编程助手  
-**目标**：在不修改业务代码、不接触真实生产库的前提下，完成环境预检、隔离启动和 (a)(b)(c)(d) 四模块验活。
+**当前版本**：v1.1.0（AI 求职助手）
+**目标**：在不修改业务代码、不接触真实生产库的前提下，完成环境预检、隔离启动和 (a)–(e) 模块验活（e 为 AI 助手）。
 
 ---
 
@@ -40,6 +41,8 @@ git log --oneline -1
 | `ALLOWED_EMAILS` | OTP 登录白名单 | 必填，填测试邮箱 |
 | `PORT` | 主应用端口，默认 4310 | 可选 |
 | `AI_API_URL` / `AI_API_KEY` / `AI_MODEL` | 兼容 OpenAI 的模型网关 | 邮件/简历 AI 需要 |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | OpenRouter Agent 网关 | AI 助手真实联调需要 |
+| `AGENT_API_URL` / `AGENT_API_KEY` / `AGENT_MODEL` | 显式 Agent 配置，优先级最高 | 可选 |
 | `MAIL_INTAKE_JUDGE` | `jev` 或 `flash` | 可先 `flash` |
 | `JEV_API_URL` / `JEV_API_KEY` | 招聘进展判断 | 使用 `jev` 时需要 |
 | `MAIL_MODE` | `outbox` 不真发信，`smtp` 才真发 | 自测建议 `outbox` |
@@ -87,13 +90,13 @@ npm run local:acceptance -- --mail-mode=smtp  # 仅在明确要测真实发信�
 npm run local:stop
 ```
 
-> AI 助手默认使用 A；只有用户明确提供真实库/授权码时才使用 B，并禁止把副本内容复制到仓库。
+> 本地验收默认使用 A；只有用户明确提供真实库/授权码时才使用 B，并禁止把副本内容复制到仓库。
 
 ### C. 健康检查
 
 ```bash
 curl -fsS http://127.0.0.1:4310/api/v1/health
-# 期望：ok: true, version: "1.0.0"
+# 期望：ok: true, version: "1.1.0"
 ```
 
 ---
@@ -162,15 +165,33 @@ npm run test:career-ai
 
 - 51/51；
 - 简历库多版本、手动编辑、六维卡片、纠偏、面试题持久化；
-- **不要验收 AI 自动改写简历**，该功能尚未开发。
+- AI 按 JD 定向改写与保存新版本在下面的 Agent 模块验收，原有简历不得被覆盖。
 
 ---
 
-## 4. 全量回归
+## 4. Agent 助手验活（v1.1.0）
+
+```bash
+npm run test:agent
+```
+
+- 服务端：会话、8 类工具、待确认/取消、版本冲突、简历新版本、上下文边界；
+- Playwright：欢迎卡、只读状态、确认卡、写后刷新、390px；
+- 真实 OpenRouter 四场景（需要 `OPENROUTER_API_KEY`）：
+
+```bash
+OPENROUTER_API_KEY=... OPENROUTER_MODEL=google/gemini-2.5-flash \
+  node tools/smoke-agent-openrouter.mjs
+```
+
+无 key 时脚本输出 `.tmp/agent-openrouter-smoke.md` 的 BLOCKED，不伪造通过。
+
+## 5. 全量回归
 
 按顺序执行并记录：
 
 ```bash
+npm run test:agent
 npm test
 npm run test:web
 npm run test:e2e
@@ -191,7 +212,7 @@ npm run test:mail-admin
 
 ---
 
-## 5. 排障
+## 6. 排障
 
 | 现象 | 处理 |
 |---|---|
@@ -201,13 +222,14 @@ npm run test:mail-admin
 | 插件加载失败 | 确认选择的是直接包含 `manifest.json` 的目录，不是 ZIP 或上一级目录 |
 | Chrome 扩展测试超时 | 无头 Playwright 对 service worker 有环境限制；改为本机 Chrome 手工加载验收，不要据此判定业务失败 |
 | `cloud-persistence` 失败 | 已知环境性云快照波动，保留日志并确认不是新增业务失败 |
-| 模型接口 401/429 | 检查 `.env` 的 `AI_API_URL`/`AI_API_KEY`/`AI_MODEL`；不要把 Key 打印到日志 |
+| 模型接口 401/429 | 检查 `.env` 的 `AGENT_API_KEY` / `OPENROUTER_API_KEY` / `AI_API_KEY`；不要把 Key 打印到日志 |
+| AI 助手无动作卡 | 检查 Agent 工具确认单是否 pending；确认前不会写库 |
 | 邮件同箱重复 | 确认使用了隔离库；`npm run bench:mail-e2e` 使用临时 DATA_DIR |
 | 真实授权失败 | 邮箱后台开启 IMAP 并使用客户端授权码；网易提示 Unsafe Login 时按服务商要求开启客户端授权 |
 
 ---
 
-## 6. 交付给 AI 的固定提示词
+## 7. 交付给 AI 的固定提示词
 
 ```text
 你在 /path/to/tounar-bang-ni-li 仓库工作。
@@ -220,10 +242,10 @@ npm run test:mail-admin
 
 ---
 
-## 7. 完成条件
+## 8. 完成条件
 
 - [ ] Node ≥ 24，依赖安装完成。
-- [ ] 健康接口 200 且 version=1.0.0。
+- [ ] 健康接口 200 且 version=1.1.0。
 - [ ] (a)(b)(c)(d) 模块验活完成，失败项有日志与归因。
 - [ ] `npm run test:web`、`test:career-ai`、`test:mail-progress` 至少抽跑通过。
 - [ ] 工作区没有 `.env`、SQLite、授权码、真实邮件正文或 `.tmp/` 证据入库。

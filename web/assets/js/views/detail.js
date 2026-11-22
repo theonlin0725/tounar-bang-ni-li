@@ -162,6 +162,10 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     if (app.status_url) {
       links.append(extLink(app.status_url, '查看申请状态'));
     }
+    links.append(h('a', {
+      class: 'tn-btn tn-btn-sm tn-btn-ghost', href: `/?panel=assistant&app=${encodeURIComponent(id)}`,
+      'data-test': 'detail-ask-assistant', text: '问 AI 助手'
+    }));
     bodyEl.append(section('链接', links));
 
     /* 来源与证据 */
