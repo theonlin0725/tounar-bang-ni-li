@@ -35,7 +35,7 @@ before(async () => {
           model: 'deepseek-flash',
           choices: [{ message: { content: JSON.stringify({
             actual_progress: 0.96,
-            evidence_support: /低证据/.test(String(user.body_text || '')) ? 0.6 : 0.95,
+            evidence_support: /证据不足/.test(String(user.body_text || '')) ? 0.3 : (/低证据/.test(String(user.body_text || '')) ? 0.6 : 0.95),
             company_valid: ex.company_name ? 0.96 : 0.1,
             job_title_valid: ex.job_title ? 0.95 : 0.05,
             fields_consistent: 0.95,
@@ -71,6 +71,8 @@ before(async () => {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '占位科技', job_title: '后端实习生', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
       } else if (/多岗重复/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '多岗重复公司', job_title: null, status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: [] };
+      } else if (/证据不足/.test(text)) {
+        answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '证据不足公司', job_title: '测试岗', status: 'assessment', evidence: [], uncertainties: ['没有逐字证据'] };
       } else if (/低证据岗位/.test(text)) {
         answer = { is_recruitment: true, content_role: 'actual_progress', company_name: '低证据岗位公司', job_title: '数据分析师', status: 'assessment', evidence: [{ field: 'status', quote: '测评邀请' }], uncertainties: ['正文未写截止时间'] };
       } else if (/低证据/.test(text)) {
@@ -260,6 +262,14 @@ it('岗位级清晰进展即使缺少截止时间/申请号也不误进待确认
   assert.equal(result.application.job_title, '数据分析师');
   assert.equal(result.application.status, 'assessment');
   assert.equal(db.one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=? AND status='open'", [e.id]).n, 0);
+});
+
+it('证据分低于严格门槛或缺少逐字 evidence 时，不自动放行', async () => {
+  const weak = event('证据不足：证据不足公司测试岗测评邀请，请完成在线测评。', { company: '证据不足公司', title: '测试岗' });
+  const weakResult = await workflow.processIntakeEvent(payload(weak));
+  assert.equal(weakResult.state, 'pending', JSON.stringify(weakResult));
+  assert.equal(weakResult.review.reason_code, 'AI_PROGRESS_UNCERTAIN');
+  assert.equal(db.one("SELECT COUNT(*) n FROM review_items WHERE source_event_id=? AND status='open'", [weak.id]).n, 1);
 });
 
 it('公司级清晰进展即使正文证据分略低也自动建账，不误进待确认', async () => {

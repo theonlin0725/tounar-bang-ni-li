@@ -355,10 +355,12 @@ export async function processIntakeEvent(event, { bodyText = '', subject = '', f
     }
     // 招聘进展的三个非终态只要有明确公司/岗位、高把握阶段和实际进展，就不能因为
     // 正文没写截止时间/申请编号而反复进待确认。可选字段缺失不应吞掉主进展。
+    const minEvidence = Math.max(0.45, config.autoIntakeMinEvidence - 0.15);
+    const hasLiteralEvidence = Array.isArray(extracted.evidence) && extracted.evidence.length > 0;
     const clearProgressAuto = source === 'mail' && Boolean(extracted.company_name)
       && !processDescription && ['applied', 'assessment', 'interview'].includes(status)
       && judged.actual_progress >= config.autoIntakeMinProgress
-      && (!extracted.job_title || judged.evidence_support >= 0.2)
+      && judged.evidence_support >= minEvidence && hasLiteralEvidence
       && (judged.status?.confidence ?? 0) >= statusThreshold(status)
       && (judged.company_valid == null || judged.company_valid >= 0.6)
       && (!extracted.job_title || judged.job_title_valid == null || judged.job_title_valid >= 0.6);

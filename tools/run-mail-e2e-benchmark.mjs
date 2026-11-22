@@ -57,7 +57,6 @@ function jobMatches(actual, aliases = []) {
   });
 }
 function findApp(apps, target, sample) {
-  if (!sample || sample.expected.action === 'ignored' || sample.expected.action === 'pending') return null;
   const expected = sample.expected;
   const aliases = expected.company_aliases || [expected.company_name];
   const jobs = target?.jobs || (expected.job_title ? (expected.job_aliases || [expected.job_title]) : []);
@@ -71,6 +70,11 @@ function findApp(apps, target, sample) {
   }
   return null;
 }
+function findAnyApp(apps, sample) {
+  const aliases = sample.expected.company_aliases || [sample.expected.company_name];
+  return apps.find((app) => entityMatches(app.company_name, aliases)) || null;
+}
+
 function reviewMatchesCompany(review, sample) {
   const s = review.suggested_changes || {};
   return entityMatches(s.company_name, sample.expected.company_aliases || [sample.expected.company_name]);
@@ -241,15 +245,34 @@ async function waitIntakeRetries(runDir, timeoutMs = 180000) {
   return { ok: last === 0, pending: last };
 }
 
+function assertBenchmarkScoring() {
+  const negative = {
+    id: 'self_check_negative', expected: {
+      action: 'ignored', company_name: '不应入账公司', company_aliases: ['不应入账公司'], measure_status: false
+    }
+  };
+  if (sampleSuccess(negative, { company_name: '不应入账公司' }, [])) {
+    throw new Error('benchmark self-check failed: negative sample with wrong ledger row was counted as success');
+  }
+  const pending = {
+    id: 'self_check_pending', expected: {
+      action: 'pending', company_name: '待确认公司', company_aliases: ['待确认公司'], measure_status: false
+    }
+  };
+  if (sampleSuccess(pending, { company_name: '待确认公司' }, [])) {
+    throw new Error('benchmark self-check failed: pending sample with wrong ledger row was counted as success');
+  }
+}
+
 function buildMarkdown(report) {
   const m = report.metrics;
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
   const rows = [
     ['有效进展召回率', m.recall, '≥ 92%', m.recall >= 0.92, '未见集 ≥ 90%'],
     ['负样本拦截率', m.specificity, '100%', m.specificity === 1, '零误入账'],
-    ['公司名识别准确率', m.company, '≥ 92%', m.company >= 0.92, '未见集 ≥ 88%'],
-    ['岗位名识别准确率', m.job, '≥ 85%', m.job >= 0.85, '未见集 ≥ 80%'],
-    ['状态推进准确率', m.status, '≥ 92%', m.status >= 0.92, '最终快照'],
+    ['公司名识别准确率（全量口径）', m.company, '≥ 92%', m.company >= 0.92, '未见集 ≥ 88%'],
+    ['岗位名识别准确率（全量口径）', m.job, '≥ 85%', m.job >= 0.85, '未见集 ≥ 80%'],
+    ['状态推进准确率（全量口径）', m.status, '≥ 92%', m.status >= 0.92, '最终快照'],
     ['未见集召回率', m.unseenRecall, '≥ 90%', m.unseenRecall >= 0.90, 'unseen'],
     ['未见集公司准确率', m.unseenCompany, '≥ 88%', m.unseenCompany >= 0.88, 'unseen'],
     ['未见集岗位准确率', m.unseenJob, '≥ 80%', m.unseenJob >= 0.80, 'unseen']
@@ -258,6 +281,9 @@ function buildMarkdown(report) {
     ['状态回退', m.rollback, 0, m.rollback === 0],
     ['面试改期误判拒信', m.rescheduleRejected, 0, m.rescheduleRejected === 0],
     ['自动入账仍在 open 待确认', m.duplicateOpenReview, 0, m.duplicateOpenReview === 0],
+    ['终态仍带 round_label', m.terminalRoundLabel, 0, m.terminalRoundLabel === 0],
+    ['面试状态残留测评轮次', m.stageRoundLeak, 0, m.stageRoundLeak === 0],
+    ['location 仍是详细街道地址', m.streetLocation, 0, m.streetLocation === 0],
     ['MAIL_STAGE_CONFLICT 中断', m.stageConflict, 0, m.stageConflict === 0]
   ];
   return `# 招聘邮件全链路泛化验收报告
@@ -304,6 +330,7 @@ ${report.frontend.ok ? '通过' : '未通过'}：${report.frontend.notes}
 
 async function main() {
   const startedAt = Date.now();
+  assertBenchmarkScoring();
   const corpus = readJson(CORPUS_PATH);
   const samples = corpus.samples;
   const sandbox = await startMailSandbox();
@@ -398,7 +425,7 @@ async function main() {
     const sampleResults = [];
     for (const sample of samples) {
       const target = sample.target ? targets.get(sample.target) : null;
-      const appRow = target ? targetApps.get(sample.target) : findApp(apps, null, sample);
+      const appRow = ['ignored', 'pending'].includes(sample.expected.action) ? null : (target ? targetApps.get(sample.target) : findApp(apps, null, sample));
       const sampleReviews = openReviews.filter((review) => reviewMatchesCompany(review, sample));
       const mailPresent = messages.some((message) => message.subject === sample.subject);
       const success = sampleSuccess(sample, appRow, sampleReviews);
@@ -461,51 +488,77 @@ async function main() {
       try { return JSON.parse(event.payload_json || '{}').subject_excerpt || ''; } catch { return ''; }
     };
 
-    // Recompute actual app references from DB for samples that lacked API fields.
+    const eventBySubject = new Map();
+    for (const event of events) {
+      try {
+        const subject = JSON.parse(event.payload_json || '{}').subject_excerpt;
+        if (subject) eventBySubject.set(subject, event);
+      } catch { /* ignore malformed event */ }
+    }
+    const openReviewByEvent = new Map(openReviews.map((review) => [review.source_event_id, review]));
+    // Final scoring is DB/event based: a negative/pending sample must not silently pass
+    // just because findApp() returned null for its expected action.
     for (const row of sampleResults) {
-      const appRow = row.actual?.id ? dbApps.find((item) => item.id === row.actual.id) : null;
-      if (!appRow) continue;
-      row.actual = {
+      const sample = samples.find((item) => item.id === row.id);
+      const event = eventBySubject.get(sample.subject) || null;
+      const openReview = event ? openReviewByEvent.get(event.id) : null;
+      const companyApp = findAnyApp(dbApps, sample);
+      let appRow = null;
+      if (samplePositive(sample) && sample.expected.action !== 'pending') {
+        appRow = sample.target
+          ? findApp(dbApps, targets.get(sample.target), sample)
+          : findApp(dbApps, null, sample);
+      }
+      row.mail_present = Boolean(event) || dbMessages.some((m) => m.subject_excerpt === sample.subject);
+      row.actual = appRow ? {
         id: appRow.id, company_name: appRow.company_name, job_title: appRow.job_title,
         status: appRow.status, location: appRow.location, recruitment_batch: appRow.recruitment_batch
-      };
-      const sample = samples.find((item) => item.id === row.id);
-      if (sample?.expected.measure_status && appRow.status !== sample.expected.status) {
-        row.success = false;
+      } : (openReview ? { open_review: openReview.reason_code, event_state: event?.processing_state || null } : (event ? { event_state: event.processing_state, reason_code: event.review_reason || null } : null));
+      if (sample.expected.action === 'ignored') {
+        row.success = !companyApp && !openReview && (!event || event.processing_state === 'ignored');
+      } else if (sample.expected.action === 'pending') {
+        row.success = !event?.application_id && event?.processing_state === 'pending' && Boolean(openReview);
+      } else {
+        row.success = Boolean(appRow) && (!sample.expected.measure_status || appRow.status === sample.expected.status);
       }
-    }
-    // Re-evaluate failures with DB mail/event information and include model reason codes.
-    for (const row of sampleResults) {
-      if (row.success) continue;
-      const sample = samples.find((item) => item.id === row.id);
-      const event = events.find((item) => String(item.payload_json || '').includes(`"subject_excerpt":"${sample.subject}"`));
-      const run = event ? runByEvent.get(event.id) : null;
-      let extraction = null;
-      try { extraction = run?.extraction_json ? JSON.parse(run.extraction_json) : null; } catch { extraction = null; }
-      result.failures.push({
-        id: row.id, group: row.group, split: row.split,
-        stage_failed: failureStage(sample, row.actual?.id ? dbApps.find((a) => a.id === row.actual.id) : null, openReviews, dbMessages.some((m) => m.subject_excerpt === sample.subject)),
-        expected: row.expected, actual: row.actual,
-        reason_code: run?.reason_code || null,
-        uncertainties: extraction?.uncertainties || []
-      });
     }
 
     const positive = sampleResults.filter((row) => samplePositive(samples.find((s) => s.id === row.id)) && samples.find((s) => s.id === row.id).expected.score_recall !== false);
     const negative = sampleResults.filter((row) => samples.find((s) => s.id === row.id).expected.action === 'ignored');
     const appResult = (row) => row.actual?.id ? dbApps.find((a) => a.id === row.actual.id) : null;
-    const companyEligible = sampleResults.filter((row) => appResult(row) && samples.find((s) => s.id === row.id).expected.company_name);
+    for (const row of sampleResults) {
+      if (row.success) continue;
+      const sample = samples.find((item) => item.id === row.id);
+      const event = eventBySubject.get(sample.subject) || null;
+      const run = event ? runByEvent.get(event.id) : null;
+      let extraction = null;
+      try { extraction = run?.extraction_json ? JSON.parse(run.extraction_json) : null; } catch { extraction = null; }
+      result.failures.push({
+        id: row.id, group: row.group, split: row.split,
+        stage_failed: failureStage(sample, appResult(row), openReviews, dbMessages.some((m) => m.subject_excerpt === sample.subject)),
+        expected: row.expected, actual: row.actual,
+        reason_code: run?.reason_code || event?.review_reason || null,
+        uncertainties: extraction?.uncertainties || []
+      });
+    }
+    // End-to-end denominators: a missing app counts as a miss, it cannot disappear
+    // from the denominator just because it was not created.
+    const entityPositive = sampleResults.filter((row) => {
+      const action = samples.find((s) => s.id === row.id).expected.action;
+      return action !== 'ignored' && action !== 'pending';
+    });
+    const companyEligible = entityPositive.filter((row) => samples.find((s) => s.id === row.id).expected.company_name);
     const companyHits = companyEligible.filter((row) => {
       const sample = samples.find((s) => s.id === row.id);
-      return entityMatches(appResult(row).company_name, sample.expected.company_aliases || [sample.expected.company_name]);
+      return appResult(row) && entityMatches(appResult(row).company_name, sample.expected.company_aliases || [sample.expected.company_name]);
     });
-    const jobEligible = sampleResults.filter((row) => appResult(row) && samples.find((s) => s.id === row.id).expected.job_title);
+    const jobEligible = entityPositive.filter((row) => samples.find((s) => s.id === row.id).expected.job_title);
     const jobHits = jobEligible.filter((row) => {
       const sample = samples.find((s) => s.id === row.id);
-      return jobMatches(appResult(row).job_title, sample.expected.job_aliases || [sample.expected.job_title]);
+      return appResult(row) && jobMatches(appResult(row).job_title, sample.expected.job_aliases || [sample.expected.job_title]);
     });
-    const statusEligible = sampleResults.filter((row) => appResult(row) && samples.find((s) => s.id === row.id).expected.measure_status);
-    const statusHits = statusEligible.filter((row) => appResult(row).status === samples.find((s) => s.id === row.id).expected.status);
+    const statusEligible = entityPositive.filter((row) => samples.find((s) => s.id === row.id).expected.measure_status);
+    const statusHits = statusEligible.filter((row) => appResult(row)?.status === samples.find((s) => s.id === row.id).expected.status);
     const unseen = (rows) => rows.filter((row) => samples.find((s) => s.id === row.id).split === 'unseen');
     const rollback = history.filter((row) => STATUS_RANK[row.from_status] > STATUS_RANK[row.to_status]).length;
     const stageConflict = (appLog = '') => (appLog.match(/MAIL_STAGE_CONFLICT/g) || []).length;
@@ -525,6 +578,9 @@ async function main() {
       if (!event) return false;
       try { return JSON.parse(event.payload_json || '{}').mapped_status === 'rejected'; } catch { return false; }
     }).length;
+    const terminalRoundLabel = dbApps.filter((appRow) => ['offer', 'rejected', 'closed'].includes(appRow.status) && appRow.round_label).length;
+    const stageRoundLeak = dbApps.filter((appRow) => appRow.status === 'interview' && /在线测评|测评|笔试/i.test(appRow.round_label || '')).length;
+    const streetLocation = dbApps.filter((appRow) => /[路号大厦楼]/u.test(appRow.location || '')).length;
 
     result.metrics = {
       recall: rate(positive.filter((row) => row.success).length, positive.length),
@@ -538,6 +594,9 @@ async function main() {
       rollback,
       rescheduleRejected,
       duplicateOpenReview,
+      terminalRoundLabel,
+      stageRoundLeak,
+      streetLocation,
       stageConflict: stageConflict(appLog)
     };
     result.metrics.company = rate(companyHits.length, companyEligible.length);
@@ -552,6 +611,8 @@ async function main() {
       && result.metrics.unseenJob >= 0.80
       && result.metrics.rollback === 0 && result.metrics.rescheduleRejected === 0
       && result.metrics.duplicateOpenReview === 0 && result.metrics.stageConflict === 0
+      && result.metrics.terminalRoundLabel === 0 && result.metrics.stageRoundLeak === 0
+      && result.metrics.streetLocation === 0
       && result.frontend.ok;
     result.pass = thresholdsPass;
     writeJson(path.join(RUN_DIR, 'report.json'), result);

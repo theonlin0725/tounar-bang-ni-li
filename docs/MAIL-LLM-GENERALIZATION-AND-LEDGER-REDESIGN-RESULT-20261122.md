@@ -54,7 +54,7 @@
 
 | 套件 | 结果 |
 |---|---|
-| `npm test` | 224 / 226；两个既有云快照用例不稳定失败（`cloud-persistence` / `cloud-persistence-http`，ENOENT/TEMPORARY_FAILURE），与本次改动无关 |
+| `npm test` | 227 / 228；仅既有云快照用例 `cloud-persistence` 不稳定失败，与本次改动无关 |
 | `npm run test:web` | 74 / 74 |
 | `npm run test:e2e` | 67 / 67（Plugin-E2E） |
 | `npm run test:career-ai` | 51 / 51 |
@@ -79,7 +79,7 @@
 
 新增 `tools/run-mail-e2e-benchmark.mjs`、本地 SMTP/IMAP 沙箱和 `tests/fixtures/mail-generalization-corpus.json`：
 
-- 40 封合成邮件（已知 10 / 未见 30，unseen 占 75%）；
+- 44 封合成邮件（已知 10 / 未见 34，unseen 占 77.3%）；
 - 本地 SMTP → IMAP → production sync/parser/LLM/DB/API/前端闭环；
 - 首轮基线召回 74.2%，暴露“缺少截止时间导致清晰测评进待确认”和“改期误判拒信”两个共性问题；修正后本轮 100% 通过全部门槛，详见 `docs/MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md`。
 
@@ -123,5 +123,5 @@ npm run local:stop -- --port 4324
 ## 4. 诚实边界
 
 - 真实 163 / 126 / yeah.net IMAP 联调仍未完成：当前没有这些邮箱的客户端授权码。
-- 既有云快照用例仍有不稳定失败（`cloud-persistence` / `cloud-persistence-http`），未在本次范围内修复。
+- 既有云快照用例仍有环境相关不稳定失败（`cloud-persistence`），未在本次范围内修复。
 - 浏览器扩展 GUI 相关套件（如 `toast-feedback`）依赖扩展 service worker 环境；本次未将其结果当作产品回归通过证据。

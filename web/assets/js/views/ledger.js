@@ -185,10 +185,15 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
           text: '补充信息', onclick: (e) => { e.stopPropagation(); openDetailFor(item.id, true); }
         }) : null),
       h('td', {}, fieldNode('job_title'), subParts.length ? h('div', { class: 'tn-job-sub', text: subParts.join(' · ') }) : null),
-      h('td', {}, statusEditor(item),
-        roundText ? h('span', { class: 'tn-round', text: `· ${roundText}` }) : null,
-        item.due_for_review && state.view === 'applied' ? h('span', { class: 'tn-flag tn-flag-due', text: '待回看' }) : null
-      ),
+      h('td', {}, h('div', { class: 'tn-status-stack' },
+        statusEditor(item),
+        (roundText || (item.due_for_review && state.view === 'applied'))
+          ? h('div', { class: 'tn-status-meta' },
+            roundText ? h('span', { class: 'tn-round', title: roundText, text: roundText }) : null,
+            item.due_for_review && state.view === 'applied' ? h('span', { class: 'tn-flag tn-flag-due', text: '待回看' }) : null
+          )
+          : null
+      )),
       h('td', {}, h('span', {
         class: `tn-days${item.due_for_review ? ' tn-days-late' : ''}`,
         title: dayTitle(item),

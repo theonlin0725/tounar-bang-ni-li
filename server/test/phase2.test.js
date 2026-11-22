@@ -292,3 +292,28 @@ it('P4: 同URL无独立岗位ID时不把不同岗位静默合并，允许人工�
   const created=reviews.resolveReview({ownerId:owner,reviewId:result.review.id,expectedVersion:result.review.version,action:'create'});
   assert.notEqual(created.application.id,app.id);assert.equal(created.application.job_title,'新岗位');
 });
+it('P1: 跨阶段推进清理旧轮次；终态清空轮次与面试预约，历史保留原值',()=>{
+  const stageApp=apps.createApplication({
+    ownerId:owner,
+    fields:{company_name:'轮次清理企业',job_title:'后端工程师',applied_at:'2026-10-01T00:00:00Z',round_label:'在线测评'},
+    sourceMethod:'manual',status:'assessment',at:'2026-10-01T00:00:00.000Z'
+  });
+  const stageEvent=mailEvent({company_name:'轮次清理企业',job_title:'后端工程师',mapped_status:'interview',source_received_at:'2026-10-03T00:00:00Z'});
+  const interviewed=apps.applyStatusTransition(stageApp,'interview',stageEvent,{sourceMethod:'mail',reviewTerminal:false});
+  assert.equal(interviewed.app.status,'interview');
+  assert.equal(interviewed.app.round_label,null);
+  const initialHistory=db.all("SELECT changed_fields_json FROM application_history WHERE application_id=? ORDER BY rowid ASC LIMIT 1",[stageApp.id])[0];
+  assert.equal(JSON.parse(initialHistory.changed_fields_json).round_label.to,'在线测评');
+
+  const offerApp=apps.createApplication({
+    ownerId:owner,
+    fields:{company_name:'终态清理企业',job_title:'产品经理',applied_at:'2026-10-01T00:00:00Z',round_label:'一面',interview_scheduled_at:'2026-10-10T06:00:00Z'},
+    sourceMethod:'manual',status:'interview',at:'2026-10-01T00:00:00.000Z'
+  });
+  const offerEvent=mailEvent({company_name:'终态清理企业',job_title:'产品经理',mapped_status:'offer',round_label:'终面',interview_scheduled_at:'2026-10-12T06:00:00Z',source_received_at:'2026-10-05T00:00:00Z'});
+  const offered=apps.applyStatusTransition(offerApp,'offer',offerEvent,{sourceMethod:'mail',reviewTerminal:false});
+  assert.equal(offered.app.status,'offer');
+  assert.equal(offered.app.round_label,null);
+  assert.equal(offered.app.interview_scheduled_at,null);
+  assert.equal(db.getApplication(owner,offerApp.id).round_label,null);
+});

@@ -16,7 +16,8 @@ const SYSTEM = `你是招聘进展信息提取器，不是聊天助手。只输�
    assessment 指笔试或测评；interview 指面试邀请或已面试。旧邮件、一般招聘宣传、求职建议不算。
 5. event_time 只在原文明确给出日期/时间时填写 ISO 8601；不要用收信时间代替。
 6. evidence 中每条 quote 必须逐字出现在原文中；没有证据就不要写该字段。
-7. 对不确定的地方写入 uncertainties，不要猜。
+7. location 只输出城市级名称（如 广州、上海、深圳、北京、远程）。若原文只给出详细面试街道地址（如“广州市天河区华穗路5号…”），只提取城市名“广州”，不要把街道、门牌、楼栋写入 location。
+8. 对不确定的地方写入 uncertainties，不要猜。
 JSON 结构：
 {
  "is_recruitment": true/false,

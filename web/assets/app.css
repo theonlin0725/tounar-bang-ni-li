@@ -219,7 +219,7 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .status-offer { background: var(--ok-soft); color: var(--ok); }
 .status-rejected { background: var(--danger-soft); color: var(--danger); }
 .status-closed { background: #e9eae7; color: #6b7280; }
-.tn-round { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.tn-round { color: var(--muted); font-size: 12px; margin-left: 0; }
 .tn-flag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; line-height: 17px; margin-left: 4px; vertical-align: 1px; }
 .tn-flag-due { background: var(--warn-soft); color: var(--warn); }
 .tn-flag-precision { background: #eef1ec; color: var(--muted); }
@@ -454,6 +454,10 @@ table.tn-table { width: 100%; border-collapse: collapse; min-width: 980px; }
 .tn-review-title a:hover { border-bottom-color: var(--brand); color: var(--brand-ink); }
 .tn-status-editor { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .tn-status-edit { min-width: 104px; max-width: 130px; }
+.tn-status-stack { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; max-width: 100%; min-width: 0; }
+.tn-status-meta { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; white-space: nowrap; font-size: 12px; line-height: 18px; }
+.tn-status-meta .tn-round { max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-status-meta .tn-flag { margin-left: 0; flex: none; }
 .tn-status-date-wrap { display: flex; gap: 4px; align-items: center; }
 .tn-status-date { width: 128px; padding: 3px 6px; font-size: 12px; }
 .tn-status-date-wrap .tn-btn { padding: 2px 7px; }

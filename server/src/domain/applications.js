@@ -248,8 +248,8 @@ export function createApplication({ ownerId, fields, eventId = null, sourceMetho
     deadline_at: parseIso(fields.deadline_at),
     deadline_precision: fields.deadline_precision || (fields.deadline_at ? 'exact' : null),
     interview_round: fields.interview_round || null,
-    round_label: fields.round_label ? clipText(fields.round_label, 40) : null,
-    interview_scheduled_at: parseIso(fields.interview_scheduled_at),
+    round_label: TERMINAL.has(status) ? null : (fields.round_label ? clipText(fields.round_label, 40) : null),
+    interview_scheduled_at: TERMINAL.has(status) ? null : parseIso(fields.interview_scheduled_at),
     last_interview_completed_at: parseIso(fields.last_interview_completed_at),
     source_methods_json: JSON.stringify(methods),
     latest_event_id: eventId || null,
@@ -378,6 +378,15 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
     last_progress_at: changedAt,
     manual_status_at: null
   };
+  const terminalTransition = TERMINAL.has(targetStatus);
+  if (terminalTransition) {
+    // 终态不携带上一阶段轮次/预约；历史仍由 application_history 完整保留。
+    updates.round_label = null;
+    updates.interview_scheduled_at = null;
+  } else if (['assessment', 'interview'].includes(targetStatus) && !event.payload?.round_label) {
+    // 跨阶段但新邮件没有明确轮次时，不能让“在线测评”等旧轮次挂到下一阶段。
+    updates.round_label = null;
+  }
   if (['assessment', 'interview'].includes(targetStatus)) {
     const stageRaw = event.payload?.source_received_at || event.occurred_at || eventEvidenceAt(event) || changedAt;
     const stageReceived = parseIso(stageRaw) || changedAt;
@@ -394,7 +403,7 @@ export function applyStatusTransition(app, targetStatus, event, { sourceMethod, 
     }
   }
   let updated = markApplicationChanged(app.owner_id, app.id, event.id, sourceMethod, updates, { reason: sourceMethod === 'mail' ? `由 ${shanghaiDateKey(event.payload?.source_received_at || event.occurred_at)} 收到的邮件《${clipText(event.payload?.subject_excerpt || '', 80)}》自动更新` : '统一状态处理器' });
-  updated = maybeSetRound(updated, event.payload || {}, event.id, sourceMethod);
+  updated = maybeSetRound(updated, terminalTransition ? { ...event.payload, round_label: null, interview_scheduled_at: null } : (event.payload || {}), event.id, sourceMethod);
   updated = ensureSource(updated, sourceMethod, event.id);
   outboxStatusChange(updated, event, app.status, targetStatus);
   return { ok: true, app: updated, changed: true };
