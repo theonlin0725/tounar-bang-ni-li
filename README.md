@@ -1,15 +1,15 @@
 # 帮你理 Tounar
 
-> **v1.1.2 · AI 助手稳定性 + 简历改写工作台**
+> **v1.1.3 · 简历改写质量与进度 + AI 助手滚动优化**
 > 浏览器插件自动采集招聘岗位 → 多邮箱同步招聘进展 → 台账与待确认管理 → 单岗位简历六维匹配。
 
-**Git 开发分支**：`tounar-1.1.2`
+**Git 开发分支**：`tounar-1.1.3`
 
-[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [v1.1.0 Agent 方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) · [v1.1.1 需求方案](docs/AGENT-ASSISTANT-V1.1.1-UX-PROFILE-AND-BUGFIX-PLAN-20261122.md) · [v1.1.1 实现结果](docs/AGENT-ASSISTANT-V1.1.1-RESULT.md) · [v1.1.2 稳定性方案](docs/AGENT-RELIABILITY-AND-ANSWER-QUALITY-PLAN-20261123.md) · [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md) · [文档索引](docs/INDEX.md)
+[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [v1.1.0 Agent 方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) · [v1.1.1 需求方案](docs/AGENT-ASSISTANT-V1.1.1-UX-PROFILE-AND-BUGFIX-PLAN-20261122.md) · [v1.1.1 实现结果](docs/AGENT-ASSISTANT-V1.1.1-RESULT.md) · [v1.1.2 稳定性方案](docs/AGENT-RELIABILITY-AND-ANSWER-QUALITY-PLAN-20261123.md) · [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md) · [v1.1.3 方案](docs/RESUME-REWRITE-QUALITY-AND-PROGRESS-PLAN-20261123.md) · [v1.1.3 实现结果](docs/AGENT-ASSISTANT-V1.1.3-RESULT.md) · [文档索引](docs/INDEX.md)
 
 | 项目 | 当前状态 |
 |---|---|
-| 主应用 | **v1.1.2（稳定性与回答质量）** |
+| 主应用 | **v1.1.3（改写质量与进度）** |
 | 浏览器插件 | **0.2.11** |
 | 运行环境 | **Node.js ≥ 24**（使用内置 `node:sqlite`，无需安装数据库） |
 | 真实邮箱 | QQ / Foxmail 已完成真实端到端验证 |
@@ -205,7 +205,7 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 
 ## 7. 未开发功能与已知边界
 
-### 未开发功能（规划中，不属于 v1.1.2）
+### 未开发功能（规划中，不属于 v1.1.3）
 
 1. **投递策略与转化漏斗分析（analyze_strategy）**：阶段转化率、时间趋势和自定义提醒分析。
 2. **单岗位自定义提醒天数**：当前使用全局提醒设置。
@@ -215,8 +215,8 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 
 - 网易 163 / 126 / yeah.net 代码已支持，但**尚未完成真实公网授权码联调**；当前真实邮箱证据仅来自 QQ。
 - 招聘站点适配持续演进；未逐站验证的冷门站点依赖通用规则 + 模型兜底，不保证 100% 站点零遗漏。
-- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.1.2 业务功能无关。
-- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.1.2 发版门禁。
+- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.1.3 业务功能无关。
+- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.1.3 发版门禁。
 - 真实个人邮箱、授权码、邮件正文、`.env`、SQLite 与 `.tmp/` 证据均不提交进仓库。
 
 ---
@@ -231,6 +231,8 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 - [v1.1.1 实现结果](docs/AGENT-ASSISTANT-V1.1.1-RESULT.md)
 - [v1.1.2 稳定性方案](docs/AGENT-RELIABILITY-AND-ANSWER-QUALITY-PLAN-20261123.md)
 - [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md)
+- [v1.1.3 简历改写质量/进度方案](docs/RESUME-REWRITE-QUALITY-AND-PROGRESS-PLAN-20261123.md)
+- [v1.1.3 实现结果](docs/AGENT-ASSISTANT-V1.1.3-RESULT.md)
 - [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md)
 - [v1.0.0 封板验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md)
 - [全链路邮件泛化基准结果](docs/MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md)

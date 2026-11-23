@@ -20,6 +20,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
   let draft = null;
   let busy = false;
   let saveTimer = null;
+  let pollTimer = null;
 
   function tabs() {
     return h('div', { class: 'tn-career-subtabs', 'data-test': 'resume-subtabs' },
@@ -96,7 +97,8 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       }, { timeoutMs: 150000 });
       draft = response.data;
       const url = new URL(location.href); url.searchParams.set('draft', draft.id); history.replaceState({}, '', url);
-      renderDraft();
+      renderProgress();
+      pollDraft();
     } catch (error) {
       toast('改写失败：' + errorText(error), 'err');
     } finally {
@@ -104,6 +106,45 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       if (!draft) renderConfig();
     }
   }
+  function renderProgress() {
+    clear(root);
+    root.append(tabs(), h('div', { class: 'tn-ai-section-head' },
+      h('div', {}, h('h2', { text: draft?.status === 'failed' ? '改写未完成' : '正在定向改写' }),
+        h('p', { class: 'tn-small tn-muted', text: `${draft?.application?.company_name || selectedApp?.company_name || ''} · ${draft?.application?.job_title || selectedApp?.job_title || ''} · ${draft?.source_resume?.filename || selectedResume?.filename || ''}` }))));
+    const percent = Math.max(0, Math.min(100, Number(draft?.progress_percent ?? 15)));
+    const failed = draft?.status === 'failed';
+    const card = h('section', { class: `tn-rewrite-progress-card${failed ? ' failed' : ''}`, 'data-test': 'rewrite-progress' },
+      h('div', { class: 'tn-rewrite-progress-head' },
+        h('strong', { text: failed ? '生成失败' : 'AI 正在处理简历' }),
+        h('span', { class: 'tn-rewrite-progress-percent', 'data-test': 'rewrite-progress-percent', text: `${percent}%` })),
+      h('div', { class: 'tn-rewrite-progress-track' }, h('div', { class: 'tn-rewrite-progress-fill', style: { width: `${percent}%` } })),
+      h('div', { class: 'tn-small tn-muted', 'data-test': 'rewrite-progress-label', text: failed ? (draft.error_message || draft.progress_label || '模型暂时不可用') : (draft?.progress_label || '正在读取目标岗位完整 JD 与原简历…') }),
+      failed ? h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'rewrite-retry', text: '重新生成', onclick: () => { draft = null; startRewrite(); } })) : null);
+    root.append(card);
+  }
+  async function pollDraft() {
+    if (!draft?.id) return;
+    clearTimeout(pollTimer);
+    try {
+      const response = await api.get(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draft.id)}`);
+      if (!active()) return;
+      draft = response.data;
+      if (draft.status === 'failed') { busy = false; renderProgress(); return; }
+      if (Number(draft.progress_percent ?? 100) >= 100 && Array.isArray(draft.blocks) && draft.blocks.length) {
+        busy = false;
+        renderDraft();
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        return;
+      }
+      renderProgress();
+      pollTimer = setTimeout(pollDraft, 800);
+    } catch (error) {
+      busy = false;
+      draft = { ...(draft || {}), status: 'failed', error_message: errorText(error) };
+      renderProgress();
+    }
+  }
+
   async function persistDraft() {
     if (!draft) return;
     clearTimeout(saveTimer);
@@ -124,25 +165,53 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       h('div', {}, h('h2', { text: '左右对照审阅' }),
         h('p', { class: 'tn-small tn-muted', text: `${app?.company_name || ''} · ${app?.job_title || ''} · 原简历 ${source?.filename || ''}` })),
       h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '返回配置', onclick: () => { draft = null; renderConfig(); } })));
-    const columns = h('div', { class: 'tn-rewrite-columns' });
-    const left = h('div', { class: 'tn-rewrite-column original' }, h('h3', { text: '原简历' }));
-    const right = h('div', { class: 'tn-rewrite-column rewritten' }, h('h3', { text: 'AI 改写稿（点击编辑）' }));
+    const jd = draft.jd_analysis || {};
+    const jdOverview = h('div', { class: 'tn-rewrite-jd-overview', 'data-test': 'rewrite-jd-overview' },
+      ...[['硬性要求', jd.hard_requirements], ['核心能力', jd.core_competencies], ['加分项', jd.plus_items], ['其他', jd.other_requirements]]
+        .map(([label, values]) => h('span', { class: 'tn-rewrite-jd-chip', title: Array.isArray(values) ? values.join('、') : '', text: `${label}${Array.isArray(values) && values.length ? ` ${values.length}` : ''}` })));
+    const rows = h('div', { class: 'tn-rewrite-rows' },
+      h('div', { class: 'tn-rewrite-row tn-rewrite-row-head' }, h('h3', { text: '原简历' }), h('h3', { text: 'AI 改写稿（点击编辑）' })));
+    function diffNodes(original, rewritten) {
+      if (!rewritten || rewritten === original) return [document.createTextNode(original)];
+      let start = 0;
+      while (start < original.length && start < rewritten.length && original[start] === rewritten[start]) start += 1;
+      let end = 0;
+      while (end < original.length - start && end < rewritten.length - start
+        && original[original.length - 1 - end] === rewritten[rewritten.length - 1 - end]) end += 1;
+      const prefix = original.slice(0, start);
+      const suffix = original.slice(original.length - end);
+      const changed = rewritten.slice(start, rewritten.length - end);
+      return [
+        ...(prefix ? [document.createTextNode(prefix)] : []),
+        h('mark', { class: 'tn-rewrite-diff-mark', text: changed }),
+        ...(suffix ? [document.createTextNode(suffix)] : [])
+      ];
+    }
     for (const block of draft.blocks) {
-      left.append(h(block.kind === 'heading' ? 'h4' : 'p', { class: 'tn-rewrite-original-block', text: block.original_text }));
-      const editable = h(block.kind === 'heading' ? 'h4' : 'div', {
+      const heading = block.kind === 'heading';
+      const left = h('div', { class: 'tn-rewrite-cell original' },
+        h(heading ? 'h4' : 'p', { class: 'tn-rewrite-original-block', text: block.original_text }));
+      const editable = h(heading ? 'h4' : 'div', {
         class: `tn-rewrite-block ${block.alignment_type}`, contenteditable: 'true', spellcheck: 'false',
         'data-test': 'rewrite-block', 'data-block-id': block.block_id,
         title: [block.reason, block.jd_evidence ? `JD：${block.jd_evidence}` : ''].filter(Boolean).join('\n')
       });
-      editable.textContent = block.rewritten_text || block.original_text;
-      editable.addEventListener('input', () => { block.rewritten_text = editable.innerText; scheduleSave(); });
+      if (block.alignment_type === 'unchanged' || block.rewritten_text === block.original_text) editable.textContent = block.original_text;
+      else editable.append(...diffNodes(block.original_text, block.rewritten_text || block.original_text));
+      editable.addEventListener('focus', () => {
+        if (editable.dataset.plain === '1') return;
+        editable.textContent = block.rewritten_text || block.original_text;
+        editable.dataset.plain = '1';
+      });
+      editable.addEventListener('input', () => { block.rewritten_text = editable.innerText; editable.dataset.plain = '1'; scheduleSave(); });
       const annotation = h('div', { class: 'tn-rewrite-annotation' },
         h('span', { class: `tn-rewrite-align ${block.alignment_type}`, text: ALIGN_LABEL[block.alignment_type] || block.alignment_type }),
         block.reason ? h('span', { text: block.reason }) : null,
-        block.alignment_type === 'needs_user_fact' ? h('span', { class: 'tn-small', text: '请只补充真实事实，不会自动编造' }) : null);
-      right.append(h('div', { class: 'tn-rewrite-block-wrap' }, editable, annotation));
+        block.jd_evidence ? h('span', { class: 'tn-rewrite-jd-evidence', text: `JD：${block.jd_evidence}` }) : null,
+        block.alignment_type === 'needs_user_fact' ? h('span', { class: 'tn-small', text: '请只补充真实事实，不会自动编造' }) : null,
+        block.alignment_type !== 'unchanged' && block.rewritten_text !== block.original_text ? h('button', { class: 'tn-rewrite-restore', type: 'button', text: '还原原句', onclick: () => { block.rewritten_text = block.original_text; block.alignment_type = 'unchanged'; renderDraft(); } }) : null);
+      rows.append(h('div', { class: 'tn-rewrite-row' }, left, h('div', { class: 'tn-rewrite-cell rewritten' }, editable, annotation)));
     }
-    columns.append(left, right);
     const needs = Array.isArray(draft.report?.needs_user_fact) ? draft.report.needs_user_fact : [];
     const missing = draft.blocks.filter((block) => block.alignment_type === 'needs_user_fact').map((block) => ({ block_id: block.block_id, prompt: block.reason }));
     const report = draft.report || {};
@@ -179,7 +248,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       h('div', { class: 'tn-rewrite-name' }, h('span', { class: 'tn-small tn-muted', text: '新简历名称' }), name),
       h('label', { class: 'tn-small' }, setCurrent, document.createTextNode(' 保存后设为当前主简历')),
       confirmButton);
-    root.append(tabs(), header, columns, reportBox, footer);
+    root.append(tabs(), header, jdOverview, rows, reportBox, footer);
   }
   async function load() {
     try {
@@ -196,7 +265,11 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       if (draftId) {
         try {
           draft = (await api.get(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draftId)}`)).data;
-          if (active() && draft) { renderDraft(); return; }
+          if (active() && draft) {
+            if (draft.status === 'ready' && Number(draft.progress_percent ?? 100) >= 100 && draft.blocks?.length) renderDraft();
+            else { renderProgress(); pollDraft(); }
+            return;
+          }
         } catch { /* fall back to config */ }
       }
       renderConfig();

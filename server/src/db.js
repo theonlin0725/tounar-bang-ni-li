@@ -144,6 +144,8 @@ function migrate(instance) {
   addColumn('resumes', 'rewrite_summary_json', 'TEXT');
   addColumn('resumes', 'export_docx_path', 'TEXT');
   addColumn('resumes', 'layout_meta_json', 'TEXT');
+  addColumn('resume_rewrite_drafts', 'progress_percent', 'INTEGER NOT NULL DEFAULT 100');
+  addColumn('resume_rewrite_drafts', 'progress_label', 'TEXT');
   addColumn('applications', 'stage_anchor_at', 'TEXT');
   addColumn('applications', 'stage_last_notified_anchor', 'TEXT');
   addColumn('applications', 'manual_status_at', 'TEXT');

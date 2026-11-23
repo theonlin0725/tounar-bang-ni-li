@@ -1,7 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from './helpers.js';
-import { buildRewriteBlocks } from '../src/modules/career-ai/rewrite-workbench.js';
+import { buildRewriteBlocks, normalizeResumeBlocks } from '../src/modules/career-ai/rewrite-workbench.js';
 
 describe('v1.1.1 resume library rewrite workbench', () => {
   let server;
@@ -30,15 +30,40 @@ describe('v1.1.1 resume library rewrite workbench', () => {
   });
   after(async () => { await server.stop(); });
 
+  async function waitDraft(id) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      const response = await server.request(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(id)}`, { cookie });
+      if (response.status !== 200) throw new Error(response.text);
+      if (response.json.data.status === 'failed') throw new Error(response.json.data.error_message || 'rewrite failed');
+      if (Number(response.json.data.progress_percent) >= 100 && response.json.data.blocks.length) return response.json.data;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('draft timeout');
+  }
+
+  it('PDF 软换行合并为完整句子，不产生半句残块', () => {
+    const blocks = normalizeResumeBlocks('项目经历\n· 归因数\n据异动，总结“发\n情”\n· 第二个项目\n负责 SQL');
+    assert.equal(blocks.some((block) => block.original_text.includes('归因数据异动，总结“发情”')), true);
+    assert.equal(blocks.some((block) => /\n/.test(block.original_text)), false);
+  });
+
   it('生成 9 步结构化草稿，标注待补事实，默认名称保留原简历与岗位', async () => {
     const response = await server.request('/api/v1/resumes/rewrite/drafts', {
       method: 'POST', cookie, body: { resume_id: resume.id, application_id: app.id, requirements: '突出数据分析' }
     });
     assert.equal(response.status, 201, response.text);
-    const draft = response.json.data;
+    let draft = response.json.data;
     assert.ok(draft.id);
+    draft = await waitDraft(draft.id);
     assert.ok(draft.blocks.length >= 4);
     assert.ok(draft.report.needs_user_fact_count >= 1);
+    assert.equal(draft.progress_percent, 100);
+    assert.equal(draft.progress_label, '生成完成！');
+    assert.ok(Array.isArray(draft.jd_analysis.hard_requirements));
+    assert.ok(Array.isArray(draft.jd_analysis.core_competencies));
+    assert.ok(Array.isArray(draft.jd_analysis.plus_items));
+    assert.ok(Array.isArray(draft.jd_analysis.other_requirements));
     assert.match(draft.proposed_name, /^原简历_数据分析师$/);
     const patched = await server.request(`/api/v1/resumes/rewrite/drafts/${draft.id}`, {
       method: 'PATCH', cookie, body: { blocks: draft.blocks.map((block) => block.block_id === 'b1' ? { ...block, rewritten_text: '张三（可编辑）' } : block) }

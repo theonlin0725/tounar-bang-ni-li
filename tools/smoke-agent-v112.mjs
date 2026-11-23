@@ -103,7 +103,16 @@ try {
         method: 'POST', cookie, body: { resume_id: resume.id, application_id: app.id, requirements: `第 ${i} 次真实稳定性测试，突出数据分析与用户增长` }
       });
       if (response.status !== 201) throw new Error(`${response.status}: ${response.text.slice(0, 200)}`);
-      const draft = response.json.data;
+      let draft = response.json.data;
+      const deadline = Date.now() + 180000;
+      while (Date.now() < deadline) {
+        const poll = await server.request(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draft.id)}`, { cookie });
+        draft = poll.json?.data || draft;
+        if (draft.status === 'failed') throw new Error(draft.error_message || 'rewrite failed');
+        if (Number(draft.progress_percent) >= 100 && Array.isArray(draft.blocks) && draft.blocks.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      if (Number(draft.progress_percent) < 100 || !draft.blocks?.length) throw new Error('rewrite timeout');
       const confirmedResponse = await server.request(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draft.id)}/confirm`, {
         method: 'POST', cookie, headers: { 'Idempotency-Key': `v112-rewrite-${i}` },
         body: { name: `真实模型改写_${i}`, set_current: false }

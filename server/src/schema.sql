@@ -581,6 +581,8 @@ CREATE TABLE IF NOT EXISTS resume_rewrite_drafts (
   blocks_json TEXT,
   report_json TEXT,
   proposed_name TEXT,
+  progress_percent INTEGER NOT NULL DEFAULT 100,
+  progress_label TEXT,
   result_resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL,
   error_message TEXT,
   created_at TEXT NOT NULL,

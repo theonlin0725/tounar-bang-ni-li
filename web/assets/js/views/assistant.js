@@ -35,7 +35,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
   const thread = h('section', { class: 'tn-assistant-thread', 'data-test': 'assistant-thread' });
   const composer = h('div', { class: 'tn-assistant-composer' });
   composerEl = composer;
-  root.append(top, welcome, thread, composer);
+  root.append(top, thread, composer);
 
   function errorMessage(error) {
     if (error?.code === 'AGENT_NOT_CONFIGURED') return 'AI 助手尚未配置模型网关，请联系管理员配置 AGENT_API_KEY / OPENROUTER_API_KEY。';
@@ -302,6 +302,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
   function renderThread({ append = null, forceBottom = false } = {}) {
     const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
     clear(thread);
+    if (!welcome.hidden) thread.append(welcome);
     if (messages.length) {
       thread.append(...messages.map(renderMessage));
     }

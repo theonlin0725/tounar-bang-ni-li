@@ -76,6 +76,11 @@ try {
     && (await page.locator('[data-test=assistant-message]').count()) >= 1);
   check('首轮对话后顶部欢迎与快捷卡仍常驻', (await page.locator('.tn-agent-quick-card').count()) === 4
     && (await page.locator('[data-test=assistant-profile-onboarding]').count()) === 1);
+  check('欢迎区位于对话滚动容器内部，不固定吸顶', await page.evaluate(() => {
+    const thread = document.querySelector('[data-test=assistant-thread]');
+    const welcome = document.querySelector('.tn-assistant-welcome');
+    return Boolean(thread && welcome && thread.contains(welcome));
+  }));
   await page.screenshot({ path: path.join(OUT, 'assistant-filter.png'), fullPage: true });
 
   await page.route('**/api/v1/agent/sessions/*/chat', (route) => route.abort());
@@ -161,9 +166,20 @@ try {
     && (await page.locator('[data-test=rewrite-profile-card]').count()) === 1
     && (await page.locator('[data-test=rewrite-jd-card]').count()) === 1);
   await page.click('[data-test=rewrite-start]');
+  await page.waitForSelector('[data-test=rewrite-progress]', { timeout: 5000 });
+  check('改写生成期间展示真实进度条', (await page.locator('[data-test=rewrite-progress-percent]').count()) === 1);
   await page.waitForSelector('[data-test=rewrite-block]', { timeout: 20000 });
-  check('改写生成左右对照块与四级标注', (await page.locator('[data-test=rewrite-block]').count()) >= 2
-    && (await page.locator('.tn-rewrite-align').count()) >= 2);
+  const rewriteCounts = {
+    blocks: await page.locator('[data-test=rewrite-block]').count(),
+    aligns: await page.locator('.tn-rewrite-align').count(),
+    jd: await page.locator('[data-test=rewrite-jd-overview]').count()
+  };
+  check('改写生成左右对照块与 JD 四类概览', rewriteCounts.blocks >= 2 && rewriteCounts.aligns >= 2 && rewriteCounts.jd === 1, JSON.stringify(rewriteCounts));
+  const rewriteOverflow = await page.evaluate(() => {
+    const rows = document.querySelector('.tn-rewrite-rows');
+    return { scrollWidth: rows?.scrollWidth || 0, clientWidth: rows?.clientWidth || 0 };
+  });
+  check('左右对照无横向裁切', rewriteOverflow.scrollWidth <= rewriteOverflow.clientWidth + 1, JSON.stringify(rewriteOverflow));
   await page.locator('[data-test=rewrite-block]').first().fill('E2E 改写首段');
   await page.fill('[data-test=rewrite-name]', 'E2E定向简历');
   await page.click('[data-test=rewrite-confirm]');
