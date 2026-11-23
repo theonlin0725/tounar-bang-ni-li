@@ -57,7 +57,6 @@ export async function renderAssistant(container, { gen, applicationId = null, re
 
   function renderWelcome() {
     clear(welcome);
-    if (messages.some((m) => m.role === 'user')) { welcome.hidden = true; return; }
     welcome.hidden = false;
     const resumeLabel = context?.resume?.filename || '未选择简历';
     const appLabel = context?.application ? `${context.application.company_name || ''} · ${context.application.job_title || ''}` : '全部岗位';
@@ -68,13 +67,18 @@ export async function renderAssistant(container, { gen, applicationId = null, re
         h('span', { class: 'tn-agent-pill', text: `当前岗位：${appLabel}` }),
         h('span', { class: 'tn-agent-pill', text: `当前简历：${resumeLabel}` }),
         h('span', { class: `tn-agent-pill${context?.profile?.status === 'confirmed' ? ' confirmed' : ' pending'}`, 'data-test': 'assistant-profile-pill',
-          text: context?.profile?.status === 'confirmed' ? `画像：${context.profile.summary_text || '已确认'}` : '画像：未建立' })
+          text: context?.profile?.status === 'confirmed' ? '画像：已建立' : '画像：未建立' })
       ),
       context?.profile?.status !== 'confirmed' ? h('div', { class: 'tn-agent-onboarding', 'data-test': 'assistant-profile-onboarding' },
         h('div', {}, h('strong', { text: '先建立求职画像，再让匹配更懂你' }),
           h('p', { class: 'tn-small tn-muted', text: '用 3–5 轮对话记录方向、地点、行业、企业偏好、薪资与工作方式；确认后才会写入。' })),
         h('button', { type: 'button', class: 'tn-btn tn-btn-primary tn-btn-sm', 'data-test': 'assistant-profile-start', text: '现在开始',
-          onclick: () => { if (inputEl) { inputEl.value = '帮我建立求职画像'; send(); } } })) : null,
+          onclick: () => { if (inputEl) { inputEl.value = '帮我建立求职画像'; send(); } } }))
+        : h('div', { class: 'tn-agent-profile-bar', 'data-test': 'assistant-profile-bar' },
+          h('div', {}, h('strong', { text: `求职画像已建立 · ${context.profile.summary_text || '已确认'}` }),
+            h('p', { class: 'tn-small tn-muted', text: '匹配分析与简历改写会参考你的方向、地点、薪资和偏好。' })),
+          h('button', { type: 'button', class: 'tn-btn tn-btn-sm', 'data-test': 'assistant-profile-edit', text: '修改画像',
+            onclick: () => { if (inputEl) { inputEl.value = '帮我修改求职画像'; send(); } } })),
       h('div', { class: 'tn-agent-cards' }, ...QUICK_CARDS.map(([label, prompt, desc]) => h('button', {
         type: 'button', class: 'tn-agent-quick-card', 'data-test': `assistant-quick-${label}`,
         onclick: () => { if (inputEl) { inputEl.value = prompt; send(); } }
@@ -103,7 +107,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
     });
     const profileButton = h('button', {
       type: 'button', class: 'tn-context-select', 'data-test': 'assistant-context-profile',
-      text: context?.profile?.status === 'confirmed' ? `画像：${context.profile.summary_text || '已确认'}` : '画像：未建立',
+      text: context?.profile?.status === 'confirmed' ? '画像：已建立' : '画像：未建立',
       onclick: () => {
         if (context?.profile?.status !== 'confirmed' && inputEl) { inputEl.value = '帮我建立求职画像'; send(); }
         else toast('求职画像已确认；可在匹配分析页编辑', 'ok');
@@ -173,10 +177,15 @@ export async function renderAssistant(container, { gen, applicationId = null, re
     const status = actual?.status || (action.status === 'pending' || !action.status ? 'processed' : action.status);
     const isRewrite = action.action_type === 'rewrite_resume' || summary.title?.includes('简历改写');
     const isProfile = action.action_type === 'update_profile' || summary.title?.includes('画像');
+    const isJobFields = action.action_type === 'update_job_fields' || summary.title?.includes('岗位信息');
     const statusText = status === 'pending' ? '待确认' : status === 'processed' ? '已处理' : ({ confirmed: '已确认', cancelled: '已取消', expired: '已过期', failed: '未执行' }[status] || status || '');
     const kv = [];
     const addKv = (label, value) => { if (value !== null && value !== undefined && value !== '') kv.push([label, value]); };
-    if (isProfile) {
+    if (isJobFields) {
+      addKv('操作类型', '修改岗位信息');
+      addKv('目标岗位', summary.application || '');
+      for (const [label, value] of Object.entries(summary.changes || {})) addKv(label, value);
+    } else if (isProfile) {
       addKv('操作类型', '保存求职画像');
       const p = summary.profile || payload.profile || {};
       addKv('职业发展方向', p.career_direction);
@@ -247,12 +256,13 @@ export async function renderAssistant(container, { gen, applicationId = null, re
       try { await api.post(`/api/v1/agent/actions/${encodeURIComponent(action.id)}/cancel`, {}, { idempotencyKey: `agent-cancel-${action.id}` }); toast('已取消'); await loadSession(session.id); }
       catch (error) { cancel.disabled = false; confirm.disabled = false; toast(errorMessage(error), 'err'); }
     } });
-    const confirm = h('button', { type: 'button', class: 'tn-btn tn-btn-sm tn-btn-primary', text: isProfile ? '确认保存画像' : isRewrite ? '保存为新版本' : '确认执行', onclick: async () => {
+    const confirm = h('button', { type: 'button', class: 'tn-btn tn-btn-sm tn-btn-primary', text: isProfile ? '确认保存画像' : isRewrite ? '保存为新版本' : isJobFields ? '确认修改' : '确认执行', onclick: async () => {
       cancel.disabled = true; confirm.disabled = true; confirm.textContent = '正在执行…';
       try {
         const response = await api.post(`/api/v1/agent/actions/${encodeURIComponent(action.id)}/confirm`, { set_current: !!setCurrentBox?.checked }, { idempotencyKey: `agent-action-${action.id}` });
         const result = response.data?.result;
         if (isProfile) toast('求职画像已确认保存', 'ok');
+        else if (isJobFields) toast(result?.ok_count === 0 ? '岗位字段未执行修改' : '岗位字段已更新', result?.ok_count === 0 ? 'err' : 'ok');
         else if (isRewrite) {
           const needsAnalysis = Boolean(setCurrentBox?.checked && result?.resume?.status && result.resume.status !== 'ready');
           toast(needsAnalysis ? '已保存并设为当前；请到简历库重新分析后用于匹配' : '已保存为新简历版本', needsAnalysis ? 'info' : 'ok');
@@ -263,7 +273,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
         window.dispatchEvent(new CustomEvent('tounar:data-changed', { detail: { entities: isProfile ? ['profile'] : isRewrite ? ['resumes'] : ['applications'], result } }));
         await loadSession(session.id);
       } catch (error) {
-        cancel.disabled = false; confirm.disabled = false; confirm.textContent = isProfile ? '确认保存画像' : isRewrite ? '保存为新版本' : '确认执行';
+        cancel.disabled = false; confirm.disabled = false; confirm.textContent = isProfile ? '确认保存画像' : isRewrite ? '保存为新版本' : isJobFields ? '确认修改' : '确认执行';
         toast(errorMessage(error), 'err');
       }
     } });

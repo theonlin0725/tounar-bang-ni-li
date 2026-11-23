@@ -12,11 +12,13 @@ const STATUS_TEXT = {
   search_jobs: '正在搜索投递台账…',
   filter_applications: '正在筛选投递台账…',
   get_job_detail: '正在读取岗位详情…',
+  get_resume_detail: '正在读取简历全文…',
+  update_job_fields: '正在准备岗位字段修改确认…',
   compare_jobs: '正在对比岗位信息…',
   analyze_match: '正在运行单岗位六维匹配…',
   generate_interview_questions: '正在生成面试题与答题框架…',
   update_status: '正在准备状态修改确认…',
-  rewrite_resume: '正在生成简历定向改写方案…'
+  rewrite_resume: '正在生成逐段改写建议（预计 15–30 秒）…'
 };
 
 function systemPrompt(context) {
@@ -25,11 +27,12 @@ function systemPrompt(context) {
 ${JSON.stringify(context)}
 规则：
 1. 台账查询、岗位详情、对比、匹配、面试题可以使用只读工具；不要编造没有返回的数据。
-2. 修改投递状态或保存简历改写版本必须先调用对应工具生成待确认操作，再告诉用户需要确认；绝不能声称已经直接写入。
+2. 修改投递状态、修改岗位字段或保存简历改写版本必须先调用对应工具（update_status / update_job_fields / rewrite_resume）生成待确认操作，再告诉用户需要确认；绝不能声称已经直接写入。
 3. 回答用自然、简洁的中文，先给结论，再给必要的依据/下一步。涉及岗位/报告/新版本时保留可读名称，工具内部 JSON 不要展示给用户。
 4. 如果用户没有指定岗位，优先使用当前上下文岗位；确实无法确定时只问一个澄清问题。
 5. 当用户要建立或更新求职画像时，分 3–5 轮收集：职业发展方向+期望地点、行业+企业偏好、薪资+工作方式；用户一次答全可提前收敛。信息足够后必须调用 update_profile 生成确认卡，绝不能声称已保存。
 6. 画像只记录用户明确表达的偏好；缺失维度留空，不要推测。当前版本仍没有投递策略分析或自定义提醒天数能力。
+7. 单次可并行发起多个只读工具调用（如同时查台账 + 读简历），优先用最少轮次拿到信息后直接作答，不要重复查询。
 最多使用 ${MAX_STEPS} 次工具调用。`;
 }
 
@@ -77,7 +80,9 @@ function fakeAgentTurn({ messages, context }) {
   const contextApp = context?.application?.id || null;
   let name = 'filter_applications';
   let args = {};
-  if (/画像/.test(user)) { name = 'update_profile'; args = { career_direction: '产品经理', preferred_locations: ['上海'], industry_preferences: ['互联网'], company_preferences: ['成长型公司'], salary_expectation: '月薪 20k–25k', work_mode: '混合办公' }; }
+  if (/简历详情|读取简历/.test(user)) { name = 'get_resume_detail'; args = {}; }
+  else if (/修改岗位|改岗位|更新岗位|补充 JD|补 JD/.test(user)) { name = 'update_job_fields'; args = contextApp ? { application_id: contextApp, changes: { location: '上海' }, reason: '用户要求更新岗位信息' } : {}; }
+  else if (/画像/.test(user)) { name = 'update_profile'; args = { career_direction: '产品经理', preferred_locations: ['上海'], industry_preferences: ['互联网'], company_preferences: ['成长型公司'], salary_expectation: '月薪 20k–25k', work_mode: '混合办公' }; }
   else if (/比较/.test(user)) { name = 'compare_jobs'; args = { application_ids: (context?.recent_applications || []).slice(0, 2).map((app) => app.id) }; }
   else if (/搜索|查找.*岗位|找.*公司/.test(user)) { name = 'search_jobs'; args = { query: user.replace(/搜索|查找/g, '').trim() || '字节' }; }
   else if (/面试题/.test(user)) { name = 'generate_interview_questions'; args = { application_id: contextApp }; }
@@ -157,9 +162,23 @@ export async function runAgentChat({ ownerId, sessionId, userMessage, onStatus =
     }
   }
   if (!finalContent) {
-    finalContent = steps >= MAX_STEPS || toolCallsUsed >= MAX_TOOL_CALLS
-      ? '我已经读取了当前可用的信息，但这次涉及的步骤较多。你可以缩小查询范围，或告诉我更具体的岗位后再继续。'
-      : '我暂时没有整理出可读结论，请换一种问法或指定一个岗位。';
+    // Never end a tool-heavy turn with a canned "please narrow it down" reply.
+    // Close the tool loop and ask the model to summarize the data it already has.
+    try {
+      onStatus('正在整理已读取的信息并生成结论…');
+      if (process.env.AGENT_FAKE_MODE === 'true') {
+        finalContent = '已根据本轮读取的台账/简历信息整理结论；请查看上方数据摘要，或告诉我希望优先关注的岗位。';
+      } else {
+        const closing = await chatAgent({
+          messages: [...messages, { role: 'system', content: '已达到本轮工具调用上限。请立刻只基于以上已读取到的工具数据，直接向用户输出清晰、结构化的中文结论与下一步建议；不要再调用工具，不要要求用户缩小范围，除非确实缺少关键信息。' }],
+          tools: [], toolChoice: 'none', temperature: 0.2, maxTokens: 3600
+        });
+        finalContent = String(closing.content || '').trim();
+      }
+    } catch (error) {
+      finalContent = '';
+    }
+    if (!finalContent) finalContent = '本轮已读取到部分信息，但模型没有返回可读结论。请重试本轮，或换一种问法；我不会伪造未读取到的数据。';
   }
   const actionSummaries = actions.map((action) => ({ id: action.id, action_type: action.action_type, summary: action.summary }));
   const meta = {

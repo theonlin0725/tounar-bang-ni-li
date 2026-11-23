@@ -499,7 +499,7 @@ CREATE TABLE IF NOT EXISTS agent_pending_actions (
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   resolved_at TEXT,
-  CHECK (action_type IN ('update_status','rewrite_resume','update_profile')),
+  CHECK (action_type IN ('update_status','rewrite_resume','update_profile','update_job_fields')),
   CHECK (status IN ('pending','confirmed','cancelled','expired','failed'))
 );
 CREATE INDEX IF NOT EXISTS idx_agent_pending_owner ON agent_pending_actions(owner_id, status, created_at DESC);

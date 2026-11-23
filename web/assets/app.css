@@ -981,3 +981,7 @@ table.tn-table { min-width: 760px; table-layout: fixed; }
 .tn-agent-message.error .tn-agent-bubble { border-color:#f0c9bd; background:#fff8f5; }
 .tn-agent-error-note { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:#9a5a45; }
 .tn-agent-error-note .tn-btn { border-color:#e1baa9; color:#8a4b36; background:#fff; }
+.tn-agent-profile-bar { display:flex; align-items:center; justify-content:space-between; gap:14px; border:1px solid #cfe4d4; background:#f1faf3; border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+.tn-agent-profile-bar strong { color:#1f5f3c; }
+.tn-agent-profile-bar p { margin:3px 0 0; }
+.tn-assistant-welcome { flex:0 0 auto; }

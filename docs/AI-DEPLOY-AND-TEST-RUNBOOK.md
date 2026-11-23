@@ -1,7 +1,7 @@
-# 帮你理 Tounar v1.1.1：AI 部署与内测 Runbook
+# 帮你理 Tounar v1.1.2：AI 部署与内测 Runbook
 
 **适用对象**：Codex / Claude Code / Gemini / Cursor 等编程助手  
-**当前版本**：v1.1.1（AI 助手 + 简历改写工作台）
+**当前版本**：v1.1.2（AI 助手稳定性 + 简历改写工作台）
 **目标**：在不修改业务代码、不接触真实生产库的前提下，完成环境预检、隔离启动和 (a)–(f) 模块验活（e 为 AI 助手/画像，f 为简历改写）。
 
 ---
@@ -96,7 +96,7 @@ npm run local:stop
 
 ```bash
 curl -fsS http://127.0.0.1:4310/api/v1/health
-# 期望：ok: true, version: "1.1.1"
+# 期望：ok: true, version: "1.1.2"
 ```
 
 ---

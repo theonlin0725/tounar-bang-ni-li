@@ -44,6 +44,14 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'get_resume_detail',
+      description: '按需读取当前上下文简历或指定简历版本的完整文本。只读。',
+      parameters: { type: 'object', properties: { resume_id: { type: 'string' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'compare_jobs',
       description: '对比 2–5 个岗位的详情、进展与已有匹配报告，返回结构化对比素材。只读。',
       parameters: { type: 'object', properties: { application_ids: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 5 } }, required: ['application_ids'] }
@@ -103,6 +111,29 @@ export const TOOL_DEFINITIONS = [
           company_preferences: { type: 'array', items: { type: 'string' } },
           summary_text: { type: 'string' }
         }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_job_fields',
+      description: '创建修改岗位名称、城市、批次、链接或 JD 等字段的待确认操作；绝不直接写库。',
+      parameters: {
+        type: 'object',
+        properties: {
+          application_id: { type: 'string' },
+          changes: {
+            type: 'object',
+            description: '只允许 company_name/job_title/location/recruitment_batch/job_url/jd_summary/jd_text',
+            properties: {
+              company_name: { type: 'string' }, job_title: { type: 'string' }, location: { type: 'string' },
+              recruitment_batch: { type: 'string' }, job_url: { type: 'string' }, jd_summary: { type: 'string' }, jd_text: { type: 'string' }
+            }
+          },
+          reason: { type: 'string' }
+        },
+        required: ['application_id', 'changes']
       }
     }
   },
@@ -188,6 +219,17 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
       refs: [{ type: 'application', id: detail.id, label: `${detail.company_name || '未命名'} · ${detail.job_title || '岗位'}` }]
     };
   }
+  if (toolName === 'get_resume_detail') {
+    const resume = args.resume_id
+      ? getResume(ownerId, args.resume_id, { includeText: true })
+      : (contextResumeId ? getResume(ownerId, contextResumeId, { includeText: true }) : currentResume(ownerId));
+    if (!resume) toolError('请先上传并选择一份简历', 'RESUME_REQUIRED');
+    return {
+      summary: `读取简历 ${resume.filename}（${resume.text_chars || 0} 字）`,
+      data: { id: resume.id, filename: resume.filename, status: resume.status, text_chars: resume.text_chars, text: String(resume.text || '').slice(0, 30000) },
+      refs: [{ type: 'resume', id: resume.id, label: resume.filename }]
+    };
+  }
   if (toolName === 'compare_jobs') {
     const ids = [...new Set((Array.isArray(args.application_ids) ? args.application_ids : []).map((x) => clean(x, 100)).filter(Boolean))];
     if (ids.length < 2 || ids.length > 5) toolError('请选择 2–5 个岗位');
@@ -248,6 +290,37 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
       summary: { title: prepared.length > 1 ? '批量修改投递状态' : '修改投递状态', items: prepared, risk: prepared.some((item) => ['offer', 'rejected', 'closed'].includes(item.status)) ? '包含终态变更，请确认' : null }
     });
     return { summary: `已生成 ${prepared.length} 条状态修改待确认单`, data: { action }, refs: [{ type: 'action', id: action.id, label: '状态修改确认' }] };
+  }
+  if (toolName === 'update_job_fields') {
+    const appId = clean(args.application_id, 100) || contextApplicationId;
+    if (!appId) throw new AppError(409, 'APPLICATION_REQUIRED', '当前上下文是全部岗位，请先选择目标岗位', { retryable: false });
+    const app = one('SELECT * FROM applications WHERE id=? AND owner_id=? AND archived_at IS NULL', [appId, ownerId]);
+    if (!app) throw new AppError(404, 'NOT_FOUND', '岗位不存在或不属于当前账号');
+    const allowed = new Set(['company_name', 'job_title', 'location', 'recruitment_batch', 'job_url', 'jd_summary', 'jd_text']);
+    const changes = {};
+    for (const [key, value] of Object.entries(args.changes || {})) {
+      if (!allowed.has(key)) continue;
+      const cleaned = key === 'jd_text'
+        ? String(value || '').replace(/\r\n?/g, '\n').trim().slice(0, 30000)
+        : clean(value, 500);
+      if (cleaned) changes[key] = cleaned;
+    }
+    if (!Object.keys(changes).length) toolError('没有可修改的岗位字段');
+    const labels = { company_name: '公司', job_title: '岗位', location: '城市', recruitment_batch: '招聘批次', job_url: '岗位链接', jd_summary: 'JD 摘要', jd_text: '完整 JD' };
+    const prepared = {
+      application_id: app.id, company_name: app.company_name, job_title: app.job_title,
+      expected_version: app.version, changes
+    };
+    const action = createPendingAction({
+      ownerId, sessionId, actionType: 'update_job_fields',
+      payload: { items: [prepared], reason: clean(args.reason, 240) },
+      summary: {
+        title: '修改岗位信息', application: `${app.company_name || ''} · ${app.job_title || ''}`,
+        items: [{ company_name: app.company_name, job_title: app.job_title, fields: Object.keys(changes).map((key) => labels[key] || key) }],
+        changes: Object.fromEntries(Object.entries(changes).map(([key, value]) => [labels[key] || key, value.slice(0, 160)]))
+      }
+    });
+    return { summary: '已生成岗位字段修改待确认单', data: { action }, refs: [{ type: 'action', id: action.id, label: '岗位修改确认' }, { type: 'application', id: app.id, label: `${app.company_name} · ${app.job_title}` }] };
   }
   if (toolName === 'update_profile') {
     const array = (value) => (Array.isArray(value) ? value : String(value || '').split(/[、,，;；\n]/)).map((item) => clean(item, 40)).filter(Boolean).slice(0, 12);

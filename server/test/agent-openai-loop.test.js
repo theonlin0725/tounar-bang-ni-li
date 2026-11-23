@@ -26,6 +26,11 @@ describe('v1.1.0 Agent OpenAI-compatible tool loop', () => {
       for await (const chunk of req) raw += chunk;
       const body = JSON.parse(raw || '{}');
       requestBodies.push(body);
+      if (!Array.isArray(body.tools) || body.tools.length === 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { content: '已根据已读取的工具数据整理：当前筛选结果和下一步建议如下。' }, finish_reason: 'stop' }] }));
+        return;
+      }
       if (Array.isArray(body.tools) && body.tools.some((tool) => tool.function?.name === 'filter_applications')) sawTools = true;
       const userText = body.messages?.filter((message) => message.role === 'user').at(-1)?.content || '';
       if (String(userText).includes('fail-model')) {
@@ -140,8 +145,8 @@ describe('v1.1.0 Agent OpenAI-compatible tool loop', () => {
     const session = (await server.request('/api/v1/agent/sessions', { method: 'POST', cookie, body: {} })).json.data;
     const result = await send(session.id, 'multi tools please');
     assert.ok(result?.message);
-    assert.match(result.message.content, /步骤较多|缩小查询范围/);
-    assert.equal(requestCount, 2);
+    assert.match(result.message.content, /已根据已读取的工具数据整理/);
+    assert.equal(requestCount, 3);
     const db = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
     try {
       const runs = db.prepare('SELECT COUNT(*) AS n FROM agent_tool_runs WHERE session_id = ?').get(session.id);
@@ -154,8 +159,8 @@ describe('v1.1.0 Agent OpenAI-compatible tool loop', () => {
     const session = (await server.request('/api/v1/agent/sessions', { method: 'POST', cookie, body: {} })).json.data;
     const result = await send(session.id, 'loop please');
     assert.ok(result?.message);
-    assert.match(result.message.content, /步骤较多|缩小查询范围/);
-    assert.equal(requestCount, 6);
+    assert.match(result.message.content, /已根据已读取的工具数据整理/);
+    assert.equal(requestCount, 7);
     const db = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
     try {
       const runs = db.prepare('SELECT COUNT(*) AS n FROM agent_tool_runs WHERE session_id = ?').get(session.id);

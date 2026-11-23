@@ -8,6 +8,7 @@ import { chatAgent } from '../agent/llm.js';
 import { writeResumeDocx } from './docx-exporter.js';
 
 const ALIGNMENT_TYPES = ['supported_optimize', 'improvable', 'needs_user_fact', 'unsupported_blocked'];
+const BLOCK_ALIGNMENTS = new Set([...ALIGNMENT_TYPES, 'unchanged']);
 const SECTION_RE = /^(基本信息|个人信息|教育背景|教育经历|工作经历|实习经历|项目经历|校园经历|技能|技能证书|证书|获奖|荣誉|自我评价|求职意向|个人总结|专业技能|研究经历)$/;
 
 function text(value, max = 2000) {
@@ -18,12 +19,32 @@ function sourceBlocks(resumeText) {
   const lines = String(resumeText || '').replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
   let section = '基本信息';
+  let buffer = [];
+  const flush = () => {
+    if (!buffer.length) return;
+    blocks.push({ block_id: `b${blocks.length + 1}`, section, kind: 'paragraph', original_text: buffer.join('\n') });
+    buffer = [];
+  };
   for (const raw of lines) {
     const line = raw.trim();
-    if (!line) continue;
-    if (SECTION_RE.test(line)) { section = line; blocks.push({ block_id: `b${blocks.length + 1}`, section, kind: 'heading', original_text: line }); continue; }
-    blocks.push({ block_id: `b${blocks.length + 1}`, section, kind: 'line', original_text: line });
+    if (!line) { flush(); continue; }
+    if (SECTION_RE.test(line)) {
+      flush();
+      section = line;
+      blocks.push({ block_id: `b${blocks.length + 1}`, section, kind: 'heading', original_text: line });
+      continue;
+    }
+    // Keep bullet/duration starts as their own editable entries; merge other
+    // consecutive prose into one paragraph to avoid 50–80 token-heavy blocks.
+    if (/^[-•*·]\s+/.test(line) || /^(20\d{2}[./年-]|[0-9]{4}[./-][0-9]{1,2}\s*[-–])/.test(line)) {
+      flush();
+      blocks.push({ block_id: `b${blocks.length + 1}`, section, kind: 'bullet', original_text: line });
+      continue;
+    }
+    buffer.push(line);
+    if (buffer.length >= 2) flush();
   }
+  flush();
   return blocks;
 }
 function defaultName(resume, app) {
@@ -64,7 +85,8 @@ export function buildRewriteBlocks(resumeText, alignments = [], report = {}) {
   const needs = [];
   const blocks = source.map((block) => {
     const item = byId.get(block.block_id) || {};
-    let alignment = ALIGNMENT_TYPES.includes(item.alignment_type) ? item.alignment_type : 'improvable';
+    const hasDelta = Boolean(item.alignment_type);
+    let alignment = BLOCK_ALIGNMENTS.has(item.alignment_type) ? item.alignment_type : (hasDelta ? 'improvable' : 'unchanged');
     let rewritten = text(item.rewritten_text, 4000) || block.original_text;
     if (alignment === 'unsupported_blocked') { blocked.push(block.block_id); rewritten = block.original_text; }
     if (alignment === 'needs_user_fact') { needs.push({ block_id: block.block_id, section: block.section, prompt: text(item.reason || '请补充真实指标或职责', 300) }); rewritten = block.original_text; }
@@ -105,15 +127,26 @@ export async function generateRewriteDraft({ ownerId, resumeId, applicationId, r
   let generated;
   if (process.env.AGENT_FAKE_MODE === 'true') generated = fakeGeneration(resume, app, profile);
   else {
-    const result = await chatAgent({
-      messages: [
-        { role: 'system', content: `你是简历定向改写助手。输出严格 JSON，不要 Markdown。\n必须按 9 步处理：1 读取 JD；2 读取原简历；3 提取 JD 关键词/能力；4 按 block_id 理解简历；5 对齐；6 识别差距；7 输出四级分类；8 只基于原简历事实生成改写；9 输出报告。\n四级：supported_optimize=原文已有可优化；improvable=可提供更清晰表达；needs_user_fact=需要用户补充真实数字/职责，不能编造；unsupported_blocked=无证据，禁止写入。\n每个 block 只能使用原 block 的 block_id，不得创建新经历。没有证据的数字、公司、学历、项目一律不得输出。\nJSON 结构：\n{"jd_analysis":{"keywords":[],"requirements":[],"gaps":[]},"alignments":[{"block_id":"b1","alignment_type":"supported_optimize|improvable|needs_user_fact|unsupported_blocked","rewritten_text":"","reason":"","jd_evidence":"","needs_user_fact":false}],"report":{"keyword_coverage":0,"gaps":[],"risks":[]}}` },
-        { role: 'user', content: JSON.stringify({ jd: jd.slice(0, 12000), profile: profile ? profilePayload(profile) : null, requirements: text(requirements, 1500), blocks: blocks.map((b) => ({ block_id: b.block_id, section: b.section, text: b.original_text })) }) }
-      ],
-      temperature: 0.1,
-      maxTokens: 6500
-    });
-    try { generated = parseJson(result.content); } catch { throw new AppError(502, 'REWRITE_INVALID_RESPONSE', '简历改写结果无法解析，请重试', { retryable: true }); }
+    const baseMessages = [
+      { role: 'system', content: `你是简历定向改写助手。输出严格 JSON，不要 Markdown。\n必须按 9 步处理：1 读取 JD；2 读取原简历；3 提取 JD 关键词/能力；4 按 block_id 理解简历；5 对齐；6 识别差距；7 输出四级分类；8 只基于原简历事实生成改写；9 输出报告。\n四级：supported_optimize=原文已有可优化；improvable=可提供更清晰表达；needs_user_fact=需要用户补充真实数字/职责，不能编造；unsupported_blocked=无证据，禁止写入。\nDelta 模式：只返回需要改写或标注的 block_id；没有改动的块不要返回，服务端自动保留原文。绝不要修改姓名、电话、学校等无需要字段。\n每个 block 只能使用原 block 的 block_id，不得创建新经历。没有证据的数字、公司、学历、项目一律不得输出。\nJSON 结构：\n{"jd_analysis":{"keywords":[],"requirements":[],"gaps":[]},"alignments":[{"block_id":"b1","alignment_type":"supported_optimize|improvable|needs_user_fact|unsupported_blocked","rewritten_text":"","reason":"","jd_evidence":"","needs_user_fact":false}],"report":{"keyword_coverage":0,"gaps":[],"risks":[]}}` },
+      { role: 'user', content: JSON.stringify({ jd: jd.slice(0, 12000), profile: profile ? profilePayload(profile) : null, requirements: text(requirements, 1500), blocks: blocks.map((b) => ({ block_id: b.block_id, section: b.section, text: b.original_text })) }) }
+    ];
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const messages = attempt === 0 ? baseMessages : [...baseMessages, { role: 'user', content: '上次输出不是合法 JSON。请只返回紧凑、可解析的 JSON，不要 Markdown，不要解释。' }];
+      try {
+        const result = await chatAgent({
+          messages, temperature: 0.1, maxTokens: 6000,
+          responseFormat: { type: 'json_object' }, timeoutMs: 120000, reasoningEffort: 'low'
+        });
+        generated = parseJson(result.content);
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt === 0) continue;
+      }
+    }
+    if (!generated) throw new AppError(502, 'REWRITE_INVALID_RESPONSE', '简历改写结果无法解析，请重试', { retryable: true, details: { reason: lastError?.code || 'JSON_PARSE' } });
   }
   const built = buildRewriteBlocks(resume.text, generated.alignments, generated.report || {});
   const proposed = defaultName(resume, app);
@@ -157,7 +190,7 @@ export function updateRewriteDraft(ownerId, id, body = {}) {
     ...block,
     block_id: text(block?.block_id, 80), original_text: text(block?.original_text, 4000),
     rewritten_text: text(block?.rewritten_text, 4000), reason: text(block?.reason, 600),
-    jd_evidence: text(block?.jd_evidence, 600), alignment_type: ALIGNMENT_TYPES.includes(block?.alignment_type) ? block.alignment_type : 'improvable'
+    jd_evidence: text(block?.jd_evidence, 600), alignment_type: BLOCK_ALIGNMENTS.has(block?.alignment_type) ? block.alignment_type : 'unchanged'
   })) : null;
   const proposed = body.proposed_name ? text(body.proposed_name, 180) : row.proposed_name;
   run('UPDATE resume_rewrite_drafts SET blocks_json = ?, proposed_name = ?, updated_at = ? WHERE id = ? AND owner_id = ?',

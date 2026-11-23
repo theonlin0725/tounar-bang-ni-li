@@ -128,6 +128,22 @@ describe('v1.1.0 Agent assistant / tools / controlled writes', () => {
     assert.match(compare.message.content, /对比|岗位/);
   });
 
+  it('get_resume_detail 可读取完整简历；update_job_fields 只生成确认单，确认后才改字段', async () => {
+    const detail = await chat('查看简历详情');
+    assert.ok(detail.message.meta.tools_used.includes('get_resume_detail'));
+    const action = await actionFrom('修改岗位信息');
+    assert.equal(action.action_type, 'update_job_fields');
+    const untouched = (await server.request(`/api/v1/applications/${app.id}`, { cookie })).json.data;
+    assert.notEqual(untouched.location, '上海');
+    const confirm = await server.request(`/api/v1/agent/actions/${action.id}/confirm`, {
+      method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-job-fields-confirm' }, body: {}
+    });
+    assert.equal(confirm.status, 200, confirm.text);
+    assert.ok(confirm.json.data.result.ok_count >= 1);
+    const updated = (await server.request(`/api/v1/applications/${app.id}`, { cookie })).json.data;
+    assert.equal(updated.location, '上海');
+  });
+
   it('update_status 未确认不写库；确认时逐条校验版本并写 agent 审计', async () => {
     const before = (await server.request(`/api/v1/applications/${app.id}`, { cookie })).json.data;
     const action = await actionFrom('把状态改为面试');

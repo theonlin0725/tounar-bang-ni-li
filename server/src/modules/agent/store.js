@@ -2,7 +2,7 @@ import { all, bumpRevision, getApplication, one, run, transaction } from '../../
 import { AppError, newId, nowIso, safeJsonParse } from '../../util.js';
 import { currentResume, getResume, listResumes } from '../career-ai/service.js';
 import { applicationDetail, ledgerResponse } from '../../domain/ledger.js';
-import { setApplicationStatusManually } from '../../domain/reviews.js';
+import { correctApplication, setApplicationStatusManually } from '../../domain/reviews.js';
 import { createResumeVersionFromText } from '../career-ai/service.js';
 import { getProfile, profilePayload, saveProfile } from '../profile/service.js';
 import { writeResumeDocx } from '../career-ai/docx-exporter.js';
@@ -94,7 +94,7 @@ export function listPendingActions(ownerId, sessionId) {
   return all("SELECT * FROM agent_pending_actions WHERE owner_id = ? AND session_id = ? AND status = 'pending' ORDER BY created_at ASC", [ownerId, sessionId]).map(actionProjection);
 }
 export function createPendingAction({ ownerId, sessionId, messageId = null, actionType, payload, summary, ttlMinutes = 15 }) {
-  if (!['update_status', 'rewrite_resume', 'update_profile'].includes(actionType)) throw new AppError(400, 'VALIDATION_ERROR', '未知写操作类型');
+  if (!['update_status', 'rewrite_resume', 'update_profile', 'update_job_fields'].includes(actionType)) throw new AppError(400, 'VALIDATION_ERROR', '未知写操作类型');
   const id = newId('agact');
   const at = nowIso();
   const expiresAt = new Date(Date.now() + ttlMinutes * 60000).toISOString();
@@ -155,6 +155,33 @@ export function confirmAction(ownerId, actionId, options = {}) {
           }).application;
           writeAgentAudit(ownerId, 'application.status.agent', 'application', app.id, { action_id: row.id, from: app.status, to: item.status });
           results.push({ application_id: app.id, ok: true, status: updated.status, version: updated.version });
+        } catch (error) {
+          results.push({ application_id: app.id, ok: false, reason: error?.code || 'UPDATE_FAILED', message: error?.message || '更新失败' });
+        }
+      }
+      const ok = results.filter((item) => item.ok).length;
+      result = { action_type: row.action_type, ok_count: ok, skipped_count: results.length - ok, items: results, mutated_entities: ok ? ['applications'] : [] };
+      const finalStatus = ok ? 'confirmed' : 'failed';
+      run("UPDATE agent_pending_actions SET status=?, result_json=?, resolved_at=? WHERE id=?", [finalStatus, JSON.stringify(result), nowIso(), row.id]);
+      if (ok) bumpRevision();
+    } else if (row.action_type === 'update_job_fields') {
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      if (!items.length) throw new AppError(400, 'VALIDATION_ERROR', '待确认操作没有目标记录');
+      const results = [];
+      for (const item of items) {
+        const app = getApplication(ownerId, item.application_id);
+        if (!app) { results.push({ application_id: item.application_id, ok: false, reason: 'NOT_FOUND' }); continue; }
+        if (Number(item.expected_version) !== Number(app.version)) {
+          results.push({ application_id: item.application_id, ok: false, reason: 'VERSION_CONFLICT', current_version: app.version });
+          continue;
+        }
+        try {
+          const updated = correctApplication({
+            ownerId, applicationId: app.id, expectedVersion: item.expected_version,
+            changes: item.changes || {}, reason: payload.reason || 'AI 助手确认修改岗位字段', actor: 'agent_confirmed'
+          }).application;
+          writeAgentAudit(ownerId, 'application.fields.agent', 'application', app.id, { action_id: row.id, fields: Object.keys(item.changes || {}) });
+          results.push({ application_id: app.id, ok: true, version: updated.version });
         } catch (error) {
           results.push({ application_id: app.id, ok: false, reason: error?.code || 'UPDATE_FAILED', message: error?.message || '更新失败' });
         }

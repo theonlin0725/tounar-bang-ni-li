@@ -50,6 +50,18 @@ describe('v1.1.1 resume library rewrite workbench', () => {
     server.__draft = patched.json.data;
   });
 
+  it('Delta 模式只标记改动块，未提及块自动保留原文；unsupported_blocked 不写入生成内容', async () => {
+    const built = buildRewriteBlocks('张三\n教育背景\n本科 计算机科学\n技能\nSQL', [
+      { block_id: 'b1', alignment_type: 'supported_optimize', rewritten_text: '张三（优化）' },
+      { block_id: 'b2', alignment_type: 'unsupported_blocked', rewritten_text: '不存在的学历' }
+    ], {});
+    assert.equal(built.blocks[0].rewritten_text, '张三（优化）');
+    assert.equal(built.blocks[1].rewritten_text, '教育背景');
+    assert.equal(built.blocks[2].alignment_type, 'unchanged');
+    assert.equal(built.blocks[2].rewritten_text, '本科 计算机科学');
+    assert.deepEqual(built.blocked_blocks, ['b2']);
+  });
+
   it('unsupported_blocked 不会把模型新建内容写进最终块；needs_user_fact 保留原文', async () => {
     const built = buildRewriteBlocks('张三\n技能\nSQL', [
       { block_id: 'b1', alignment_type: 'supported_optimize', rewritten_text: '张三（优化）' },

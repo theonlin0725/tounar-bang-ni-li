@@ -74,6 +74,8 @@ try {
   await waitText('[data-test=assistant-message]', '岗位记录', 15000);
   check('快捷卡完成只读筛选，状态文案收起', (await page.locator('[data-test=assistant-status]').count()) === 0
     && (await page.locator('[data-test=assistant-message]').count()) >= 1);
+  check('首轮对话后顶部欢迎与快捷卡仍常驻', (await page.locator('.tn-agent-quick-card').count()) === 4
+    && (await page.locator('[data-test=assistant-profile-onboarding]').count()) === 1);
   await page.screenshot({ path: path.join(OUT, 'assistant-filter.png'), fullPage: true });
 
   await page.route('**/api/v1/agent/sessions/*/chat', (route) => route.abort());
@@ -94,6 +96,10 @@ try {
   await page.waitForTimeout(700);
   const savedProfile = (await server.request('/api/v1/profile', { cookie })).json.data.profile;
   check('确认后画像落盘为 confirmed', savedProfile?.status === 'confirmed' && savedProfile.preferred_locations.includes('上海'));
+  await page.waitForTimeout(400);
+  check('画像确认后顶部胶囊与横条实时切换', (await page.locator('[data-test=assistant-profile-pill]').innerText()).includes('画像：已建立')
+    && (await page.locator('[data-test=assistant-profile-bar]').count()) === 1
+    && (await page.locator('[data-test=assistant-profile-edit]').count()) === 1);
 
   await page.click('[data-test=assistant-context-application]');
   await page.click('[data-test=job-picker-viewed]');

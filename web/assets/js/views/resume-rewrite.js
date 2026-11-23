@@ -5,7 +5,7 @@ import { h, clear, toast, openModal, idemKey, debounce } from '../util.js';
 import { openJobPicker } from './job-picker.js';
 
 const ALIGN_LABEL = {
-  supported_optimize: '已优化', improvable: '可优化', needs_user_fact: '待补事实', unsupported_blocked: '已拦截'
+  supported_optimize: '已优化', improvable: '可优化', needs_user_fact: '待补事实', unsupported_blocked: '已拦截', unchanged: '未改动'
 };
 
 export async function renderResumeRewrite(container, { gen, applicationId = null, draftId = null } = {}) {

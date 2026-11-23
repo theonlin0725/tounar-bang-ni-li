@@ -90,7 +90,7 @@ function migrateAiReports(instance) {
 function migrateAgentPendingActions(instance) {
   const table = instance.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'agent_pending_actions'").get();
   const sql = String(table?.sql || '');
-  if (!sql || sql.includes("'update_profile'")) return;
+  if (!sql || sql.includes("'update_job_fields'")) return;
   instance.exec('PRAGMA foreign_keys = OFF');
   try {
     instance.exec(`BEGIN;
@@ -107,7 +107,7 @@ function migrateAgentPendingActions(instance) {
         expires_at TEXT NOT NULL,
         created_at TEXT NOT NULL,
         resolved_at TEXT,
-        CHECK (action_type IN ('update_status','rewrite_resume','update_profile')),
+        CHECK (action_type IN ('update_status','rewrite_resume','update_profile','update_job_fields')),
         CHECK (status IN ('pending','confirmed','cancelled','expired','failed'))
       );
       INSERT INTO agent_pending_actions_v111
