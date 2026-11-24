@@ -1111,3 +1111,4 @@ table.tn-table { min-width: 760px; table-layout: fixed; }
 .tn-task-tray { display:flex; align-items:center; }
 .tn-task-tray-min { border:0; background:transparent; color:#6b8072; cursor:pointer; padding:5px 8px 5px 2px; font-size:14px; line-height:1; }
 .tn-task-tray-minimized { border:0; background:transparent; border-radius:999px; padding:8px 11px; cursor:pointer; color:#285d3e; font:12px var(--assistant-font); }
+.tn-task-tray[hidden] { display:none; }
