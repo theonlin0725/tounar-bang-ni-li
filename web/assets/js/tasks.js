@@ -9,6 +9,9 @@ let polling = false;
 let previousMailStatus = null;
 let seenRunning = new Set();
 const notified = new Set();
+let minimized = false;
+let lastTaskKey = '';
+let lastRender = {};
 
 function ensureTray() {
   if (tray?.isConnected) return tray;
@@ -30,11 +33,19 @@ function renderTray({ rewrite = null, mail = null } = {}) {
   if (rewrite) items.push({ kind: 'rewrite', label: `正在改写简历 · ${rewrite.application?.company_name || rewrite.application?.job_title || '岗位'}（${Math.round(rewrite.progress_percent || 0)}%）`, href: `/?panel=career&section=rewrite&draft=${encodeURIComponent(rewrite.id)}` });
   if (mail) items.push({ kind: 'mail', label: '正在同步邮箱…', href: '/?panel=settings&tab=data' });
   clear(node);
-  if (!items.length) { node.hidden = true; return; }
+  if (!items.length) { node.hidden = true; minimized = false; lastTaskKey = ''; return; }
+  lastRender = { rewrite, mail };
+  const key = items.map((item) => item.kind === 'rewrite' ? `rewrite:${rewrite?.id}` : `mail:${mail?.id}`).join('|');
+  if (key !== lastTaskKey) { lastTaskKey = key; minimized = false; }
   const first = items[0];
   node.hidden = false;
+  if (minimized) {
+    node.append(h('button', { class: 'tn-task-tray-minimized', type: 'button', 'data-test': 'task-tray-expand', title: '展开任务条', text: '展开任务', onclick: () => { minimized = false; renderTray(lastRender); } }));
+    return;
+  }
   node.append(h('button', { class: 'tn-task-tray-main', type: 'button', 'data-test': 'task-tray-main', onclick: () => location.assign(first.href) },
     h('span', { class: 'tn-task-tray-pulse' }), h('span', { text: items.length > 1 ? `${first.label} · 另有 ${items.length - 1} 个任务` : first.label })));
+  node.append(h('button', { class: 'tn-task-tray-min', type: 'button', 'data-test': 'task-tray-minimize', title: '最小化任务条', 'aria-label': '最小化任务条', text: '−', onclick: () => { minimized = true; renderTray(lastRender); } }));
 }
 async function poll() {
   if (polling || !document.getElementById('tn-root')) return;

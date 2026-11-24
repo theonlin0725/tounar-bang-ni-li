@@ -30,7 +30,7 @@
 | 套件 | 结果 |
 |---|---|
 | `npm test` | 263 项，261 通过；仅 `cloud-persistence` 与 `cloud-persistence-http` 两条既有云快照环境用例失败 |
-| `npm run test:agent` | 34 项服务端 + 38 项 Playwright 全部通过 |
+| `npm run test:agent` | 34 项服务端 + 39 项 Playwright 全部通过 |
 | `npm run test:web` | 76/76 |
 | `npm run test:career-ai` | 52/52 |
 | `npm run test:e2e` | 67/67 插件采集 |

@@ -261,6 +261,9 @@ try {
   } finally { db.close(); }
   await page.waitForSelector('[data-test=task-tray]', { timeout: 10000 });
   check('切换页面后全局任务胶囊恢复运行中的改写', (await page.locator('[data-test=task-tray]').innerText()).includes('正在改写简历'));
+  await page.click('[data-test=task-tray-minimize]');
+  check('任务胶囊可最小化并展开', (await page.locator('[data-test=task-tray-expand]').count()) === 1);
+  await page.click('[data-test=task-tray-expand]');
   const db2 = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
   try {
     db2.prepare("UPDATE resume_rewrite_drafts SET progress_percent=100, progress_label='生成完成！', updated_at=? WHERE id=?").run(new Date().toISOString(), taskDraft.id);
