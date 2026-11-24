@@ -1,10 +1,11 @@
-/* 简历与 AI：上传/修正简历、简历画像、岗位对比、未投递岗位推荐。
+/* 简历与 AI：上传/修正简历、简历画像、岗位对比、「看过没投」岗位推荐。
  * 所有数据来自当前账号 API；前端不拼模型请求、不读取其他用户数据。 */
 import { api, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261120-1';
+import { isStale } from '../app.js?v=20261124-1';
 import { h, clear, toast, fmtDateTime, openModal, idemKey, debounce } from '../util.js';
-import { openDetail } from './detail.js?v=20261120-1';
-import { renderResumeRewrite } from './resume-rewrite.js';
+import { openDetail } from './detail.js?v=20261124-1';
+import { renderResumeRewrite } from './resume-rewrite.js?v=20261124-1';
+import { openJobPicker } from './job-picker.js?v=20261124-1';
 
 const MATCH_LABELS = { high: '相对匹配高', medium: '相对匹配中', low: '相对匹配低', insufficient: '资料不足' };
 const MATCH_CLASS = { high: 'ok', medium: 'warn', low: 'muted', insufficient: 'muted' };
@@ -81,6 +82,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
   let profile = null;
   let busy = false;
   let recommendation = null;
+  let recommendResume = null;
   let matchApps = [];
   let matchAppId = applicationId || null;
   let match = null;
@@ -178,6 +180,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       status = statusRes.data;
       resume = currentRes.data;
       versions = listRes.data || [];
+      recommendResume = resume?.status === 'ready' ? resume : (versions.find((item) => item.status === 'ready') || null);
       profile = profileRes.data?.profile || null;
       resumeNextCursor = listRes.page?.next_cursor || null;
       resumeHasMore = !!listRes.page?.has_more;
@@ -294,8 +297,6 @@ export async function renderCareer(container, { gen, applicationId = null, secti
     );
   }
   function renderMatch() {
-    const wasSearchFocused = document.activeElement?.getAttribute('data-test') === 'match-app-search';
-    const searchCaret = wasSearchFocused ? document.activeElement.selectionStart : null;
     clear(matchSection);
     const selected = matchApps.find((item) => item.id === matchAppId);
     const report = match?.report || null;
@@ -304,67 +305,33 @@ export async function renderCareer(container, { gen, applicationId = null, secti
         h('p', { class: 'tn-small tn-muted', style: { margin: '4px 0 0' }, text: '帮你选择合适的岗位' }))
     ));
     matchSection.append(renderProfileCard());
-    const search = h('input', {
-      class: 'tn-input tn-match-search', type: 'search', value: matchAppQuery,
-      placeholder: '搜索公司 / 岗位 / 城市 / 批次', 'data-test': 'match-app-search',
-      'aria-label': '搜索台账岗位'
+    const pickerButton = h('button', {
+      class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'match-choose-job',
+      text: matchAppId ? '更换岗位' : '选择岗位',
+      onclick: () => openJobPicker({
+        selectedId: matchAppId || null,
+        onSelect: (app) => {
+          matchAppId = app?.id || '';
+          if (app) mergeMatchApps([app]);
+          match = null; interview = null; openDimension = null; matchHistory = []; historyOpen = false;
+          ++matchHistoryReqSeq; ++matchReportReqSeq;
+          renderMatch();
+          if (matchAppId) loadMatchHistory();
+        }
+      })
     });
-    search.addEventListener('input', debounce(() => {
-      const nextQuery = search.value.trim();
-      if (nextQuery === matchAppQuery) return;
-      matchAppQuery = nextQuery;
-      if (!matchApps.some((item) => item.id === matchAppId)) matchAppId = '';
-      match = null;
-      interview = null;
-      openDimension = null;
-      matchHistory = [];
-      historyOpen = false;
-      ++matchHistoryReqSeq;
-      ++matchReportReqSeq;
-      renderMatch();
-      loadMatchApps({ reset: true });
-    }, 300));
-    const select = h('select', { class: 'tn-select tn-match-select', 'data-test': 'match-application', disabled: matchBusy || matchAppLoading });
-    select.append(h('option', { value: '', text: matchAppLoading ? '正在搜索台账…' : matchApps.length ? '选择一个台账岗位…' : '没有匹配的岗位' }));
-    for (const item of matchApps) {
-      select.append(h('option', {
-        value: item.id,
-        text: `${item.company_name || '公司待补'} · ${item.job_title || '岗位待补'}${item.has_applied ? '（已投递）' : ''}`
-      }));
-    }
-    if (matchAppId) select.value = matchAppId;
-    select.addEventListener('change', () => {
-      matchAppId = select.value;
-      match = null;
-      interview = null;
-      openDimension = null;
-      matchHistory = [];
-      historyOpen = false;
-      ++matchHistoryReqSeq;
-      ++matchReportReqSeq;
-      renderMatch();
-      if (matchAppId) loadMatchHistory();
-    });
-    const run = report ? null : h('button', {
-      class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'match-run',
-      text: matchBusy ? '分析中…' : '开始匹配分析',
-      disabled: matchBusy || !matchAppId || !resume || resume.status !== 'ready',
-      onclick: () => runMatch({ parent: null })
-    });
-    const more = (matchAppHasMore.applied || matchAppHasMore.viewed)
-      ? h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-app-more', text: matchAppLoading ? '加载中…' : '加载更多岗位', disabled: matchAppLoading, onclick: () => loadMatchApps({ more: true }) })
-      : null;
-    matchSection.append(h('div', { class: 'tn-match-picker' }, search, select, run, more));
+    const currentJob = matchApps.find((item) => item.id === matchAppId);
+    matchSection.append(h('div', { class: 'tn-match-picker', 'data-test': 'match-job-picker' },
+      h('div', { class: 'tn-match-current-job', 'data-test': 'match-current-job' },
+        h('strong', { text: currentJob ? `${currentJob.company_name || ''} · ${currentJob.job_title || ''}` : '还没有选择岗位' }),
+        h('span', { class: 'tn-small tn-muted', text: currentJob ? [currentJob.location, currentJob.recruitment_batch].filter(Boolean).join(' · ') || '城市/批次待补' : '从投递明细或看过没投中选择' })),
+      pickerButton,
+      h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-run', text: matchBusy ? '分析中…' : '开始匹配分析', disabled: matchBusy || !matchAppId || !resume || resume.status !== 'ready' || currentJob?.jd_status === 'missing', onclick: () => runMatch({ parent: null }) }),
+      ...(currentJob?.jd_status === 'missing' ? [h('div', { class: 'tn-inline-msg warn', 'data-test': 'match-missing-jd', text: '该岗位缺 JD，请先回到台账补充 JD，或打开右侧 AI 助手粘贴 JD 后继续分析。' })] : [])
+    ));
     matchSection.append(h('div', { class: 'tn-small tn-muted tn-match-current-resume', 'data-test': 'match-current-resume',
       text: resume?.status === 'ready' ? `当前简历：${resume.filename}${resume.updated_at ? ` · ${fmtDateTime(resume.updated_at)}` : ''}` : '当前没有可用于匹配的简历；请先到简历库完成分析。' }));
     if (matchAppLoading) matchSection.append(h('div', { class: 'tn-inline-msg', 'data-test': 'match-app-loading' }, h('span', { class: 'tn-spinner', 'aria-hidden': 'true' }), '正在加载更多台账岗位…'));
-    if (wasSearchFocused) requestAnimationFrame(() => {
-      const next = matchSection.querySelector('[data-test="match-app-search"]');
-      if (!next) return;
-      next.focus({ preventScroll: true });
-      const caret = Math.min(searchCaret ?? next.value.length, next.value.length);
-      next.setSelectionRange(caret, caret);
-    });
     if (matchAppId && selected) {
       matchSection.append(h('div', { class: 'tn-match-jobline' },
         h('strong', { text: [selected.company_name, selected.job_title].filter(Boolean).join(' · ') }),
@@ -1183,24 +1150,45 @@ export async function renderCareer(container, { gen, applicationId = null, secti
     }
   }
 
+  function openRecommendResumePicker() {
+    const ready = versions.filter((item) => item.status === 'ready');
+    let choice = recommendResume?.id || ready[0]?.id || '';
+    const list = h('div', { class: 'tn-rewrite-resume-list' });
+    for (const item of ready) {
+      const radio = h('input', { type: 'radio', name: 'recommend-resume', value: item.id, checked: item.id === choice });
+      radio.addEventListener('change', () => { choice = item.id; });
+      list.append(h('label', { class: 'tn-rewrite-resume-option', 'data-test': 'recommend-resume-option' }, radio,
+        h('span', {}, h('strong', { text: item.filename }),
+          h('span', { class: 'tn-small tn-muted', text: `${item.parent_resume_id || item.target_application_id ? 'AI 定向改写版本' : '原始上传'} · ${item.text_chars || 0} 字 · ${fmtDateTime(item.updated_at)}` }))));
+    }
+    const handle = openModal({
+      title: '选择简历', subtitle: '推荐只会使用已分析完成的简历版本', testid: 'recommend-resume-picker',
+      body: ready.length ? list : h('div', { class: 'tn-empty' }, h('p', { text: '还没有分析完成的简历' })),
+      footer: h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '取消', onclick: () => handle.close() }),
+        h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'recommend-resume-confirm', text: '确认选择', disabled: !ready.length,
+          onclick: () => { recommendResume = ready.find((item) => item.id === choice) || recommendResume; handle.close(); renderRecommend(); } }))
+    });
+  }
   function renderRecommend() {
     clear(recommendSection);
-    recommendSection.append(h('div', { class: 'tn-ai-section-head' }, h('h2', { text: '未投递岗位推荐' }),
-      h('span', { class: 'tn-small tn-muted', text: '只使用系统已采集、尚未投递的岗位；不访问外部招聘网站' })));
-    const button = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', text: recommendation?.status === 'running' ? '分析中…' : '推荐未投递岗位', 'data-test': 'recommend-run', disabled: busy || !resume || resume.status !== 'ready', onclick: runRecommend });
-    recommendSection.append(h('div', { class: 'tn-action-row' }, button, h('span', { class: 'tn-small tn-muted', text: resume?.status === 'ready' ? `当前简历：${resume.filename}；会读取当前账号全部未投递岗位，而不只是当前页` : '需要当前简历分析完成' })));
+    if (!recommendResume && resume?.status === 'ready') recommendResume = resume;
+    recommendSection.append(h('div', { class: 'tn-ai-section-head' }, h('div', {}, h('h2', { text: '「看过没投」岗位推荐' }))));
+    const chooseResume = h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'recommend-resume-change', text: '选择简历', onclick: openRecommendResumePicker });
+    const button = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', text: recommendation?.status === 'running' ? '分析中…' : '推荐「看过没投」岗位', 'data-test': 'recommend-run', disabled: busy || !recommendResume || recommendResume.status !== 'ready', onclick: runRecommend });
+    recommendSection.append(h('div', { class: 'tn-action-row' }, chooseResume, button,
+      h('span', { class: 'tn-small tn-muted', 'data-test': 'recommend-resume-label', text: recommendResume ? `已选简历：${recommendResume.filename}` : '需要先完成简历分析' })));
     if (recommendation?.error) recommendSection.append(h('div', { class: 'tn-inline-msg err', text: recommendation.error }));
     if (recommendation?.data) recommendSection.append(renderRecommendReport(recommendation.data));
   }
 
   async function runRecommend() {
     if (busy) return;
-    if (!resume || resume.status !== 'ready') { toast('请先完成当前简历分析', 'err'); return; }
+    if (!recommendResume || recommendResume.status !== 'ready') { toast('请先选择并完成简历分析', 'err'); return; }
     recommendation = { status: 'running' };
     setBusy(true);
     renderRecommend();
     try {
-      const res = await api.post('/api/v1/ai/recommend', {});
+      const res = await api.post('/api/v1/ai/recommend', { resume_id: recommendResume.id });
       recommendation = { status: 'ready', data: res.data.result, report: res.data.report };
       toast('推荐已生成', 'ok');
     } catch (err) {
@@ -1235,7 +1223,7 @@ export async function renderCareer(container, { gen, applicationId = null, secti
     const box = h('div', { class: 'tn-ai-report', 'data-test': 'recommend-report' });
     if (result.summary) box.append(h('p', { class: 'tn-ai-summary', text: result.summary }));
     if (!result.recommendations?.length && !result.insufficient?.length) {
-      box.append(h('div', { class: 'tn-empty' }, h('p', { text: '当前没有未投递岗位。' }), h('p', { class: 'tn-small tn-muted', text: '插件采集到新岗位或手动补录后会出现在这里。' })));
+      box.append(h('div', { class: 'tn-empty' }, h('p', { text: '当前没有「看过没投」岗位。' }), h('p', { class: 'tn-small tn-muted', text: '插件采集到新岗位或手动补录后会出现在这里。' })));
     }
     for (const item of result.recommendations || []) {
       box.append(h('article', { class: 'tn-recommend-job', 'data-test': 'recommend-job' },

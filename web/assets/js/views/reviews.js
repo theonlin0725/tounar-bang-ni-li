@@ -1,6 +1,6 @@
 /* 待确认：确认按钮先走服务端 LLM+Jev 识别；可靠才直接入账，否则打开最少必要补录。 */
 import { api } from '../api.js';
-import { isStale } from '../app.js?v=20261120-1';
+import { isStale } from '../app.js?v=20261124-1';
 import { h, clear, toast, fmtDateTime, idemKey, STATUS_LABELS } from '../util.js';
 
 const STATUS_OPTIONS = [

@@ -13,7 +13,7 @@ import {
 } from '../auth.js';
 import { withIdempotency } from '../idempotency.js';
 import { getProfile, saveProfile } from '../modules/profile/service.js';
-import { confirmRewriteDraft, generateRewriteDraft, getRewriteDraft, updateRewriteDraft } from '../modules/career-ai/rewrite-workbench.js';
+import { confirmRewriteDraft, generateRewriteDraft, getRewriteDraft, listActiveRewriteDrafts, updateRewriteDraft } from '../modules/career-ai/rewrite-workbench.js';
 import { readResumeDocx, writeResumeDocx } from '../modules/career-ai/docx-exporter.js';
 import {
   applicationDetail, ledgerResponse, reviewDetail, reviewList
@@ -48,6 +48,11 @@ import {
   getAgentMessages, getAgentSessions, streamAgentChat, updateAgentContext
 } from '../modules/agent/api.js';
 
+function requireAdmin(auth) {
+  if (!config.adminEmails.has(auth.user.email_normalized)) {
+    throw new AppError(403, 'ADMIN_REQUIRED', '仅管理员可访问该功能');
+  }
+}
 function optionalAuth(req) {
   try {
     return requireAuth(req);
@@ -485,6 +490,10 @@ export function registerRoutes() {
     });
     return jsonStatus(201, { data: draft });
   });
+  route('GET', '/api/v1/career-ai/rewrite-drafts/active', (req) => {
+    const auth = requireAuth(req);
+    return { data: listActiveRewriteDrafts(auth.ownerId) };
+  });
   route('GET', '/api/v1/resumes/rewrite/drafts/:id', (req) => {
     const auth = requireAuth(req);
     return { data: getRewriteDraft(auth.ownerId, req.params.id) };
@@ -528,7 +537,7 @@ export function registerRoutes() {
     return { data: setCurrentResume(auth.ownerId, req.params.id) };
   });
   route('POST', '/api/v1/ai/compare', () => {
-    throw new AppError(410, 'AI_COMPARE_RETIRED', '多岗位对比已下线；请使用单岗位匹配或未投递岗位推荐。');
+    throw new AppError(410, 'AI_COMPARE_RETIRED', '多岗位对比已下线；请使用单岗位匹配或「看过没投」岗位推荐。');
   });
   route('POST', '/api/v1/ai/match', async (req) => {
     const auth = requireAuth(req);
@@ -575,7 +584,7 @@ export function registerRoutes() {
   });
   route('POST', '/api/v1/ai/recommend', async (req) => {
     const auth = requireAuth(req);
-    const { report, result } = await recommendForOwner(auth.ownerId);
+    const { report, result } = await recommendForOwner(auth.ownerId, { resumeId: req.body?.resume_id || null });
     return { data: { report, result } };
   });
   route('GET', '/api/v1/ai/reports/:id', (req) => {
@@ -691,6 +700,7 @@ export function registerRoutes() {
   });
   route('GET', '/api/v1/notification-preferences/preview', (req) => {
     const auth = requireAuth(req);
+    requireAdmin(auth);
     return { data: batchPreview(auth.ownerId), decision: 'D06/D08 frozen 2026-10-22; preview does not send or mark anything' };
   });
 

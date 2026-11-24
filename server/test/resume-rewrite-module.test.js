@@ -65,6 +65,11 @@ describe('v1.1.1 resume library rewrite workbench', () => {
     assert.ok(Array.isArray(draft.jd_analysis.plus_items));
     assert.ok(Array.isArray(draft.jd_analysis.other_requirements));
     assert.match(draft.proposed_name, /^原简历_数据分析师$/);
+    assert.ok(draft.jd_analysis.core_keywords.length >= 1);
+    assert.ok(draft.jd_analysis.target_persona.length > 0);
+    const active = await server.request('/api/v1/career-ai/rewrite-drafts/active', { cookie });
+    assert.equal(active.status, 200, active.text);
+    assert.ok(active.json.data.some((item) => item.id === draft.id && item.progress_percent === 100));
     const patched = await server.request(`/api/v1/resumes/rewrite/drafts/${draft.id}`, {
       method: 'PATCH', cookie, body: { blocks: draft.blocks.map((block) => block.block_id === 'b1' ? { ...block, rewritten_text: '张三（可编辑）' } : block) }
     });

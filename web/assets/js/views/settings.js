@@ -1,10 +1,10 @@
-import { createSiteAccessCard, promptPluginConnection } from './plugin-access.js';
-import { pluginInstallContent } from './plugin-help.js';
+import { createSiteAccessCard, promptPluginConnection } from './plugin-access.js?v=20261124-1';
+import { pluginInstallContent } from './plugin-help.js?v=20261124-1';
 import { renderMailAdmin } from './mail-admin.js';
 /* 提醒设置 + 数据与授权：全部敏感操作显式、可解释；外部条件失败如实展示，不伪装成功。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { App } from '../app.js?v=20261120-1';
+import { App } from '../app.js?v=20261124-1';
 import {
   h, clear, toast, openModal, confirmDialog, fmtDateTime, relativeTime, idemKey,
   STATUS_LABELS
@@ -125,7 +125,7 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
     clear(tabRow);
     const tabs = [['reminder', '提醒设置'], ['data', '数据与授权'], ['install', '安装指引']];
     if (state.me?.user?.is_admin) tabs.push(['mail-admin', '邮件测试与模板']);
-    if (!tabs.some(([id]) => id === state.activeTab) && state.activeTab !== 'mail-admin') state.activeTab = 'reminder';
+    if (!state.loading && !tabs.some(([id]) => id === state.activeTab)) state.activeTab = 'reminder';
     for (const [id, label] of tabs) {
       tabRow.append(h('button', {
         class: `tn-tab${state.activeTab === id ? ' active' : ''}`, type: 'button', 'data-test': `settings-tab-${id}`,
@@ -304,12 +304,6 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
     });
 
     panelHost.append(
-      h('div', { class: 'tn-banner info' },
-        h('div', { class: 'tn-banner-body' },
-          h('div', { text: '默认每日北京时间 08:00 汇总；已投回看默认 14 天，笔试 / 面试后默认 7 天。' }),
-          h('div', { class: 'tn-small', text: '提醒只发送摘要，不会自动改状态；关闭提醒只停止摘要发信，不停止邮箱同步。' })
-        )
-      ),
       h('div', { class: 'tn-pref-group' },
         h('h4', { text: '提醒方式' }),
         h('div', { class: 'tn-field', style: { marginBottom: '10px' } }, h('label', { text: '接收哪些提醒' }), modeSel,
@@ -318,7 +312,7 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
         h('div', { class: 'tn-field', style: { marginBottom: '0' } },
           h('label', { text: '回看阈值（7–30 天）' }),
           h('div', { class: 'tn-range-row' }, thresholdRange, thresholdVal),
-          h('div', { class: 'tn-hint', text: '“待回看”= 距离最近有效进展/上次确认超过该天数。与 B 邮件基础集合一致，但不等于本次可发信名单。' })
+          h('div', { class: 'tn-hint', text: '“待回看”= 距离最近有效进展或上次确认超过该天数。' })
         )
       ),
       h('div', { class: 'tn-pref-group' },
@@ -326,10 +320,10 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
         h('div', { class: 'tn-field' }, h('label', { text: '收到邀请后多久提醒' }), stageSel,
           h('div', { class: 'tn-hint', text: '按邀请收到日期计算；预约面试更晚时从面试时间算起。阶段推进后重算，终态停止。确认没变化后再等同样天数，与已投回看设置独立。' }))
       ),
-      h('div', { class: 'tn-pref-group' },
+      ...(state.me?.user?.is_admin ? [h('div', { class: 'tn-pref-group' },
         h('h4', { text: '下一批摘要预览（只读，不发送、不标记）' }),
         previewBtn, previewHost
-      ),
+      )] : []),
       h('div', { style: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' } }, saveBtn),
       statusLine,
       h('div', { class: 'tn-small tn-faint', style: { marginTop: '6px' }, text: '提醒收件人固定为当前已验证登录邮箱；不提供自定义收件人。' }),
@@ -341,14 +335,23 @@ function buildSettings({ tab = 'reminder', onChanged, page = false, container = 
   function renderDataPanel() {
     const me = state.me;
     siteAccessCard = createSiteAccessCard();
+    const mailSection = renderMailSection(me);
+    mailSection.id = 'tn-mail-section';
     panelHost.append(
       siteAccessCard.element,
       renderPairingSection(me),
       renderDevicesSection(me),
-      renderMailSection(me),
+      mailSection,
       renderDeletionSection(me),
       renderDecisionsSection()
     );
+    if (location.hash === '#tn-mail-section') {
+      requestAnimationFrame(() => {
+        mailSection.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        mailSection.classList.add('tn-pref-highlight');
+        setTimeout(() => mailSection.classList.remove('tn-pref-highlight'), 1800);
+      });
+    }
   }
 
   /* ---------- 配对 ---------- */

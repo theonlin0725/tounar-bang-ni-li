@@ -174,7 +174,7 @@ try {
     (await page.locator('[data-test=login-send]').count()) === 1
       && (await page.locator('input[type=password]').count()) === 0,
     '纯 OTP 登录，无演示账号');
-  check('W-01a 登录页下载入口指向当前 0.2.11 包', (await page.locator('[data-test=login-download-plugin]').getAttribute('href')).endsWith('bangnili-extension-0.2.11.zip'));
+  check('W-01a 登录页下载入口指向当前 0.2.12 包', (await page.locator('[data-test=login-download-plugin]').getAttribute('href')).endsWith('bangnili-extension-0.2.12.zip'));
   await shot(page, '01-login');
 
   await page.fill('[data-test=login-email]', EMAIL);
@@ -194,6 +194,12 @@ try {
       && (await page.locator('[data-test=nav-match]').count()) === 1
       && (await page.locator('[data-test=nav-resume]').count()) === 1
       && (await page.locator('[data-test=open-mail-admin]').count()) === 0);
+  await page.waitForSelector('[data-test=onboarding-guide]', { timeout: 15000 });
+  await page.waitForSelector('[data-test=onboarding-skip]', { timeout: 15000 });
+  const onboardingText = await page.locator('[data-test=onboarding-guide]').innerText();
+  check('W-02b 首次登录展示渐进式引导', onboardingText.includes('开始使用帮你理'));
+  await page.locator('[data-test=onboarding-skip]').click();
+  check('W-02c 引导可稍后再说且不阻断台账', (await page.locator('[data-test=onboarding-guide]').count()) === 0);
   check('W-03 新账号台账为空（三统计=0，不塞演示数据）',
     (await page.textContent('#tn-content')).includes('还没有投递记录'),
     `total=${(await page.textContent('[data-test=stat-total]')).trim()}`);
@@ -512,7 +518,7 @@ try {
   const installDownload = await page.request.get(new URL(installHref, server.base).toString());
   const installBody = await installDownload.body();
   check('W-18a 设置安装指引直接下载当前包，版本、文件名与实际 ZIP 一致',
-    installText.includes('0.2.11') && installHref.endsWith('bangnili-extension-0.2.11.zip')
+    installText.includes('0.2.12') && installHref.endsWith('bangnili-extension-0.2.12.zip')
       && installDownload.status() === 200 && installBody[0] === 0x50 && installBody[1] === 0x4b,
     `href=${installHref} status=${installDownload.status()} bytes=${installBody.length}`);
   await shot(page, '07b-settings-install');

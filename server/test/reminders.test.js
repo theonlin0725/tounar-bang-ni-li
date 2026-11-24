@@ -1,6 +1,8 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from './helpers.js';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const key = (name) => `test-${name}-${Math.random().toString(36).slice(2, 10)}`;
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString();
@@ -10,7 +12,7 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
   let cookie;
   let appId;
   before(async () => {
-    server = await startTestServer({ name: 'reminders' });
+    server = await startTestServer({ name: 'reminders', env: { ADMIN_EMAILS: 'demo@tounar.local,nolink@tounar.local', ALLOWED_EMAILS: 'demo@tounar.local,peer@tounar.local,nolink@tounar.local' } });
     cookie = (await server.login('demo@tounar.local')).cookie;
     const created = await server.request('/api/v1/applications/manual', {
       method: 'POST', cookie, headers: { 'Idempotency-Key': key('reminder-app') },
@@ -49,6 +51,9 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
     assert.equal(preview.json.data.would_send, true);
     const before = await server.request(`/api/v1/applications/${appId}`, { cookie });
     assert.equal(before.json.data.last_reviewed_at, null);
+    const peer = await server.login('peer@tounar.local');
+    const forbidden = await server.request('/api/v1/notification-preferences/preview', { cookie: peer.cookie });
+    assert.equal(forbidden.status, 403);
   });
 
   it('tick 强制提醒：真实写入 outbox 邮件并记录批次；邮件含提醒链接', async () => {
@@ -90,6 +95,33 @@ describe('提醒：偏好、预览、真实发信、链接读取与两步确认'
     const again = await server.tick({ force: true, reminders: true });
     const rows = again.json.data.result.reminders;
     assert.ok(rows.some((r) => r.status === 'sent'), JSON.stringify(rows));
+  });
+
+  it('无 status_url / job_url 的待回看岗位仍进入提醒邮件 B 类', async () => {
+    const noLink = await server.login('nolink@tounar.local');
+    const created = await server.request('/api/v1/applications/manual', {
+      method: 'POST', cookie: noLink.cookie, headers: { 'Idempotency-Key': key('no-link-app') },
+      body: {
+        company_name: '无外链公司', job_title: '运营实习生', has_applied: true, status: 'applied',
+        applied_at: daysAgo(30), jd_summary: '负责用户运营', job_url: 'https://jobs.example.com/job/no-link'
+      }
+    });
+    assert.equal(created.status, 201);
+    const noLinkAppId = created.json.data.id;
+    const db = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
+    try { db.prepare('UPDATE applications SET status_url = NULL, job_url = NULL WHERE id = ?').run(noLinkAppId); } finally { db.close(); }
+    const preview = await server.request('/api/v1/notification-preferences/preview', { cookie: noLink.cookie });
+    assert.equal(preview.status, 200);
+    const row = preview.json.data.b.find((x) => x.application_id === noLinkAppId);
+    assert.ok(row, 'no-link app must be in B');
+    assert.equal(row.has_safe_link, false);
+    const tick = await server.tick({ force: true, reminders: true });
+    assert.equal(tick.status, 200);
+    const reminder = server.latestOutbox('reminder', 'nolink@tounar.local');
+    assert.ok(reminder, 'reminder outbox missing');
+    assert.match(reminder.text, /无外链公司/);
+    assert.match(reminder.text, /\/r\/rl_/);
+    assert.doesNotMatch(reminder.text, /直接打开申请状态页/);
   });
 
   it('提醒链接：未登录只提示登录；本人可读；他人 404', async () => {

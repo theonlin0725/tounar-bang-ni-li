@@ -171,7 +171,6 @@ export function buildReminderCandidates(ownerId, now = new Date()) {
         const stage = stageFollowupState(app, prefs.stage_followup_days, now);
         const oldDue = (prefs.review_frequency === 'daily' || isMondayShanghai(now)) && isDueForReview(app, prefs.review_threshold_days, now);
         if (!stage.due && !oldDue) continue;
-        if (!(app.status_url || app.job_url)) continue;
         if (app.last_b_notified_at && daysBetweenShanghai(app.last_b_notified_at, now) < 7) continue;
         b.push({ app, stage: stage.due ? stage : null });
       }

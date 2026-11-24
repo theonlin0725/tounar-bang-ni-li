@@ -1,7 +1,7 @@
 /* 插件下载与手动安装指引：只链接静态 ZIP，不读取或传递任何登录/设备/内部令牌。 */
 import { h, clear } from '../util.js';
 
-export const PLUGIN_VERSION = '0.2.11';
+export const PLUGIN_VERSION = '0.2.12';
 export const PLUGIN_ZIP = `/downloads/bangnili-extension-${PLUGIN_VERSION}.zip`;
 
 export function currentShareCode() {

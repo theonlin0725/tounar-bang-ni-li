@@ -82,6 +82,8 @@ function fakeJdAnalysis(profile) {
     plus_items: ['增长项目经验'],
     other_requirements: ['跨团队沟通'],
     keywords: ['数据分析', '用户研究', 'SQL'],
+    core_keywords: ['用户增长', '数据分析', 'SQL', '项目复盘'],
+    target_persona: '数据驱动的增长/运营人才',
     gaps: profile ? [] : ['求职画像未建立，偏好判断受限']
   };
 }
@@ -109,8 +111,29 @@ function normalizeJdAnalysis(value) {
     plus_items: list(source.plus_items),
     other_requirements: list(source.other_requirements),
     keywords: list(source.keywords, 24),
+    core_keywords: list(source.core_keywords, 24),
+    target_persona: text(source.target_persona, 300),
     gaps: list(source.gaps)
   };
+}
+function editDistance(a, b) {
+  const left = [...a]; const right = [...b];
+  let prev = Array.from({ length: right.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= left.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= right.length; j += 1) {
+      next[j] = Math.min(prev[j] + 1, next[j - 1] + 1, prev[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1));
+    }
+    prev = next;
+  }
+  return prev[right.length];
+}
+function nearlySameText(a, b) {
+  const strip = (value) => String(value || '').replace(/[\s，。；：、,.!?！？（）()【】\[\]]/g, '').toLowerCase();
+  const left = strip(a); const right = strip(b);
+  if (left === right) return true;
+  const max = Math.max(left.length, right.length);
+  return max > 0 && editDistance(left, right) / max < 0.05;
 }
 async function askJson(messages, maxTokens = 6000) {
   let lastError = null;
@@ -151,7 +174,7 @@ async function processRewriteDraft({ ownerId, draftId, resume, app, jd, profile,
       await sleep(80);
     } else {
       const stage1 = await askJson([
-        { role: 'system', content: `你是 JD 结构化分析助手。只输出 JSON：{"jd_analysis":{"hard_requirements":[],"core_competencies":[],"plus_items":[],"other_requirements":[],"keywords":[],"gaps":[]}}。要求：hard_requirements 只放明确硬性门槛；core_competencies 放直接决定录用的核心能力；plus_items 放优先/加分项；other_requirements 放沟通、出差等通用要求。不得编造 JD 没有的内容。` },
+        { role: 'system', content: `你是 JD 结构化分析助手。只输出 JSON：{"jd_analysis":{"hard_requirements":[],"core_competencies":[],"plus_items":[],"other_requirements":[],"keywords":[],"core_keywords":[],"target_persona":"","gaps":[]}}。要求：hard_requirements 只放明确硬性门槛；core_competencies 放直接决定录用的核心能力；plus_items 放优先/加分项；other_requirements 放沟通、出差等通用要求；core_keywords 放高频业务术语、方法论和工具名；target_persona 用一句话概括该岗位需要的核心人才画像。不得编造 JD 没有的内容。` },
         { role: 'user', content: JSON.stringify({ jd: jd.slice(0, 12000), profile: profile ? profilePayload(profile) : null, requirements: text(requirements, 1500) }) }
       ], 2600);
       jdAnalysis = normalizeJdAnalysis(stage1.jd_analysis || stage1);
@@ -161,10 +184,22 @@ async function processRewriteDraft({ ownerId, draftId, resume, app, jd, profile,
       for (let i = 0; i < blocks.length; i += batchSize) batches.push(blocks.slice(i, i + batchSize));
       for (let i = 0; i < batches.length; i += 1) {
         const batch = batches[i];
-        const stage2 = await askJson([
-          { role: 'system', content: `你是简历定向改写助手。只输出 JSON。执行 9 步中的第 5–9 步：对齐 JD 与简历整条经历、识别差距、逐段修改、组装草稿、生成报告。\nDelta 模式：只返回需要改写或标注的 block_id；没有改动的块不要返回，服务端自动保留原文。\n四级：supported_optimize 必须做实质性表达升级（围绕 JD 关键词按痛点/动作/结果重写整句，不得原句照搬，不得编造数字/公司/项目）；improvable 提供整句改写建议；needs_user_fact 保持原文并提示补充；unsupported_blocked 不写入正文。\n严禁输出“承接上一条”或残句。每个 block_id 只能来自输入。JSON：{"alignments":[{"block_id":"b1","alignment_type":"supported_optimize|improvable|needs_user_fact|unsupported_blocked","rewritten_text":"","reason":"","jd_evidence":"","needs_user_fact":false}],"report":{"keyword_coverage":0,"gaps":[],"risks":[]}}` },
+        const stage2Messages = [
+          { role: 'system', content: `你是简历定向改写助手。只输出 JSON。执行 9 步中的第 5–9 步：对齐 JD 与简历整条经历、识别差距、逐段修改、组装草稿、生成报告。\nDelta 模式：只返回需要改写或标注的 block_id；没有改动的块不要返回，服务端自动保留原文。\n四级：supported_optimize 必须做实质性表达升级（围绕 JD 关键词按痛点/动作/结果重写整句，不得原句照搬，不得编造数字/公司/项目）；improvable 提供整句改写建议；needs_user_fact 保持原文并提示补充；unsupported_blocked 不写入正文。\n严格要求：supported_optimize/improvable 必须重构句式与业务叙事，不能只改标点或换一两个同义词；按「业务痛点/目标 → 动作与方法（融入 JD 核心关键词）→ 量化结果」重写。仅纯客观信息（姓名、日期、学校、公司标题）可 unchanged。严禁输出“承接上一条”或残句。每个 block_id 只能来自输入。JSON：{"alignments":[{"block_id":"b1","alignment_type":"supported_optimize|improvable|needs_user_fact|unsupported_blocked","rewritten_text":"","reason":"","jd_evidence":"","needs_user_fact":false}],"report":{"keyword_coverage":0,"gaps":[],"risks":[]}}` },
           { role: 'user', content: JSON.stringify({ jd: jd.slice(0, 12000), jd_analysis: jdAnalysis, profile: profile ? profilePayload(profile) : null, requirements: text(requirements, 1500), batch: i + 1, total_batches: batches.length, blocks: batch.map((b) => ({ block_id: b.block_id, section: b.section, text: b.original_text })) }) }
-        ], 6000);
+        ];
+        let stage2 = await askJson(stage2Messages, 6000);
+        const alignmentById = new Map((stage2.alignments || []).map((item) => [item.block_id, item]));
+        const businessBlocks = batch.filter((block) => block.kind !== 'heading' && block.original_text.length >= 12);
+        const changedBlocks = businessBlocks.filter((block) => {
+          const item = alignmentById.get(block.block_id);
+          if (!item || !['supported_optimize', 'improvable'].includes(item.alignment_type)) return false;
+          return !nearlySameText(item.rewritten_text, block.original_text);
+        }).length;
+        if (businessBlocks.length >= 3 && changedBlocks / businessBlocks.length < 0.3) {
+          updateDraftProgress(ownerId, draftId, 84, `步骤 5–7 · 质量自检发现改写过浅，正在强化 JD 对齐（${i + 1}/${batches.length}）…`);
+          stage2 = await askJson([...stage2Messages, { role: 'user', content: '质量自检：上一版改写与原文过于相似，几乎只改标点或个别词。请对每条有证据的经历做明显但仍忠于事实的句式重构，自然融入 target_persona 与 core_keywords；不要编造数字。' }], 6000);
+        }
         alignments.push(...(Array.isArray(stage2.alignments) ? stage2.alignments : []));
         report = { ...report, ...(stage2.report || {}), gaps: [...(report.gaps || []), ...(stage2.report?.gaps || [])].slice(0, 20), risks: [...(report.risks || []), ...(stage2.report?.risks || [])].slice(0, 20) };
         updateDraftProgress(ownerId, draftId, batches.length === 1 ? 75 : Math.min(90, 55 + Math.round(((i + 1) / batches.length) * 35)), `步骤 5–7 · 正在逐条对齐 JD 关键词并润色项目经历（${i + 1}/${batches.length}）…`);
@@ -252,6 +287,15 @@ function draftProjection(row, { includeRelations = true } = {}) {
     proposed_name: row.proposed_name || '', progress_percent: row.progress_percent == null ? 100 : Number(row.progress_percent), progress_label: row.progress_label || '', result_resume_id: row.result_resume_id || null,
     error_message: row.error_message || null, created_at: row.created_at, updated_at: row.updated_at
   };
+}
+export function listActiveRewriteDrafts(ownerId) {
+  const cutoff = new Date(Date.now() - 10 * 60000).toISOString();
+  return all(`SELECT * FROM resume_rewrite_drafts
+    WHERE owner_id = ? AND ((status = 'ready' AND COALESCE(progress_percent, 100) < 100) OR updated_at >= ?)
+    ORDER BY updated_at DESC LIMIT 10`, [ownerId, cutoff]).map((row) => {
+    const { blocks, jd_analysis, report, alignment, ...summary } = draftProjection(row);
+    return summary;
+  });
 }
 export function getRewriteDraft(ownerId, id) {
   const row = one('SELECT * FROM resume_rewrite_drafts WHERE id = ? AND owner_id = ?', [String(id), ownerId]);

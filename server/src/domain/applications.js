@@ -473,7 +473,9 @@ function hasValidJobInfo(p) {
 function isLocalSelfUrl(value) {
   try {
     const u = new URL(String(value || ''));
-    return ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)
+    let configuredHost = '';
+    try { configuredHost = new URL(config.appBaseUrl || '').hostname; } catch { /* local-only fallback */ }
+    return (['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || u.hostname === configuredHost)
       && (u.pathname === '/' || u.pathname === '/mail-selftest.html'
         || u.pathname.startsWith('/api/') || u.pathname.startsWith('/assets/')
         || u.searchParams.has('panel'));

@@ -1,8 +1,8 @@
 # 帮你理 Tounar 文档索引
 
-**当前版本**：v1.0.0（本地自测稳定版）  
-**插件版本**：0.2.11  
-**更新日期**：2026-11-22
+**当前版本**：v1.1.4（本地自测稳定版）
+**插件版本**：0.2.12
+**更新日期**：2026-11-24
 
 > `docs/` 保留了项目从 beta 到 v1.0.0 的过程记录。历史文档默认保留原路径，不移动、不删除，避免破坏测试引用和旧链接。新同学从本页「当前使用」开始即可。
 
@@ -16,6 +16,9 @@
 | [SELF-TEST-GUIDE-V1.0.0](SELF-TEST-GUIDE-V1.0.0.md) | 产品同学模块 (a)–(f) 逐步自测（含 AI 助手与简历改写） |
 | [AI-DEPLOY-AND-TEST-RUNBOOK](AI-DEPLOY-AND-TEST-RUNBOOK.md) | AI 助手部署、环境预检、隔离启动、自动回归与排障 |
 | [RELEASE-V1.0.0-AUDIT-RESULT-20261122](RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) | v1.0.0 版本、回归、产物与已知边界 |
+| [RELEASE-NOTES-V1.1.0-V1.1.3](RELEASE-NOTES-V1.1.0-V1.1.3.md) | v1.1.0–v1.1.3 版本说明：新增、修改、移除/替换与边界 |
+| [V1.1.4-COMPREHENSIVE-UPGRADE-PLAN-20261124](V1.1.4-COMPREHENSIVE-UPGRADE-PLAN-20261124.md) | v1.1.4 综合修复与体验升级方案（M0–M10） |
+| [AGENT-ASSISTANT-V1.1.4-RESULT](AGENT-ASSISTANT-V1.1.4-RESULT.md) | v1.1.4 实现、真实模型/回归结果与边界 |
 | [MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122](MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md) | 44 封邮件全链路泛化基准结果 |
 | [AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122](AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) | v1.1.0 AI 求职助手开发方案 |
 | [AGENT-ASSISTANT-V1.1.0-RESULT](AGENT-ASSISTANT-V1.1.0-RESULT.md) | v1.1.0 Agent 实现、验证与边界 |

@@ -10,6 +10,7 @@ describe('v1.1.0 Agent assistant / tools / controlled writes', () => {
   let session;
   let app;
   let secondApp;
+  let noJdApp;
   let resume;
   let originalResumeText;
   before(async () => {
@@ -32,6 +33,13 @@ describe('v1.1.0 Agent assistant / tools / controlled writes', () => {
         applied_at: '2026-11-01T04:00:00Z', applied_at_precision: 'date',
         jd_summary: '负责数据分析和用户增长，要求 Python SQL 与业务分析能力',
         job_url: 'https://jobs.example.com/agent/1'
+      }
+    })).json.data;
+    noJdApp = (await server.request('/api/v1/applications/manual', {
+      method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-test-no-jd' },
+      body: {
+        company_name: '缺JD公司', job_title: '待补岗位', has_applied: false, status: 'pending',
+        jd_summary: '待补', job_url: 'https://jobs.example.com/agent/no-jd'
       }
     })).json.data;
     secondApp = (await server.request('/api/v1/applications/manual', {
@@ -260,6 +268,36 @@ describe('v1.1.0 Agent assistant / tools / controlled writes', () => {
     assert.equal(context.resume.is_current, true);
     const boundary = (await server.request(`/api/v1/agent/sessions/${session.id}/messages`, { cookie })).json.data.messages;
     assert.ok(boundary.some((message) => message.role === 'context_boundary' && message.content.includes(second.filename)));
+  });
+
+  it('缺少 JD 时工具返回结构化缺失卡，不调用匹配模型', async () => {
+    const noJdSession = (await server.request('/api/v1/agent/sessions', {
+      method: 'POST', cookie, body: { context_application_id: noJdApp.id }
+    })).json.data;
+    const result = await (async () => {
+      const response = await fetch(`${server.base}/api/v1/agent/sessions/${noJdSession.id}/chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Origin: server.base, Cookie: cookie },
+        body: JSON.stringify({ message: '分析这个岗位的匹配度' })
+      });
+      const text = await response.text();
+      for (const block of text.split('\n\n')) {
+        if (block.includes('event: message')) return JSON.parse(block.split('\n').find((line) => line.startsWith('data: '))?.slice(6) || '{}');
+      }
+      return null;
+    })();
+    assert.ok(result?.message?.meta?.cards?.some((card) => card.type === 'missing_jd'));
+    assert.equal(result.message.meta.cards.find((card) => card.type === 'missing_jd').application_id, noJdApp.id);
+    const save = await server.request(`/api/v1/applications/${noJdApp.id}/corrections`, {
+      method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-test-save-jd' },
+      body: {
+        expected_version: result.message.meta.cards.find((card) => card.type === 'missing_jd').expected_version,
+        changes: { jd_text: '岗位职责：负责用户增长与数据分析，搭建指标体系。任职要求：熟悉 SQL 与 Python，有跨团队项目经验。' },
+        reason: 'AI 助手内联补录 JD'
+      }
+    });
+    assert.equal(save.status, 200, save.text);
+    assert.match(save.json.data.jd_text, /用户增长/);
+    assert.equal(save.json.data.jd_status, 'complete');
   });
 
   it('切换岗位写入 context_boundary，新上下文不携带旧岗位详情', async () => {

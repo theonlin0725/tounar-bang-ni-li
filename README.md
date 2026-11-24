@@ -1,16 +1,16 @@
 # 帮你理 Tounar
 
-> **v1.1.3 · 简历改写质量与进度 + AI 助手滚动优化**
+> **v1.1.4 · 首次引导 / AI 助手 Drawer / 匹配与改写体验升级**
 > 浏览器插件自动采集招聘岗位 → 多邮箱同步招聘进展 → 台账与待确认管理 → 单岗位简历六维匹配。
 
-**Git 开发分支**：`tounar-1.1.3`
+**Git 开发分支**：`tounar-1.1.4`
 
-[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [v1.1.0 Agent 方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) · [v1.1.1 需求方案](docs/AGENT-ASSISTANT-V1.1.1-UX-PROFILE-AND-BUGFIX-PLAN-20261122.md) · [v1.1.1 实现结果](docs/AGENT-ASSISTANT-V1.1.1-RESULT.md) · [v1.1.2 稳定性方案](docs/AGENT-RELIABILITY-AND-ANSWER-QUALITY-PLAN-20261123.md) · [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md) · [v1.1.3 方案](docs/RESUME-REWRITE-QUALITY-AND-PROGRESS-PLAN-20261123.md) · [v1.1.3 实现结果](docs/AGENT-ASSISTANT-V1.1.3-RESULT.md) · [文档索引](docs/INDEX.md)
+[GitHub 仓库](https://github.com/theonlin0725/tounar-bang-ni-li) · [产品自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md) · [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md) · [v1.0.0 验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md) · [v1.1.0 Agent 方案](docs/AGENT-ASSISTANT-V1.1.0-DEV-PLAN-20261122.md) · [v1.1.1 需求方案](docs/AGENT-ASSISTANT-V1.1.1-UX-PROFILE-AND-BUGFIX-PLAN-20261122.md) · [v1.1.1 实现结果](docs/AGENT-ASSISTANT-V1.1.1-RESULT.md) · [v1.1.2 稳定性方案](docs/AGENT-RELIABILITY-AND-ANSWER-QUALITY-PLAN-20261123.md) · [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md) · [v1.1.3 方案](docs/RESUME-REWRITE-QUALITY-AND-PROGRESS-PLAN-20261123.md) · [v1.1.3 实现结果](docs/AGENT-ASSISTANT-V1.1.3-RESULT.md) · [v1.1.4 方案](docs/V1.1.4-COMPREHENSIVE-UPGRADE-PLAN-20261124.md) · [v1.1.4 实现结果](docs/AGENT-ASSISTANT-V1.1.4-RESULT.md) · [文档索引](docs/INDEX.md)
 
 | 项目 | 当前状态 |
 |---|---|
-| 主应用 | **v1.1.3（改写质量与进度）** |
-| 浏览器插件 | **0.2.11** |
+| 主应用 | **v1.1.4（引导 / Drawer / 体验升级）** |
+| 浏览器插件 | **0.2.12** |
 | 运行环境 | **Node.js ≥ 24**（使用内置 `node:sqlite`，无需安装数据库） |
 | 真实邮箱 | QQ / Foxmail 已完成真实端到端验证 |
 | 泛化基准 | 44 封合成邮件 / 34 封未见样本 / 11 轮全链路通过 |
@@ -19,14 +19,14 @@
 
 ## 1. 能做什么
 
-### 1.1 浏览器插件 0.2.11：跨站岗位采集
+### 1.1 浏览器插件 0.2.12：跨站岗位采集
 
 - 支持主流大厂校招站、ATS 站及列表页同页展开的单岗详情采集。
 - 自动排除帮你理自身页面（`127.0.0.1` / `localhost`），避免误采。
 - 大模型辅助整理公司名、岗位名、JD 摘要与完整 JD。
 - 低置信度自动标题在重新打开原文时可安全纠正，不覆盖人工修改。
 - 支持网页一键检测连接插件、8 位手动配对码兜底、设备撤销与招聘网站授权管理。
-- 插件 ZIP 是构建产物，仓库默认不提交：先执行 `npm run build:plugin` 生成 `web/downloads/bangnili-extension-0.2.11.zip`，安装步骤见 [自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md)。
+- 插件 ZIP 是构建产物，仓库默认不提交：先执行 `npm run build:plugin` 生成 `web/downloads/bangnili-extension-0.2.12.zip`，安装步骤见 [自测指引](docs/SELF-TEST-GUIDE-V1.0.0.md)。
 
 ### 1.2 前端工作台：台账、设置、简历与单岗匹配
 
@@ -130,7 +130,7 @@ MAIL_BENCH_JUDGE=flash
 
 | 模块 | 自测入口 | 重点 |
 |---|---|---|
-| **(a) 岗位 JD 抓取** | 安装插件 0.2.11 → 网页绑定 → 打开至少 3 家招聘站详情页 | 公司/岗位/JD 摘要与全文、看过没投、自身页面不误采 |
+| **(a) 岗位 JD 抓取** | 安装插件 0.2.12 → 网页绑定 → 打开至少 3 家招聘站详情页 | 公司/岗位/JD 摘要与全文、看过没投、自身页面不误采 |
 | **(b) 前端页面改造** | 左侧导航 / 台账 / 设置 / 390px | 5 列台账、状态色块、天数、日期、设置页签、移动端抽屉 |
 | **(c) 邮件抓取与状态更新** | 先跑 `npm run bench:mail-e2e`，再绑定 QQ 邮箱实测 | 进度条、自动入账、状态推进、待确认互斥、噪声过滤 |
 | **(d) 简历库、六维匹配与面试题** | 简历库上传/编辑 → 匹配分析 → 纠偏/面试题 | 多版本、手动编辑、六维卡片、纠偏与面试题持久化 |
@@ -184,7 +184,7 @@ AI 手册包含：
 | `npm run bench:mail-e2e` | 44 封合成邮件全链路泛化基准 |
 | `npm run mail:cleanup` | 只读预览历史脏邮件台账清理；`--apply` 才写库 |
 | `npm run test:agent` | AI 助手服务端单测 + Playwright 验活 |
-| `npm run build:plugin` | 重新打包 0.2.11 插件 ZIP |
+| `npm run build:plugin` | 重新打包 0.2.12 插件 ZIP |
 | `node tools/smoke-agent-openrouter.mjs` | OpenRouter 四场景真实联调（需 `OPENROUTER_API_KEY`） |
 | `npm run eval:intake` | 使用真实模型评估自动入账（隔离库） |
 
@@ -205,7 +205,7 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 
 ## 7. 未开发功能与已知边界
 
-### 未开发功能（规划中，不属于 v1.1.3）
+### 未开发功能（规划中，不属于 v1.1.4）
 
 1. **投递策略与转化漏斗分析（analyze_strategy）**：阶段转化率、时间趋势和自定义提醒分析。
 2. **单岗位自定义提醒天数**：当前使用全局提醒设置。
@@ -215,8 +215,8 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 
 - 网易 163 / 126 / yeah.net 代码已支持，但**尚未完成真实公网授权码联调**；当前真实邮箱证据仅来自 QQ。
 - 招聘站点适配持续演进；未逐站验证的冷门站点依赖通用规则 + 模型兜底，不保证 100% 站点零遗漏。
-- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.1.3 业务功能无关。
-- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.1.3 发版门禁。
+- `npm test` 中既有 `cloud-persistence` / `cloud-persistence-http` 两条云快照用例存在环境性波动，与 v1.1.4 业务功能无关。
+- 无头 Playwright 下扩展 service worker/权限诊断存在环境限制；`test:plugin-backend` 的随机不可达 origin 断言不作为 v1.1.4 发版门禁。
 - 真实个人邮箱、授权码、邮件正文、`.env`、SQLite 与 `.tmp/` 证据均不提交进仓库。
 
 ---
@@ -233,6 +233,8 @@ docs/          产品、架构、验收与历史文档（见 docs/INDEX.md）
 - [v1.1.2 实现结果](docs/AGENT-ASSISTANT-V1.1.2-RESULT.md)
 - [v1.1.3 简历改写质量/进度方案](docs/RESUME-REWRITE-QUALITY-AND-PROGRESS-PLAN-20261123.md)
 - [v1.1.3 实现结果](docs/AGENT-ASSISTANT-V1.1.3-RESULT.md)
+- [v1.1.4 综合升级方案](docs/V1.1.4-COMPREHENSIVE-UPGRADE-PLAN-20261124.md)
+- [v1.1.4 实现结果](docs/AGENT-ASSISTANT-V1.1.4-RESULT.md)
 - [AI 部署与内测手册](docs/AI-DEPLOY-AND-TEST-RUNBOOK.md)
 - [v1.0.0 封板验收记录](docs/RELEASE-V1.0.0-AUDIT-RESULT-20261122.md)
 - [全链路邮件泛化基准结果](docs/MAIL-E2E-GENERALIZATION-BENCHMARK-RESULT-20261122.md)

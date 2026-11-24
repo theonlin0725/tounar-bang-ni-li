@@ -1,15 +1,16 @@
-import { confirmPluginConnection, openSiteManager, promptPluginConnection } from './views/plugin-access.js';
+import { confirmPluginConnection, openSiteManager, promptPluginConnection } from './views/plugin-access.js?v=20261124-1';
 /* 应用壳：会话代际守卫、路由（/ 与 /r/<token>）、顶栏、视图挂载。
    要求：退出/换号立即作废旧请求（gen 校验），不把 A 用户的数据渲染给 B。 */
 
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
-import { renderLogin } from './views/login.js';
-import { renderLedger } from './views/ledger.js?v=20261120-1';
-import { renderLanding } from './views/landing.js';
-import { renderCareer } from './views/career.js';
-import { renderAssistant } from './views/assistant.js';
-import { renderSettingsPage } from './views/settings.js';
+import { renderLogin } from './views/login.js?v=20261124-1';
+import { renderLedger } from './views/ledger.js?v=20261124-1';
+import { renderLanding } from './views/landing.js?v=20261124-1';
+import { renderCareer } from './views/career.js?v=20261124-1';
+import { renderAssistant } from './views/assistant.js?v=20261124-1';
+import { renderSettingsPage } from './views/settings.js?v=20261124-1';
+import { startTaskManager, stopTaskManager } from './tasks.js?v=20261124-1';
 
 export const App = {
   gen: 0,
@@ -41,6 +42,7 @@ function resetOverlays() {
 }
 
 export function showLogin(message) {
+  stopTaskManager();
   App.loggedIn = false;
   App.gen += 1;
   App.view = 'login';
@@ -76,6 +78,7 @@ export async function enterApp(panel = null) {
   const activePanel = panel || currentRoute.panel;
   const shell = buildShell({ panel: activePanel, view: currentRoute.view, section: currentRoute.section, gen });
   root.append(shell);
+  startTaskManager();
   const main = shell.querySelector('#tn-main');
   if (['settings', 'mail-admin', 'plugin-connect', 'plugin-sites'].includes(activePanel)) {
     const requestedTab = activePanel === 'mail-admin' ? 'mail-admin'
@@ -184,7 +187,11 @@ function buildShell({ panel, view, section, gen }) {
   }, navIcon('reviews'), h('span', { class: 'tn-nav-label', text: '待确认' }), pendingBadge);
   const analysis = h('div', { class: 'tn-nav-section' },
     navGroup('分析'),
-    navLink({ href: '/?panel=assistant', label: 'AI 助手', test: 'nav-assistant', active: nav === 'assistant', icon: 'assistant' }),
+    (() => {
+      const button = navButton({ label: 'AI 助手', test: 'nav-assistant', icon: 'assistant', onclick: () => openAssistantDrawer() });
+      if (nav === 'assistant') { button.classList.add('active'); button.setAttribute('aria-current', 'page'); }
+      return button;
+    })(),
     navLink({ href: '/?panel=career&section=match', label: '匹配分析', test: 'nav-match', active: nav === 'match', icon: 'match' }),
     navLink({ href: '/?panel=career&section=resume', label: '简历库', test: 'nav-resume', active: nav === 'resume', icon: 'resume' })
   );
@@ -230,6 +237,44 @@ function buildShell({ panel, view, section, gen }) {
   const main = h('div', { class: 'tn-main', id: 'tn-main' });
   const workspace = h('div', { class: 'tn-workspace' }, topbar, main);
   const shell = h('div', { class: 'tn-shell' }, sidebar, h('div', { class: 'tn-nav-scrim', onclick: () => toggleMobileNav(false) }), workspace);
+  const assistantDrawer = h('aside', { class: 'tn-assistant-drawer', 'data-test': 'assistant-drawer', 'aria-label': 'AI 求职助手', hidden: true });
+  const assistantMask = h('div', { class: 'tn-assistant-drawer-mask', hidden: true, onclick: () => closeAssistantDrawer() });
+  const assistantBody = h('div', { class: 'tn-assistant-drawer-body' });
+  const drawerContext = h('div', { class: 'tn-assistant-drawer-context', 'data-test': 'assistant-drawer-context' });
+  let assistantOpen = false;
+  let assistantWide = false;
+  const drawerClose = h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'assistant-drawer-close', text: '关闭', onclick: () => closeAssistantDrawer() });
+  const drawerWide = h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'assistant-drawer-wide', text: '宽屏', onclick: () => { assistantWide = !assistantWide; assistantDrawer.classList.toggle('wide', assistantWide); drawerWide.textContent = assistantWide ? '窄屏' : '宽屏'; } });
+  const assistantFab = h('button', { class: 'tn-assistant-fab', type: 'button', 'data-test': 'assistant-fab', title: '打开 AI 助手', 'aria-label': '打开 AI 助手', onclick: () => openAssistantDrawer() }, h('span', { text: 'AI' }), h('span', { class: 'tn-assistant-fab-label', text: '助手' }));
+  assistantDrawer.append(h('header', { class: 'tn-assistant-drawer-head' },
+    h('div', {}, h('strong', { text: 'AI 求职助手' }), drawerContext),
+    h('div', { class: 'tn-action-row' }, drawerWide, drawerClose)), assistantBody);
+  shell.append(assistantMask, assistantDrawer, assistantFab);
+  async function openAssistantDrawer() {
+    closeMobileNav();
+    const params = new URLSearchParams(location.search);
+    const pageApp = params.get('app');
+    const linked = window.__tounarAssistantContext?.type === 'application' ? window.__tounarAssistantContext : null;
+    const currentApp = pageApp || linked?.id || null;
+    drawerContext.textContent = linked ? `当前查看：${linked.label}` : (currentApp ? `当前页面：${params.get('panel') === 'career' ? '匹配分析' : '岗位详情'}` : `当前页面：${titleFor(nav)}`);
+    assistantOpen = true;
+    assistantDrawer.hidden = false;
+    assistantMask.hidden = false;
+    shell.classList.add('assistant-drawer-open');
+    clear(assistantBody);
+    assistantBody.append(h('div', { class: 'tn-empty' }, h('p', { text: '正在打开 AI 助手…' })));
+    try {
+      await renderAssistant(assistantBody, { gen, applicationId: currentApp, resumeId: params.get('resume'), onboarding: params.get('onboarding') });
+    } catch (error) {
+      clear(assistantBody); assistantBody.append(h('div', { class: 'tn-inline-msg err', text: 'AI 助手加载失败：' + errorText(error) }));
+    }
+  }
+  function closeAssistantDrawer() {
+    assistantOpen = false;
+    assistantDrawer.hidden = true; assistantMask.hidden = true;
+    shell.classList.remove('assistant-drawer-open');
+    clear(assistantBody);
+  }
   const mobileQuery = window.matchMedia('(max-width: 900px)');
 
   function syncMobileFocus() {
@@ -281,6 +326,7 @@ function buildShell({ panel, view, section, gen }) {
     pageTitleEl.textContent = titleFor(view);
   }
   const onKey = (e) => {
+    if (e.key === 'Escape' && assistantOpen) { e.preventDefault(); closeAssistantDrawer(); return; }
     if (e.key === 'Escape' && shell.classList.contains('nav-open')) { e.preventDefault(); toggleMobileNav(false); return; }
     if (e.key !== 'Tab' || !mobileQuery.matches || !shell.classList.contains('nav-open')) return;
     const focusables = [...sidebar.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]')]

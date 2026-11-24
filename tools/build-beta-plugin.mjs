@@ -11,7 +11,7 @@ const pluginHelpSource = fs.readFileSync(path.join(ROOT, 'web/assets/js/views/pl
 if (!pluginHelpSource.includes(`PLUGIN_VERSION = '${version}'`)) {
   throw new Error(`web plugin download version does not match manifest ${version}; update web/assets/js/views/plugin-help.js`);
 }
-const serverRaw = process.env.BETA_SERVER_URL || 'https://bangnili.app.workbuddy.host';
+const serverRaw = process.env.BETA_SERVER_URL || 'https://bangnili.theonlin.top';
 const shareCode = process.env.SHARE_CODE || '';
 const serverUrl = `${serverRaw.replace(/\/$/, '')}${shareCode ? `/?sharecode=${encodeURIComponent(shareCode)}` : ''}`;
 const stage = path.join(ROOT, '.tmp', 'beta-plugin');

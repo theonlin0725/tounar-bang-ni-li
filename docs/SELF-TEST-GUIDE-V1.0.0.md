@@ -1,7 +1,7 @@
 # 帮你理 Tounar v1.1.3 产品自测指引
 
 **版本**：v1.1.3（简历改写质量与进度）
-**插件版本**：0.2.11  
+**插件版本**：0.2.12
 **适用对象**：产品、设计、运营与内测同学
 
 本指引按 6 个模块自测（模块 e 为 AI 助手，模块 f 为简历改写工作台）。每项都给出操作路径和验收标准；请如实记录结果，不要用模拟数据替代真实页面/真实邮箱验收。
@@ -15,7 +15,7 @@
 ### 0.1 环境
 
 - Node.js **≥ 24**
-- Chrome / Chromium（用于加载 0.2.11 插件）
+- Chrome / Chromium（用于加载 0.2.12 插件）
 - 可选：一个测试 QQ / Foxmail 邮箱及客户端授权码；163 / 126 / yeah.net 代码已支持但尚无真实公网联调证据
 
 ### 0.2 启动空库
@@ -48,7 +48,7 @@ npm run local:acceptance
 
 ### 步骤
 
-1. 在仓库运行 `npm run build:plugin`。插件 ZIP 是构建产物，`web/downloads/` 默认不提交；构建后使用 `web/downloads/bangnili-extension-0.2.11.zip`。
+1. 在仓库运行 `npm run build:plugin`。插件 ZIP 是构建产物，`web/downloads/` 默认不提交；构建后使用 `web/downloads/bangnili-extension-0.2.12.zip`。
 2. 解压 ZIP；Chrome → `chrome://extensions` → 打开「开发者模式」→「加载已解压的扩展程序」→ 选择**直接包含 `manifest.json` 的 `bangnili-extension` 目录**。
 3. 登录帮你理，进入「设置 → 数据与授权」，使用「检测并连接插件」或 8 位手动配对码完成绑定。
 4. 至少打开 **3 家不同招聘官网**的岗位详情页，每个页面停留 ≥3 秒。

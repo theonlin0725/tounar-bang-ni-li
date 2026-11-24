@@ -1,8 +1,8 @@
 /* v1.1.1 简历库「简历改写」工作台：岗位/简历/画像/JD 配置 → 左右对照编辑 → 新版本 + Word。 */
 import { api, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261120-1';
+import { isStale } from '../app.js?v=20261124-1';
 import { h, clear, toast, openModal, idemKey, debounce } from '../util.js';
-import { openJobPicker } from './job-picker.js';
+import { openJobPicker } from './job-picker.js?v=20261124-1';
 
 const ALIGN_LABEL = {
   supported_optimize: '已优化', improvable: '可优化', needs_user_fact: '待补事实', unsupported_blocked: '已拦截', unchanged: '未改动'
@@ -60,7 +60,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       h('div', { class: 'tn-small tn-muted', text: jd ? jd.slice(0, 140).replace(/\n/g, ' ') : '请先在岗位详情补充 JD，避免空跑模型。' }),
       selectedApp ? h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', href: `/?app=${encodeURIComponent(selectedApp.id)}`, text: '查看岗位详情' }) : null);
     cards.append(jobCard, resumeCard, profileCard, jdCard);
-    const textarea = h('textarea', { class: 'tn-input', rows: '3', 'data-test': 'rewrite-requirements', placeholder: '可选：重点突出数据分析、AI 项目或某个业务成果' });
+    const textarea = h('textarea', { class: 'tn-input', rows: '3', 'data-test': 'rewrite-requirements', placeholder: '改写需求：重点突出数据分析、AI 项目或某个业务成果' });
     textarea.value = requirements;
     textarea.addEventListener('input', () => { requirements = textarea.value; });
     const start = h('button', { class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'rewrite-start', text: busy ? '正在生成…' : '开始定向改写', disabled: busy || !selectedApp || !selectedResume || jd.length < 20,
@@ -198,19 +198,26 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       });
       if (block.alignment_type === 'unchanged' || block.rewritten_text === block.original_text) editable.textContent = block.original_text;
       else editable.append(...diffNodes(block.original_text, block.rewritten_text || block.original_text));
+      const showBadge = !heading && block.alignment_type !== 'unchanged';
+      const badge = showBadge ? h('span', {
+        class: `tn-rewrite-inline-badge ${block.alignment_type === 'needs_user_fact' ? 'is-needs' : block.alignment_type === 'unsupported_blocked' ? 'is-blocked' : 'is-optimized'}`,
+        'data-test': 'rewrite-inline-badge',
+        text: ALIGN_LABEL[block.alignment_type] || block.alignment_type
+      }) : null;
       editable.addEventListener('focus', () => {
+        if (badge) badge.hidden = true;
         if (editable.dataset.plain === '1') return;
         editable.textContent = block.rewritten_text || block.original_text;
         editable.dataset.plain = '1';
       });
+      editable.addEventListener('blur', () => { if (badge) badge.hidden = false; });
       editable.addEventListener('input', () => { block.rewritten_text = editable.innerText; editable.dataset.plain = '1'; scheduleSave(); });
       const annotation = h('div', { class: 'tn-rewrite-annotation' },
-        h('span', { class: `tn-rewrite-align ${block.alignment_type}`, text: ALIGN_LABEL[block.alignment_type] || block.alignment_type }),
-        block.reason ? h('span', { text: block.reason }) : null,
-        block.jd_evidence ? h('span', { class: 'tn-rewrite-jd-evidence', text: `JD：${block.jd_evidence}` }) : null,
-        block.alignment_type === 'needs_user_fact' ? h('span', { class: 'tn-small', text: '请只补充真实事实，不会自动编造' }) : null,
+        block.reason ? h('span', { class: 'tn-rewrite-reason', title: block.reason, text: block.reason }) : null,
+        block.jd_evidence ? h('span', { class: 'tn-rewrite-jd-evidence', title: block.jd_evidence, text: `JD：${block.jd_evidence}` }) : null,
         block.alignment_type !== 'unchanged' && block.rewritten_text !== block.original_text ? h('button', { class: 'tn-rewrite-restore', type: 'button', text: '还原原句', onclick: () => { block.rewritten_text = block.original_text; block.alignment_type = 'unchanged'; renderDraft(); } }) : null);
-      rows.append(h('div', { class: 'tn-rewrite-row' }, left, h('div', { class: 'tn-rewrite-cell rewritten' }, editable, annotation)));
+      rows.append(h('div', { class: 'tn-rewrite-row' }, left, h('div', { class: 'tn-rewrite-cell rewritten' },
+        h('div', { class: `tn-rewrite-text-line ${block.alignment_type}` }, editable, badge), annotation)));
     }
     const needs = Array.isArray(draft.report?.needs_user_fact) ? draft.report.needs_user_fact : [];
     const missing = draft.blocks.filter((block) => block.alignment_type === 'needs_user_fact').map((block) => ({ block_id: block.block_id, prompt: block.reason }));
@@ -271,6 +278,21 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
             return;
           }
         } catch { /* fall back to config */ }
+      }
+      if (!draftId) {
+        try {
+          const activeDrafts = (await api.get('/api/v1/career-ai/rewrite-drafts/active')).data || [];
+          const running = activeDrafts.find((item) => item.status === 'ready' && Number(item.progress_percent ?? 100) < 100);
+          const recentDone = activeDrafts.find((item) => item.status === 'ready' && Number(item.progress_percent ?? 100) >= 100
+            && Date.now() - Date.parse(item.updated_at || 0) < 120000);
+          const recovered = running || recentDone;
+          if (active() && recovered) {
+            draft = (await api.get(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(recovered.id)}`)).data;
+            if (draft.status === 'ready' && Number(draft.progress_percent ?? 100) >= 100 && draft.blocks?.length) renderDraft();
+            else { renderProgress(); pollDraft(); }
+            return;
+          }
+        } catch { /* active recovery is best effort */ }
       }
       renderConfig();
     } catch (error) {

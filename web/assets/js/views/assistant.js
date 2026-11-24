@@ -3,7 +3,7 @@
 import { api, errorText } from '../api.js';
 import { h, clear, toast, fmtDateTime, openModal } from '../util.js';
 import { renderMarkdownNodes } from '../markdown.js';
-import { openJobPicker } from './job-picker.js';
+import { openJobPicker } from './job-picker.js?v=20261124-1';
 
 const STATUS_LABEL = {
   applied: '已投递', assessment: '笔试/测评', interview: '面试中',
@@ -29,6 +29,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
   let statusText = '';
   let inputEl = null;
   let composerEl = null;
+  const savedJdCards = new Map();
 
   const top = h('div', { class: 'tn-assistant-top' });
   const welcome = h('section', { class: 'tn-assistant-welcome' });
@@ -161,6 +162,9 @@ export async function renderAssistant(container, { gen, applicationId = null, re
       const actual = pendingActions.find((item) => item.id === action.id);
       node.append(renderActionCard(actual || { id: action.id, ...action }, meta));
     }
+    for (const card of meta.cards || []) {
+      if (card.type === 'missing_jd') node.append(renderMissingJdCard(card));
+    }
     if (meta.suggestions?.length) {
       node.append(h('div', { class: 'tn-agent-suggestions' }, ...meta.suggestions.map((suggestion) => h('button', {
         type: 'button', class: 'tn-agent-suggestion', text: suggestion,
@@ -168,6 +172,46 @@ export async function renderAssistant(container, { gen, applicationId = null, re
       }))));
     }
     return node;
+  }
+
+  function renderMissingJdCard(card) {
+    const saved = savedJdCards.get(card.application_id);
+    if (saved) {
+      return h('section', { class: 'tn-agent-missing-jd', 'data-test': 'assistant-missing-jd-card' },
+        h('div', { class: 'tn-agent-missing-jd-head' }, h('strong', { text: '岗位 JD 已保存 ✓' }), h('span', { class: 'tn-small tn-muted', text: `${card.company || ''} · ${card.job_title || ''}` })),
+        h('p', { class: 'tn-small tn-muted', text: '已写入岗位台账，并自动继续了原分析请求。' }),
+        h('div', { class: 'tn-small tn-muted', style: { whiteSpace: 'pre-wrap', maxHeight: '120px', overflow: 'auto' }, text: saved.jd }));
+    }
+    const textarea = h('textarea', { class: 'tn-input', rows: '4', 'data-test': 'missing-jd-input', placeholder: '粘贴岗位 JD（岗位职责 + 任职要求）' });
+    const message = h('div', { class: 'tn-small tn-muted' });
+    const save = h('button', { class: 'tn-btn tn-btn-primary tn-btn-sm', type: 'button', 'data-test': 'missing-jd-save', text: '保存 JD 并继续分析', onclick: async () => {
+      const jd = textarea.value.trim();
+      if (jd.length < 20) { message.textContent = 'JD 太短，至少粘贴 20 字以上'; return; }
+      save.disabled = true; save.textContent = '保存中…';
+      try {
+        await api.post(`/api/v1/applications/${encodeURIComponent(card.application_id)}/corrections`, {
+          expected_version: card.expected_version,
+          changes: { jd_text: jd, jd_summary: jd.slice(0, 500) },
+          reason: 'AI 助手内联补录 JD'
+        }, { idempotencyKey: `agent-jd-${card.application_id}-${Date.now()}` });
+        textarea.disabled = true;
+        card.saved = true;
+        savedJdCards.set(card.application_id, { jd, saved_at: new Date().toISOString() });
+        message.textContent = 'JD 已保存 ✓ 正在继续分析…';
+        renderThread();
+        if (inputEl && card.resume_prompt) { inputEl.value = card.resume_prompt; send(); }
+      } catch (error) {
+        save.disabled = false; save.textContent = '保存 JD 并继续分析';
+        message.textContent = '保存失败：' + errorText(error);
+      }
+    } });
+    const dismiss = h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', text: '暂不补充', onclick: () => { card.saved = false; card.dismissed = true; wrapper.hidden = true; } });
+    const wrapper = h('section', { class: 'tn-agent-missing-jd', 'data-test': 'assistant-missing-jd-card' },
+      h('div', { class: 'tn-agent-missing-jd-head' }, h('strong', { text: '补充岗位 JD' }), h('span', { class: 'tn-small tn-muted', text: `${card.company || ''} · ${card.job_title || ''}` })),
+      h('p', { class: 'tn-small tn-muted', text: '该岗位暂缺 JD，粘贴后我立刻继续分析；不会跳走或让你重复输入。' }),
+      textarea, message,
+      h('div', { class: 'tn-action-row' }, save, dismiss));
+    return wrapper;
   }
 
   function renderActionCard(action, meta) {

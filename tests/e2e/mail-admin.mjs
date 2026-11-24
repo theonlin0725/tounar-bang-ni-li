@@ -61,7 +61,11 @@ try {
   const [peerName, peerValue] = peer.cookie.split('=');
   await other.addCookies([{ name: peerName, value: peerValue, url: server.base }]);
   const peerPage = await other.newPage(); await peerPage.goto(server.base+'/?panel=mail-admin');
-  await peerPage.getByRole('alert').filter({ hasText: '仅管理员' }).waitFor();
+  await peerPage.getByTestId('pref-mode').waitFor();
+  assert.equal(await peerPage.getByTestId('settings-tab-mail-admin').count(), 0);
+  assert.equal(await peerPage.getByTestId('pref-preview-btn').count(), 0);
+  const forbidden = await server.request('/api/v1/notification-preferences/preview', { cookie: peer.cookie });
+  assert.equal(forbidden.status, 403);
   assert.deepEqual(errors, []);
-  console.log('管理员页面验证通过：模板试发、修改生效、恢复、约束错误、业务通路、非管理员拦截、桌面和窄屏。全部 outbox，未发送真实邮件。');
+  console.log('管理员页面验证通过：模板试发、修改生效、恢复、约束错误、业务通路、非管理员回退提醒设置、桌面和窄屏。全部 outbox，未发送真实邮件。');
 } finally { if (browser) await browser.close(); await server.stop(); }

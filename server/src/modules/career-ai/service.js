@@ -452,8 +452,10 @@ function scoreJob(keywords, app) {
   return score;
 }
 
-export async function recommendForOwner(ownerId) {
-  const { row: resume, profile } = requireReadyResume(ownerId);
+export async function recommendForOwner(ownerId, { resumeId = null } = {}) {
+  const { row: resume, profile } = resumeId
+    ? requireReadyResumeById(ownerId, resumeId)
+    : requireReadyResume(ownerId);
   const rows = all(`SELECT * FROM applications WHERE owner_id = ? AND has_applied = 0 AND archived_at IS NULL
     ORDER BY updated_at DESC, created_at DESC`, [ownerId]);
   const sufficient = [];

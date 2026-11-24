@@ -8,7 +8,7 @@ import {
 import { createApplication, findCandidates, mapStatusText, normalizeStatus } from './applications.js';
 
 const CORRECTION_FIELDS = new Set([
-  'company_name', 'job_title', 'recruitment_batch', 'location', 'jd_summary', 'channel', 'job_url',
+  'company_name', 'job_title', 'recruitment_batch', 'location', 'jd_summary', 'jd_text', 'channel', 'job_url',
   'status_url', 'status_url_scope', 'status', 'applied_at', 'applied_at_precision', 'deadline_at',
   'deadline_precision', 'interview_round', 'round_label', 'interview_scheduled_at', 'last_interview_completed_at'
 ]);
@@ -36,6 +36,10 @@ function changesForCorrection(app, changes) {
       if (!value) throw new AppError(400, 'VALIDATION_ERROR', `${key} 不能为空`);
     } else if (key === 'jd_summary') {
       value = clipText(value, 80);
+    } else if (key === 'jd_text') {
+      value = String(value || '').replace(/\r\n?/g, '\n').trim();
+      if (value.length < 20) throw new AppError(400, 'VALIDATION_ERROR', 'JD 正文至少需要 20 个字符');
+      value = clipText(value, 30000);
     } else if (['job_url', 'status_url'].includes(key)) {
       if (value === '' || value === null) value = null;
       else if (!isSafeHttpUrl(value)) throw new AppError(400, 'VALIDATION_ERROR', '链接必须是安全的 http(s) URL');
@@ -74,6 +78,10 @@ export function correctApplication({ ownerId, applicationId, expectedVersion, ch
     if (!app) throw new AppError(404, 'NOT_FOUND', '记录不存在');
     validateApplicationVersion(app, expectedVersion);
     const updates = changesForCorrection(app, changes);
+    if (updates.jd_text) {
+      updates.jd_status = 'complete';
+      if (!updates.jd_summary) updates.jd_summary = clipText(updates.jd_text, 80);
+    }
     if (updates.status) {
       if (updates.status === 'pending') {
         if (app.has_applied) {

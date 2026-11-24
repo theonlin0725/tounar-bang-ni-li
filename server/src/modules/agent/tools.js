@@ -180,6 +180,13 @@ function reportSummary(row) {
   };
 }
 function toolError(message, code = 'VALIDATION_ERROR') { throw new AppError(400, code, message); }
+function missingJdCard(app) {
+  return {
+    type: 'missing_jd', application_id: app.id, company: app.company_name || '',
+    job_title: app.job_title || '', current_jd: app.jd_text || '', expected_version: app.version
+  };
+}
+function hasEnoughJd(app) { return String(app?.jd_text || app?.jd_summary || '').trim().length >= 30; }
 
 export async function executeTool({ ownerId, sessionId, toolName, args = {}, contextApplicationId = null, contextResumeId = null }) {
   if (toolName === 'search_jobs') {
@@ -214,7 +221,8 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
       data: {
         ...appSummary(detail), jd_summary: detail.jd_summary || null, jd_text: detail.jd_text || null,
         history: (detail.history || []).slice(0, 20), field_confidence: detail.field_confidence || {},
-        open_reviews: detail.open_reviews || []
+        open_reviews: detail.open_reviews || [],
+        missing_jd: !hasEnoughJd(detail), ...(hasEnoughJd(detail) ? {} : { cards: [missingJdCard(detail)] })
       },
       refs: [{ type: 'application', id: detail.id, label: `${detail.company_name || '未命名'} · ${detail.job_title || '岗位'}` }]
     };
@@ -233,15 +241,21 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
   if (toolName === 'compare_jobs') {
     const ids = [...new Set((Array.isArray(args.application_ids) ? args.application_ids : []).map((x) => clean(x, 100)).filter(Boolean))];
     if (ids.length < 2 || ids.length > 5) toolError('请选择 2–5 个岗位');
+    const cards = [];
     const items = ids.map((id) => {
       const detail = applicationDetail(ownerId, id).data;
-      return { ...appSummary(detail), jd_excerpt: detail.jd_summary || String(detail.jd_text || '').slice(0, 800), match_report: reportSummary(latestMatchReport(ownerId, id)) };
+      if (!hasEnoughJd(detail)) cards.push(missingJdCard(detail));
+      return { ...appSummary(detail), jd_excerpt: detail.jd_summary || String(detail.jd_text || '').slice(0, 800), missing_jd: !hasEnoughJd(detail), match_report: reportSummary(latestMatchReport(ownerId, id)) };
     });
-    return { summary: `读取 ${items.length} 个岗位进行对比`, data: { items }, refs: items.map((app) => ({ type: 'application', id: app.id, label: `${app.company_name} · ${app.job_title}` })) };
+    return { summary: `读取 ${items.length} 个岗位进行对比${cards.length ? '（部分岗位缺 JD）' : ''}`, data: { items, cards }, refs: items.map((app) => ({ type: 'application', id: app.id, label: `${app.company_name} · ${app.job_title}` })) };
   }
   if (toolName === 'analyze_match') {
     const id = clean(args.application_id, 100);
     if (!id) toolError('缺少 application_id');
+    const target = applicationDetail(ownerId, id).data;
+    if (!hasEnoughJd(target)) {
+      return { summary: '该岗位暂缺 JD，请先补充后再分析', data: { missing_jd: true, cards: [missingJdCard(target)] }, refs: [{ type: 'application', id, label: `${target.company_name} · ${target.job_title}` }] };
+    }
     const resume = args.resume_id
       ? getResume(ownerId, args.resume_id, { includeText: false })
       : (contextResumeId ? getResume(ownerId, contextResumeId, { includeText: false }) : currentResume(ownerId));
@@ -261,6 +275,8 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
     let reportId = clean(args.report_id, 100);
     const appId = clean(args.application_id, 100);
     if (!reportId && appId) {
+      const app = applicationDetail(ownerId, appId).data;
+      if (!hasEnoughJd(app)) return { summary: '该岗位暂缺 JD，请先补充后再生成面试题', data: { missing_jd: true, cards: [missingJdCard(app)] }, refs: [{ type: 'application', id: appId, label: `${app.company_name} · ${app.job_title}` }] };
       let report = latestMatchReport(ownerId, appId, contextResumeId);
       if (!report) {
         const created = await matchApplication({ ownerId, applicationId: appId });
@@ -355,6 +371,9 @@ export async function executeTool({ ownerId, sessionId, toolName, args = {}, con
       : (contextResumeId ? getResume(ownerId, contextResumeId, { includeText: true }) : currentResume(ownerId));
     if (!resume) toolError('请先上传并设置一份简历', 'RESUME_REQUIRED');
     const app = applicationDetail(ownerId, appId).data;
+    if (!hasEnoughJd(app)) {
+      return { summary: '该岗位暂缺 JD，请先补充后再改写', data: { missing_jd: true, cards: [missingJdCard(app)] }, refs: [{ type: 'application', id: appId, label: `${app.company_name} · ${app.job_title}` }] };
+    }
     const report = latestMatchReport(ownerId, appId);
     const rewrite = await generateResumeRewrite({ resume, application: app, report, requirements: args.requirements || '' });
     const action = createPendingAction({

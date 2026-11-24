@@ -1,7 +1,7 @@
 import { h, clear, openModal } from '../util.js';
 import { api, errorText } from '../api.js';
-import { PLUGIN_VERSION, pluginDownloadLink } from './plugin-help.js';
-import { App } from '../app.js?v=20261120-1';
+import { PLUGIN_VERSION, pluginDownloadLink } from './plugin-help.js?v=20261124-1';
+import { App } from '../app.js?v=20261124-1';
 
 export function extensionRequest(action, payload = {}) {
   return new Promise((resolve, reject) => {

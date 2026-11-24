@@ -117,7 +117,7 @@ npm run build:plugin
 - `test:netease-game`：60/60；
 - `test:self-page`：6/6；
 - `test:panel`：8/8；
-- `build:plugin` 输出 `bangnili-extension-0.2.11.zip`，版本 0.2.11，无违禁文件。
+- `build:plugin` 输出 `bangnili-extension-0.2.12.zip`，版本 0.2.12，无违禁文件。
 
 手工补充：加载 `extension/` 或解压 ZIP，访问至少 3 家招聘站详情页，确认「看过没投」和详情抽屉字段正常。
 

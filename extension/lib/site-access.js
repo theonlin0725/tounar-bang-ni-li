@@ -27,7 +27,7 @@
     } catch { return false; }
   }
   function captureOrigins(origins, base) {
-    const appHosts = ['127.0.0.1', 'localhost', 'bangnili.app.workbuddy.host'];
+    const appHosts = ['127.0.0.1', 'localhost', 'bangnili.app.workbuddy.host', 'bangnili.theonlin.top'];
     return origins.filter(p => !isBackend(p, base) && !appHosts.some(host => covers(p, host)));
   }
   function groups(origins, base) {

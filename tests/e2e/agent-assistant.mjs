@@ -4,6 +4,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { startTestServer } from '../../server/test/helpers.js';
+import { DatabaseSync } from 'node:sqlite';
 import { resolveChromiumExecutable } from './browser.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -37,17 +38,21 @@ try {
   check('测试简历创建成功', resumeBody.status === 201, resumeBody.text);
   const app1 = (await server.request('/api/v1/applications/manual', {
     method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-e2e-app-1' },
-    body: { company_name: '字节跳动', job_title: '数据分析师', has_applied: true, status: 'applied', applied_at: '2026-11-01T04:00:00Z', applied_at_precision: 'date', jd_summary: '负责数据分析和用户增长，要求 Python SQL', job_url: 'https://jobs.example.com/agent/e2e-1' }
+    body: { company_name: '字节跳动', job_title: '数据分析师', has_applied: true, status: 'applied', applied_at: '2026-11-01T04:00:00Z', applied_at_precision: 'date', jd_summary: '负责数据分析和用户增长，要求 Python SQL 与业务分析能力', job_url: 'https://jobs.example.com/agent/e2e-1' }
   })).json.data;
   const viewed = (await server.request('/api/v1/applications/manual', {
     method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-e2e-viewed-1' },
     body: { company_name: '看过公司', job_title: '产品经理', has_applied: false, status: 'pending', jd_summary: '负责产品规划与需求分析', job_url: 'https://jobs.example.com/agent/e2e-viewed' }
   })).json.data;
+  const noJd = (await server.request('/api/v1/applications/manual', {
+    method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-e2e-no-jd' },
+    body: { company_name: '缺JD公司', job_title: '待补岗位', has_applied: false, status: 'pending', jd_summary: '待补', job_url: 'https://jobs.example.com/agent/e2e-no-jd' }
+  })).json.data;
   const app2 = (await server.request('/api/v1/applications/manual', {
     method: 'POST', cookie, headers: { 'Idempotency-Key': 'agent-e2e-app-2' },
     body: { company_name: '网易', job_title: '游戏策划', has_applied: true, status: 'assessment', applied_at: '2026-11-02T04:00:00Z', applied_at_precision: 'date', jd_summary: '负责游戏玩法策划与关卡设计', job_url: 'https://jobs.example.com/agent/e2e-2' }
   })).json.data;
-  check('测试岗位创建成功', app1?.id && app2?.id);
+  check('测试岗位创建成功', app1?.id && app2?.id && noJd?.id);
 
   browser = await chromium.launch({ headless: true, executablePath: (await resolveChromiumExecutable()).path });
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -137,6 +142,20 @@ try {
   check('改写确认后生成新简历版本，原版本保留', versions.length >= 2 && versions.some((item) => item.parent_resume_id));
 
   await page.click('[data-test=assistant-context-application]');
+  await page.click('[data-test=job-picker-viewed]');
+  await page.click(`[data-test=job-picker-option][data-job-id="${noJd.id}"]`);
+  await page.waitForTimeout(500);
+  await page.fill('[data-test=assistant-input]', '分析这个岗位的匹配度');
+  await page.click('[data-test=assistant-send]');
+  await page.waitForSelector('[data-test=assistant-missing-jd-card]', { timeout: 15000 });
+  check('缺 JD 岗位在对话内展示补录卡', (await page.locator('[data-test=assistant-missing-jd-card]').innerText()).includes('待补岗位'));
+  const jdText = '岗位职责：负责跨境业务的数据分析与用户增长策略，搭建指标体系并推动产品迭代。任职要求：本科及以上，熟悉 SQL、Python 与 A/B 测试，有跨团队沟通能力。';
+  await page.fill('[data-test=missing-jd-input]', jdText);
+  await page.click('[data-test=missing-jd-save]');
+  await page.waitForFunction(() => document.querySelector('[data-test=assistant-missing-jd-card]')?.innerText.includes('JD 已保存'), null, { timeout: 15000 });
+  const savedNoJd = (await server.request(`/api/v1/applications/${noJd.id}`, { cookie })).json.data;
+  check('补录 JD 真实写入台账并自动续接', savedNoJd.jd_text.includes('跨境业务的数据分析'));
+  await page.click('[data-test=assistant-context-application]');
   await page.click('[data-test=job-picker-applied]');
   await page.click(`[data-test=job-picker-option][data-job-id="${app2.id}"]`);
   await page.waitForTimeout(700);
@@ -171,10 +190,25 @@ try {
   await page.waitForSelector('[data-test=rewrite-block]', { timeout: 20000 });
   const rewriteCounts = {
     blocks: await page.locator('[data-test=rewrite-block]').count(),
-    aligns: await page.locator('.tn-rewrite-align').count(),
+    aligns: await page.locator('[data-test=rewrite-inline-badge]').count(),
     jd: await page.locator('[data-test=rewrite-jd-overview]').count()
   };
   check('改写生成左右对照块与 JD 四类概览', rewriteCounts.blocks >= 2 && rewriteCounts.aligns >= 2 && rewriteCounts.jd === 1, JSON.stringify(rewriteCounts));
+  const paired = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.tn-rewrite-row:not(.tn-rewrite-row-head)')];
+    return {
+      rows: rows.length,
+      aligned: rows.every((row) => {
+        const cells = row.querySelectorAll(':scope > .tn-rewrite-cell');
+        return cells.length === 2 && Math.abs(cells[0].getBoundingClientRect().top - cells[1].getBoundingClientRect().top) <= 1;
+      }),
+      inline: [...document.querySelectorAll('[data-test=rewrite-inline-badge]')].every((badge) => {
+        const parent = badge.parentElement;
+        return parent?.classList.contains('tn-rewrite-text-line') && parent.firstElementChild?.classList.contains('tn-rewrite-block');
+      })
+    };
+  });
+  check('左右对照逐块同一行对齐，状态标签紧跟句尾而非独占行', paired.rows >= 2 && paired.aligned && paired.inline, JSON.stringify(paired));
   const rewriteOverflow = await page.evaluate(() => {
     const rows = document.querySelector('.tn-rewrite-rows');
     return { scrollWidth: rows?.scrollWidth || 0, clientWidth: rows?.clientWidth || 0 };
@@ -197,6 +231,42 @@ try {
   check('匹配分析页展示已确认画像卡与编辑入口', (await page.locator('[data-test=career-profile-card]').innerText()).includes('已确认画像')
     && (await page.locator('[data-test=profile-edit]').count()) === 1);
   await page.screenshot({ path: path.join(OUT, 'career-profile-card.png'), fullPage: true });
+
+  await page.click('[data-test=nav-assistant]');
+  await page.waitForSelector('[data-test=assistant-drawer]', { timeout: 15000 });
+  await page.waitForSelector('[data-test=assistant-drawer] [data-test=assistant-input]', { timeout: 15000 });
+  check('AI 助手可从任意页面以右侧 Drawer 打开且不切走主页面',
+    (await page.textContent('[data-test=page-title]')).trim() === '匹配分析'
+      && (await page.locator('[data-test=assistant-drawer] [data-test=assistant-view]').count()) === 1);
+  await page.click('[data-test=assistant-drawer-wide]');
+  check('AI 助手 Drawer 支持宽屏切换', (await page.locator('[data-test=assistant-drawer].wide').count()) === 1);
+  await page.click('[data-test=assistant-drawer-close]');
+  check('AI 助手 Drawer 可关闭', (await page.locator('[data-test=assistant-drawer]').isHidden()));
+
+  const draftStart = await server.request('/api/v1/resumes/rewrite/drafts', {
+    method: 'POST', cookie, body: { resume_id: resumeBody.json.data.id, application_id: app1.id, requirements: '全局任务条测试' }
+  });
+  check('全局任务测试草稿创建成功', draftStart.status === 201, draftStart.text);
+  let taskDraft = draftStart.json.data;
+  const taskDeadline = Date.now() + 15000;
+  while (Date.now() < taskDeadline) {
+    const poll = await server.request(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(taskDraft.id)}`, { cookie });
+    taskDraft = poll.json?.data || taskDraft;
+    if (Number(taskDraft.progress_percent) >= 100) break;
+    await page.waitForTimeout(150);
+  }
+  const db = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
+  try {
+    db.prepare("UPDATE resume_rewrite_drafts SET progress_percent=40, progress_label='测试恢复中', updated_at=? WHERE id=?").run(new Date().toISOString(), taskDraft.id);
+  } finally { db.close(); }
+  await page.waitForSelector('[data-test=task-tray]', { timeout: 10000 });
+  check('切换页面后全局任务胶囊恢复运行中的改写', (await page.locator('[data-test=task-tray]').innerText()).includes('正在改写简历'));
+  const db2 = new DatabaseSync(path.join(server.dir, 'tounar.sqlite'));
+  try {
+    db2.prepare("UPDATE resume_rewrite_drafts SET progress_percent=100, progress_label='生成完成！', updated_at=? WHERE id=?").run(new Date().toISOString(), taskDraft.id);
+  } finally { db2.close(); }
+  await page.waitForSelector('[data-test=task-toast]', { timeout: 12000 });
+  check('后台任务完成后弹出可点击的全局通知', (await page.locator('[data-test=task-toast]').innerText()).includes('简历改写已完成'));
 
   console.log(JSON.stringify({ passed: checks.length, failed: 0, report: path.join(OUT, 'agent-e2e-report.json') }));
   fs.writeFileSync(path.join(OUT, 'agent-e2e-report.json'), JSON.stringify({ checks, app1: app1.id, app2: app2.id, viewed: viewed.id, resume: resumeBody.json.data.id, generated_at: new Date().toISOString() }, null, 2));

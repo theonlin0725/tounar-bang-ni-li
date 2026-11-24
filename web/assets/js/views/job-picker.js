@@ -35,13 +35,14 @@ export function openJobPicker({ selectedId = null, onSelect = () => {} } = {}) {
   }
   function openList(nextView) {
     view = nextView; query = ''; cursor = null; done = false;
+    requestSeq += 1; loading = false;
     clear(body);
     const back = h('button', { type: 'button', class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'job-picker-back', text: '← 返回' });
     back.addEventListener('click', renderRoot);
     const search = h('input', { class: 'tn-input', type: 'search', placeholder: '搜索公司 / 岗位', 'data-test': 'job-picker-search' });
     search.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { query = search.value.trim(); cursor = null; done = false; load(true); }, 220);
+      searchTimer = setTimeout(() => { query = search.value.trim(); cursor = null; done = false; requestSeq += 1; loading = false; load(true); }, 220);
     });
     countEl = h('span', { class: 'tn-small tn-muted', text: '正在加载…' });
     listEl = h('div', { class: 'tn-job-picker-list', 'data-test': 'job-picker-list' });
@@ -49,7 +50,10 @@ export function openJobPicker({ selectedId = null, onSelect = () => {} } = {}) {
       if (listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 30) load(false);
     });
     const head = h('div', { class: 'tn-job-picker-list-head' }, back, h('strong', { text: nextView === 'applied' ? '投递明细' : '看过没投' }), countEl);
-    body.append(head, search, listEl);
+    const tabs = h('div', { class: 'tn-job-picker-tabs', role: 'tablist' },
+      h('button', { type: 'button', role: 'tab', class: `tn-job-picker-tab${nextView === 'applied' ? ' active' : ''}`, 'data-test': 'job-picker-tab-applied', 'aria-selected': String(nextView === 'applied'), text: '投递明细', onclick: () => openList('applied') }),
+      h('button', { type: 'button', role: 'tab', class: `tn-job-picker-tab${nextView === 'viewed' ? ' active' : ''}`, 'data-test': 'job-picker-tab-viewed', 'aria-selected': String(nextView === 'viewed'), text: '看过没投', onclick: () => openList('viewed') }));
+    body.append(head, tabs, search, listEl);
     load(true);
   }
   async function load(reset) {
@@ -68,12 +72,14 @@ export function openJobPicker({ selectedId = null, onSelect = () => {} } = {}) {
       if (!items.length && reset) listEl.append(h('div', { class: 'tn-empty' }, h('p', { text: query ? '没有匹配的岗位' : '暂无岗位记录' })));
       for (const app of items) {
         const status = h('span', { class: `tn-job-picker-status status-${app.status || 'closed'}`, text: app.status_label || app.status || '—' });
+        const jdMissing = app.jd_status === 'missing' || !String(app.jd_summary || '').trim();
+        const jdBadge = h('span', { class: `tn-job-picker-jd ${jdMissing ? 'is-missing' : 'is-ready'}`, 'data-test': 'job-picker-jd', text: jdMissing ? '缺 JD' : '有 JD' });
         const button = h('button', { type: 'button', class: 'tn-job-picker-item', 'data-test': 'job-picker-option', 'data-job-id': app.id, 'data-job-view': view,
           onclick: () => { close(); onSelect(app); } },
         h('div', { class: 'tn-job-picker-item-main' },
           h('strong', { text: `${app.company_name || '未命名公司'} · ${app.job_title || '岗位'}` }),
           h('span', { class: 'tn-small tn-muted', text: [app.location, app.recruitment_batch].filter(Boolean).join(' · ') || '城市/批次待补' })),
-        status);
+        h('span', { class: 'tn-job-picker-badges' }, status, jdBadge));
         if (app.id === selectedId) button.classList.add('selected');
         listEl.append(button);
       }

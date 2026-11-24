@@ -111,6 +111,7 @@ export async function runAgentChat({ ownerId, sessionId, userMessage, onStatus =
   const toolRunIds = [];
   const refs = [];
   const actions = [];
+  const cards = [];
   let finalContent = '';
   let modelUsed = null;
   let steps = 0;
@@ -151,6 +152,7 @@ export async function runAgentChat({ ownerId, sessionId, userMessage, onStatus =
         toolRuns.push({ name: toolName, summary: result.summary, latency_ms: latency });
         refs.push(...(result.refs || []));
         if (result.data?.action) actions.push(result.data.action);
+        if (Array.isArray(result.data?.cards)) cards.push(...result.data.cards.map((card) => ({ ...card, resume_prompt: cleanMessage })));
         messages.push({ role: 'tool', tool_call_id: call.id, name: toolName, content: JSON.stringify({ ...auditData, summary: result.summary }) });
       } catch (error) {
         const latency = Date.now() - started;
@@ -187,6 +189,7 @@ export async function runAgentChat({ ownerId, sessionId, userMessage, onStatus =
     references: [...new Map(refs.map((ref) => [`${ref.type}:${ref.id}`, ref])).values()],
     suggestions: suggestionsFor({ toolsUsed: toolRuns.map((run) => run.name), actions: actionSummaries }),
     actions: actionSummaries,
+    cards: [...new Map(cards.map((card) => [`${card.type}:${card.application_id}`, card])).values()],
     tools_used: toolRuns.map((run) => run.name)
   };
   const assistant = appendMessage({ ownerId, sessionId, role: 'assistant', content: finalContent, meta });

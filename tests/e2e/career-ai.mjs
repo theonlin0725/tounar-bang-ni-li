@@ -210,6 +210,11 @@ try {
 
   await page.goto(`/?panel=career&section=match&app=${encodeURIComponent(pending.application_id)}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-test=recommend-run]', { timeout: 20000 });
+  check('推荐卡片更名并支持选择简历', (await page.locator('[data-test=recommend-section]').innerText()).includes('「看过没投」岗位推荐')
+    && (await page.locator('[data-test=recommend-resume-change]').count()) === 1);
+  await page.click('[data-test=recommend-resume-change]');
+  await page.waitForSelector('[data-test=recommend-resume-picker]');
+  await page.locator('[data-test=recommend-resume-confirm]').click();
   await page.click('[data-test=recommend-run]');
   await page.waitForSelector('[data-test=recommend-report]', { timeout: 20000 });
   const recommendText = await page.locator('[data-test=recommend-report]').innerText();
@@ -236,7 +241,9 @@ try {
     && (await page.locator('[data-test=download-plugin]').count()) === 0
     && (await page.locator('[data-test=nav-match].active').count()) === 1
     && (await page.textContent('[data-test=header-email]')).trim() === 'demo@tounar.local');
-  check('岗位详情带入的单岗位默认选中', (await page.inputValue('[data-test=match-application]')) === pending.application_id);
+  await page.waitForSelector('[data-test=match-current-job]');
+  const currentJobText = await page.locator('[data-test=match-current-job]').innerText();
+  check('岗位详情带入的单岗位默认选中', currentJobText.includes('青禾网络') && currentJobText.includes('用户研究实习生'), currentJobText);
   check('打开匹配页不自动触发模型请求', fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === 0);
 
   await page.click('[data-test=match-run]');
@@ -398,14 +405,19 @@ try {
     if (bulk.status !== 201) throw new Error(`bulk seed ${i}: ${bulk.status} ${bulk.text.slice(0, 120)}`);
   }
   await page.goto('/?panel=career&section=match', { waitUntil: 'networkidle' });
-  await page.waitForSelector('[data-test=match-app-search]');
-  await page.waitForSelector('[data-test=match-app-more]');
-  check('单岗选择加载第一页并保留分页入口', (await page.locator('[data-test=match-app-more]').count()) === 1);
-  await page.fill('[data-test=match-app-search]', '批量公司100');
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-test=match-application] option')].some((o) => o.textContent.includes('批量公司100')), null, { timeout: 20000 });
-  const bulkOption = await page.locator('[data-test=match-application] option', { hasText: '批量公司100' }).getAttribute('value');
-  await page.selectOption('[data-test=match-application]', bulkOption);
-  check('搜索能找到第一页之外的台账岗位', (await page.locator('[data-test=match-application]').inputValue()) === bulkOption);
+  await page.waitForSelector('[data-test=match-choose-job]');
+  await page.click('[data-test=match-choose-job]');
+  await page.waitForSelector('[data-test=job-picker-modal]');
+  await page.click('[data-test=job-picker-applied]');
+  await page.fill('[data-test=job-picker-search]', '批量公司100');
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-test=job-picker-option]')].some((o) => o.textContent.includes('批量公司100')), null, { timeout: 20000 });
+  const bulkOption = page.locator('[data-test=job-picker-option]', { hasText: '批量公司100' }).first();
+  const bulkText = await bulkOption.innerText();
+  check('两级岗位弹窗搜索到第一页之外的台账岗位', bulkText.includes('批量公司100'));
+  await bulkOption.click();
+  await page.waitForTimeout(300);
+  const bulkCurrent = await page.locator('[data-test=match-current-job]').innerText();
+  check('弹窗选中岗位回填单岗位匹配分析', bulkCurrent.includes('批量公司100'), bulkCurrent);
   const modelCallsBeforeBulk = fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length;
   await page.waitForTimeout(300);
   check('选择搜索结果不自动触发模型', fakeCalls.filter((c) => c.system.includes('单岗位求职匹配分析助手')).length === modelCallsBeforeBulk);

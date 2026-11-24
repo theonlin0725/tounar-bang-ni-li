@@ -3,15 +3,16 @@
    所有天数按后台 Asia/Shanghai 口径；请求乱序用 reqSeq 丢弃旧响应。 */
 
 import { api, errorText } from '../api.js';
-import { App, isStale } from '../app.js?v=20261120-1';
+import { App, isStale } from '../app.js?v=20261124-1';
 import {
   h, clear, fmtDateTime, debounce, idemKey,
   STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
-import { openDetail } from './detail.js?v=20261120-1';
-import { renderReviews } from './reviews.js?v=20261120-1';
+import { openDetail } from './detail.js?v=20261124-1';
+import { renderReviews } from './reviews.js?v=20261124-1';
+import { mountOnboardingGuide } from './onboarding.js?v=20261124-1';
 import { openManual } from './manual.js';
-import { openSettings } from './settings.js';
+import { openSettings } from './settings.js?v=20261124-1';
 
 export { openSettings };
 
@@ -34,7 +35,9 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   let highlighted = new Set();
   let updateMessage = '';
 
+  const onboardingHost = h('div', { id: 'tn-onboarding', class: 'tn-onboarding-host' });
   main.append(
+    onboardingHost,
     h('div', { class: 'tn-stats', id: 'tn-stats' }),
     h('div', { id: 'tn-banner' }),
     h('div', { class: 'tn-toolbar', id: 'tn-toolbar' }),
@@ -46,6 +49,7 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   const toolbarEl = main.querySelector('#tn-toolbar');
   const contentEl = main.querySelector('#tn-content');
   const freshnessEl = main.querySelector('#tn-freshness');
+  mountOnboardingGuide(onboardingHost, { email: App.user?.email });
 
   /* ---------- 三统计 ---------- */
   function renderStats() {
@@ -538,10 +542,15 @@ export async function renderLedger(main, { gen, panel = null, applicationId = nu
   const onVisible = () => {
     if (document.visibilityState === 'visible' && mounted) checkUpdates();
   };
+  const onMailSynced = () => {
+    if (!mounted) return;
+    doLoad({ silent: true }).catch(() => { /* 台账刷新失败不覆盖邮件同步结果 */ });
+  };
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('focus', onVisible);
+  window.addEventListener('tounar:mail-synced', onMailSynced);
   const updatesTimer = setInterval(() => {
-    if (isStale(gen) || !main.isConnected) { mounted = false; clearInterval(updatesTimer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); }
+    if (isStale(gen) || !main.isConnected) { mounted = false; clearInterval(updatesTimer); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); window.removeEventListener('tounar:mail-synced', onMailSynced); }
     else checkUpdates();
   }, 2000);
 

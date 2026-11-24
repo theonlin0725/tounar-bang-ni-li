@@ -52,7 +52,7 @@ async function webAccess(message, sender) {
   const sameBackend = pageUrl.origin === new URL(settings.serverUrl).origin;
   // An unrelated local web server must not be able to replace the backend or
   // clear an existing pairing. Local review works after its exact URL is set.
-  const bootstrap = pageUrl.origin === 'https://bangnili.app.workbuddy.host';
+  const bootstrap = ['https://bangnili.app.workbuddy.host', 'https://bangnili.theonlin.top'].includes(pageUrl.origin);
   if (!sameBackend && !(bootstrap && ['discovery','begin'].includes(message.action))) throw new Error('此页面不是插件当前连接的帮你理后台');
   const payload = message.payload || {};
   switch (message.action) {

@@ -2,7 +2,7 @@
    allowed_actions 以服务端为准；纠错必须带原因与 expected_version；409/D05/D12 如实解释。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261120-1';
+import { isStale } from '../app.js?v=20261124-1';
 import {
   h, clear, toast, confirmDialog, statusChip, fmtDateTime, fmtDate, daysText,
   idemKey, extLink, STATUS_LABELS, STATUS_ORDER
@@ -36,6 +36,7 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     document.removeEventListener('keydown', onKey);
     layer.hidden = true;
     clear(layer);
+    if (window.__tounarAssistantContext?.id === id) window.__tounarAssistantContext = null;
   }
 
   async function load() {
@@ -43,6 +44,7 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
       const res = await api.get(`/api/v1/applications/${encodeURIComponent(id)}`);
       if (isStale(gen) || closed) return;
       current = res.data;
+      window.__tounarAssistantContext = { type: 'application', id: current.id, label: `${current.company_name || '岗位'} · ${current.job_title || ''}` };
       render();
     } catch (err) {
       if (isStale(gen) || closed) return;
