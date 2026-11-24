@@ -46,6 +46,7 @@ export function mountOnboardingGuide(host, { email } = {}) {
   if (!host) return;
   let state = readState(email);
   if (state?.done) return;
+  host.dataset.onboardingActive = '1';
   let disposed = false;
   let poll = null;
   let me = null;
@@ -100,7 +101,7 @@ export function mountOnboardingGuide(host, { email } = {}) {
   };
   function finish() {
     writeState(email, { done: true, step: null, at: new Date().toISOString() });
-    disposed = true; if (poll) clearInterval(poll); clear(host);
+    disposed = true; if (poll) clearInterval(poll); delete host.dataset.onboardingActive; clear(host);
   }
   function next(step) {
     data.step = step; data.loading = false; render();

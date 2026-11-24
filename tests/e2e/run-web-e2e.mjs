@@ -197,7 +197,7 @@ try {
   await page.waitForSelector('[data-test=onboarding-guide]', { timeout: 15000 });
   await page.waitForSelector('[data-test=onboarding-skip]', { timeout: 15000 });
   const onboardingText = await page.locator('[data-test=onboarding-guide]').innerText();
-  check('W-02b 首次登录展示渐进式引导', onboardingText.includes('开始使用帮你理'));
+  check('W-02b 首次登录展示渐进式引导且不被旧插件弹窗遮挡', onboardingText.includes('开始使用帮你理') && (await page.locator('[role=dialog]').count()) === 0);
   await page.locator('[data-test=onboarding-skip]').click();
   check('W-02c 引导可稍后再说且不阻断台账', (await page.locator('[data-test=onboarding-guide]').count()) === 0);
   check('W-03 新账号台账为空（三统计=0，不塞演示数据）',

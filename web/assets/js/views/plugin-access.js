@@ -56,6 +56,7 @@ function dismissForVisit(reason = 'connection') {try {sessionStorage.setItem(dis
 
 export async function promptPluginConnection({automatic = false} = {}) {
   const gen = App.gen;
+  if (automatic && document.querySelector('#tn-onboarding[data-onboarding-active="1"]')) return;
   if (automatic && dismissal() === 'connection') return;
   let info;
   try {
