@@ -27,6 +27,8 @@ ENABLE_SCHEDULER=false
 
 运行 `npm start`，打开 [本地首页](http://127.0.0.1:4310)。输入白名单邮箱获取验证码后，在同一目录的另一个终端运行 `npm run otp:latest` 查看本机验证码。无须配置 SMTP。可在 [健康检查](http://127.0.0.1:4310/api/health) 核对版本。
 
+上传简历文件需要 Python 3；PDF 还需要给同一个 Python 安装 `pypdf`（例如在自己的 Python 虚拟环境中运行 `python3 -m pip install pypdf`）。如使用虚拟环境，可在本机 `.env` 里用 `PYTHON_BIN` 指定该环境的 Python 路径。也可以先粘贴简历文本，不安装解析组件。
+
 ## 2. 加载 Chrome / Edge 插件
 
 打开 `chrome://extensions` 或 `edge://extensions`，开启开发者模式，点「加载已解压的扩展程序」，选择仓库的 `extension/` 目录。打开本地网页的插件安装指引，连接插件并授权所需招聘站点。若不能自动连接，在插件里把服务地址设为上一步的本地地址，再用网页生成的配对码绑定。已有旧版时，确认实际加载的是 0.2.14，避免两个副本同时运行。
