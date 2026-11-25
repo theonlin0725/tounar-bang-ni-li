@@ -1,8 +1,8 @@
 /* 简历改写：岗位配置 → A4 审阅 → 新版本 + Word。 */
 import { api, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261124-1';
+import { isStale } from '../app.js?v=20261125-1';
 import { h, clear, toast, openModal, idemKey } from '../util.js';
-import { openJobPicker } from './job-picker.js?v=20261124-1';
+import { openJobPicker } from './job-picker.js?v=20261125-1';
 import { hasResumeDescriptionChange } from './resume-diff.js';
 
 export async function renderResumeRewrite(container, { gen, applicationId = null, draftId = null } = {}) {
@@ -50,7 +50,14 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       h('div', { class: 'tn-rewrite-card-label', text: '求职画像' }),
       h('strong', { text: profile?.status === 'confirmed' ? (profile.summary_text || '已确认画像') : '未建立画像' }),
       h('div', { class: 'tn-small tn-muted', text: profile?.status === 'confirmed' ? '匹配与改写会参考画像中的地点、薪资和方向偏好。' : '建立画像后，改写会更贴合你的真实偏好。' }),
-      h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', href: '/?panel=assistant&onboarding=profile', 'data-test': 'rewrite-profile-ai', text: profile?.status === 'confirmed' ? '用 AI 助手更新' : '去 AI 助手建立' }));
+      h('a', {
+        class: 'tn-btn tn-btn-sm tn-btn-ghost', href: '/?panel=assistant&onboarding=profile', 'data-test': 'rewrite-profile-ai',
+        text: profile?.status === 'confirmed' ? '用 AI 助手更新' : '去 AI 助手建立',
+        onclick: (event) => {
+          event.preventDefault();
+          window.dispatchEvent(new CustomEvent('tounar:open-assistant', { detail: { onboarding: 'profile' } }));
+        }
+      }));
     const jd = selectedApp ? String(selectedApp.jd_text || selectedApp.jd_summary || '').trim() : '';
     const jdCard = h('section', { class: 'tn-rewrite-config-card', 'data-test': 'rewrite-jd-card' },
       h('div', { class: 'tn-rewrite-card-label', text: 'JD 信息' }),

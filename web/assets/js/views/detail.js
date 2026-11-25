@@ -2,7 +2,7 @@
    allowed_actions 以服务端为准；纠错必须带原因与 expected_version；409/D05/D12 如实解释。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261124-1';
+import { isStale } from '../app.js?v=20261125-1';
 import {
   h, clear, toast, confirmDialog, statusChip, fmtDateTime, fmtDate, daysText,
   idemKey, extLink, STATUS_LABELS, STATUS_ORDER
@@ -166,7 +166,11 @@ export function openDetail(id, { gen, onChanged, autoCorrect = false } = {}) {
     }
     links.append(h('a', {
       class: 'tn-btn tn-btn-sm tn-btn-ghost', href: `/?panel=assistant&app=${encodeURIComponent(id)}`,
-      'data-test': 'detail-ask-assistant', text: '问 AI 助手'
+      'data-test': 'detail-ask-assistant', text: '问 AI 助手',
+      onclick: (event) => {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent('tounar:open-assistant', { detail: { applicationId: id } }));
+      }
     }));
     bodyEl.append(section('链接', links));
 

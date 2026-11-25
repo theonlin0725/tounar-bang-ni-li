@@ -59,10 +59,20 @@ try {
   await context.addCookies([{ name: 'tounar_session', value: cookie.split('=').slice(1).join('='), domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' }]);
   page = await context.newPage();
   await page.goto(`${server.base}/?panel=assistant`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('[data-test=assistant-view]', { timeout: 15000 });
-  await page.waitForSelector('[data-test=assistant-input]', { timeout: 15000 });
-  check('左侧导航 AI 助手入口与标题', (await page.locator('[data-test=nav-assistant].active').count()) === 1
-    && (await page.textContent('[data-test=page-title]')).trim() === 'AI 求职助手');
+  await page.waitForSelector('[data-test=assistant-drawer] [data-test=assistant-view]', { timeout: 15000 });
+  await page.waitForSelector('[data-test=assistant-drawer] [data-test=assistant-input]', { timeout: 15000 });
+  check('深链 /?panel=assistant 只挂载一个半屏抽屉，主工作区仍是投递台账', (await page.locator('[data-test=assistant-view]').count()) === 1
+    && (await page.locator('#tn-main [data-test=assistant-view]').count()) === 0
+    && (await page.textContent('[data-test=page-title]')).trim() === '投递台账'
+    && (await page.locator('[data-test=nav-ledger].active').count()) === 1
+    && !(await page.url()).includes('panel=assistant'));
+  check('底部 AI 投递助理入口高亮且文案正确', (await page.locator('[data-test=nav-assistant].active').count()) === 1
+    && (await page.locator('[data-test=nav-assistant]').innerText()).includes('AI 投递助理')
+    && (await page.locator('.tn-nav-section', { hasText: '分析' }).getByText('AI 助手', { exact: true }).count()) === 0);
+  const drawerBox = await page.locator('[data-test=assistant-drawer]').boundingBox();
+  const composerBox = await page.locator('[data-test=assistant-input]').boundingBox();
+  check('抽屉默认约半屏且底部输入框完整可见', drawerBox.width >= 600 && drawerBox.width <= 760
+    && composerBox.y + composerBox.height <= 1000, JSON.stringify({ drawerBox, composerBox }));
   check('欢迎卡 4 张、画像状态真实、无工具原始结果', (await page.locator('.tn-agent-quick-card').count()) === 4
     && (await page.locator('[data-test=assistant-profile-pill]').innerText()).includes('画像：')
     && !(await page.locator('[data-test=assistant-view]').innerText()).includes('tool_call'));
@@ -265,6 +275,17 @@ try {
   check('AI 助手 Drawer 支持宽屏切换', (await page.locator('[data-test=assistant-drawer].wide').count()) === 1);
   await page.click('[data-test=assistant-drawer-close]');
   check('AI 助手 Drawer 可关闭', (await page.locator('[data-test=assistant-drawer]').isHidden()));
+  check('关闭抽屉不销毁已挂载的对话实例', (await page.locator('[data-test=assistant-drawer] [data-test=assistant-view]').count()) === 1);
+  await page.click('[data-test=nav-assistant]');
+  await page.waitForSelector('[data-test=assistant-drawer] [data-test=assistant-input]', { state: 'visible', timeout: 15000 });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-test') === 'assistant-input', null, { timeout: 5000 }).catch(() => {});
+  check('再次点击底部入口恢复同一对话并聚焦输入框',
+    (await page.locator('[data-test=assistant-drawer]').isVisible())
+      && (await page.evaluate(() => document.activeElement?.getAttribute('data-test'))) === 'assistant-input');
+  await page.click('[data-test=assistant-drawer-wide]');
+  check('Drawer 加宽按钮可切回半屏', (await page.locator('[data-test=assistant-drawer].wide').count()) === 0
+    && (await page.locator('[data-test=assistant-drawer]').innerText()).includes('加宽'));
+  await page.click('[data-test=assistant-drawer-close]');
 
   const draftStart = await server.request('/api/v1/resumes/rewrite/drafts', {
     method: 'POST', cookie, body: { resume_id: resumeBody.json.data.id, application_id: app1.id, requirements: '全局任务条测试' }
@@ -293,6 +314,16 @@ try {
   } finally { db2.close(); }
   await page.waitForSelector('[data-test=task-toast]', { timeout: 12000 });
   check('后台任务完成后弹出可点击的全局通知', (await page.locator('[data-test=task-toast]').innerText()).includes('简历改写已完成'));
+
+  await page.goto(`${server.base}/?panel=assistant&onboarding=profile`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-test=assistant-drawer] [data-test=assistant-input]', { timeout: 15000 });
+  const profileDeepLink = await page.locator('[data-test=assistant-drawer]').innerText();
+  check('onboarding=profile 深链同样只开单一半屏抽屉且无卡死加载文案',
+    (await page.locator('[data-test=assistant-view]').count()) === 1
+      && (await page.textContent('[data-test=page-title]')).trim() === '投递台账'
+      && !profileDeepLink.includes('正在打开 AI 助手')
+      && (await page.locator('[data-test=assistant-input]').isVisible())
+      && !(await page.url()).includes('panel=assistant'));
 
   console.log(JSON.stringify({ passed: checks.length, failed: 0, report: path.join(OUT, 'agent-e2e-report.json') }));
   fs.writeFileSync(path.join(OUT, 'agent-e2e-report.json'), JSON.stringify({ checks, app1: app1.id, app2: app2.id, viewed: viewed.id, resume: resumeBody.json.data.id, generated_at: new Date().toISOString() }, null, 2));

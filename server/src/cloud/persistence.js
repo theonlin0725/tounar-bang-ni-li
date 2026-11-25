@@ -18,6 +18,7 @@ let stream = config.cloudSnapshotStream;
 let state = 'disabled';
 let revision = 0;
 let dirty = false;
+let uploading = false;
 let chain = Promise.resolve();
 let timer = null;
 let lastErrorCode = null;
@@ -174,16 +175,24 @@ async function uploadSnapshot() {
 async function drain() {
   if (!enabled) return;
   if (state === 'conflict') throw Object.assign(new Error('Cloud snapshot conflict requires a restart'), { code: 'CLOUD_SNAPSHOT_CONFLICT' });
-  while (dirty) {
-    dirty = false;
-    try {
-      await uploadSnapshot();
-    } catch (error) {
-      dirty = true;
-      lastErrorCode = errorCode(error);
-      if (state !== 'conflict') state = 'degraded';
-      throw error;
+  if (!dirty) return;
+  // Keep a separate in-flight flag: clearing `dirty` before the upload finishes
+  // must not make health report "no pending writes" while a failure is possible.
+  uploading = true;
+  try {
+    while (dirty) {
+      dirty = false;
+      try {
+        await uploadSnapshot();
+      } catch (error) {
+        dirty = true;
+        lastErrorCode = errorCode(error);
+        if (state !== 'conflict') state = 'degraded';
+        throw error;
+      }
     }
+  } finally {
+    uploading = false;
   }
 }
 
@@ -242,6 +251,7 @@ export async function initCloudPersistence({ injectedClient = null } = {}) {
     throw Object.assign(new Error('No valid cloud snapshot could be restored'), { code: 'CLOUD_SNAPSHOT_RESTORE_FAILED' });
   }
   dirty = false;
+  uploading = false;
   lastErrorCode = null;
   state = 'ready';
   setPersistenceHook(markCloudSnapshotDirty);
@@ -254,7 +264,7 @@ export function cloudPersistenceStatus() {
     state,
     stream: enabled ? stream : null,
     revision,
-    pending: dirty,
+    pending: dirty || uploading,
     last_success_at: lastSuccessAt,
     last_error_code: lastErrorCode
   };

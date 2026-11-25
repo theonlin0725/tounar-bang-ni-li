@@ -1,7 +1,7 @@
 import { h, clear, openModal } from '../util.js';
 import { api, errorText } from '../api.js';
-import { PLUGIN_VERSION, pluginDownloadLink } from './plugin-help.js?v=20261124-1';
-import { App } from '../app.js?v=20261124-1';
+import { PLUGIN_VERSION, pluginDownloadLink } from './plugin-help.js?v=20261125-1';
+import { App } from '../app.js?v=20261125-1';
 
 export function extensionRequest(action, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -56,7 +56,9 @@ function dismissForVisit(reason = 'connection') {try {sessionStorage.setItem(dis
 
 export async function promptPluginConnection({automatic = false} = {}) {
   const gen = App.gen;
-  if (automatic && document.querySelector('#tn-onboarding[data-onboarding-active="1"]')) return;
+  // On the ledger the first-run guide owns plugin onboarding. Never stack the
+  // legacy install/connect modal on top of the four-step card.
+  if (automatic && document.querySelector('#tn-onboarding')) return;
   if (automatic && dismissal() === 'connection') return;
   let info;
   try {
@@ -136,7 +138,8 @@ async function maybeProfileOnboarding() {
     const response = await api.get('/api/v1/profile');
     if (response.data?.profile?.status === 'confirmed') return;
     if (!location.pathname.startsWith('/') || location.search.includes('panel=assistant')) return;
-    location.assign('/?panel=assistant&onboarding=profile');
+    // Open the half-screen assistant in place instead of switching main view.
+    window.dispatchEvent(new CustomEvent('tounar:open-assistant', { detail: { onboarding: 'profile' } }));
   } catch { /* onboarding must never block normal navigation */ }
 }
 

@@ -3,7 +3,7 @@
 
 import { api, ApiError, errorText } from '../api.js';
 import { h, clear } from '../util.js';
-import { pluginDownloadLink, openPluginHelp } from './plugin-help.js?v=20261124-1';
+import { pluginDownloadLink, openPluginHelp } from './plugin-help.js?v=20261125-1';
 
 export function renderLogin(root, options = {}) {
   const { notice = null, compact = false, onSuccess = () => {}, heading = null } = options;

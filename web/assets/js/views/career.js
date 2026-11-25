@@ -1,11 +1,11 @@
 /* 简历与 AI：上传/修正简历、简历画像、岗位对比、「看过没投」岗位推荐。
  * 所有数据来自当前账号 API；前端不拼模型请求、不读取其他用户数据。 */
 import { api, errorText } from '../api.js';
-import { isStale } from '../app.js?v=20261124-1';
+import { isStale } from '../app.js?v=20261125-1';
 import { h, clear, toast, fmtDateTime, openModal, idemKey, debounce } from '../util.js';
-import { openDetail } from './detail.js?v=20261124-1';
-import { renderResumeRewrite } from './resume-rewrite.js?v=20261124-2';
-import { openJobPicker } from './job-picker.js?v=20261124-1';
+import { openDetail } from './detail.js?v=20261125-1';
+import { renderResumeRewrite } from './resume-rewrite.js?v=20261125-1';
+import { openJobPicker } from './job-picker.js?v=20261125-1';
 
 const MATCH_LABELS = { high: '相对匹配高', medium: '相对匹配中', low: '相对匹配低', insufficient: '资料不足' };
 const MATCH_CLASS = { high: 'ok', medium: 'warn', low: 'muted', insufficient: 'muted' };
@@ -293,7 +293,13 @@ export async function renderCareer(container, { gen, applicationId = null, secti
         h('div', { class: 'tn-small tn-muted', text: confirmed ? [profile.career_direction, profile.preferred_locations?.join('/'), profile.salary_expectation, profile.work_mode].filter(Boolean).join(' · ') : '完成画像后，六维匹配会结合地点、薪资、行业、企业类型与工作方式偏好。' })),
       h('div', { class: 'tn-profile-card-actions' },
         h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'profile-edit', text: confirmed ? '编辑画像' : '手动填写', onclick: openProfileEditor }),
-        h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'profile-ai', href: '/?panel=assistant&onboarding=profile', text: '用 AI 助手梳理' }))
+        h('a', {
+          class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'profile-ai', href: '/?panel=assistant&onboarding=profile', text: '用 AI 助手梳理',
+          onclick: (event) => {
+            event.preventDefault();
+            window.dispatchEvent(new CustomEvent('tounar:open-assistant', { detail: { onboarding: 'profile' } }));
+          }
+        }))
     );
   }
   function renderMatch() {
@@ -626,7 +632,20 @@ export async function renderCareer(container, { gen, applicationId = null, secti
       } }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-interview', text: interview?.status === 'running' ? '生成中…' : '生成面试问题', disabled: interview?.status === 'running', onclick: runInterviewQuestions }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-detail', text: '查看岗位详情', onclick: () => openDetail(report.result?.job?.application_id || matchAppId, { gen, onChanged: () => loadMatchAppsOnly() }) }),
-      h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-ask-assistant', href: `/?panel=assistant&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}&resume=${encodeURIComponent(report.result?.resume?.id || resume?.id || '')}`, text: '问 AI 助手' }),
+      h('a', {
+        class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-ask-assistant',
+        href: `/?panel=assistant&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}&resume=${encodeURIComponent(report.result?.resume?.id || resume?.id || '')}`,
+        text: '问 AI 助手',
+        onclick: (event) => {
+          event.preventDefault();
+          window.dispatchEvent(new CustomEvent('tounar:open-assistant', {
+            detail: {
+              applicationId: report.result?.job?.application_id || matchAppId || null,
+              resumeId: report.result?.resume?.id || resume?.id || null
+            }
+          }));
+        }
+      }),
       h('a', { class: 'tn-btn tn-btn-sm tn-btn-ghost', 'data-test': 'match-open-rewrite', href: `/?panel=career&section=rewrite&app=${encodeURIComponent(report.result?.job?.application_id || matchAppId)}`, text: '按 JD 改写简历' }),
       h('button', { class: 'tn-btn tn-btn-sm', type: 'button', 'data-test': 'match-rerun-action', text: '重新运行匹配分析', disabled: matchBusy, onclick: () => runMatch({ parent: report.id }) })
     );

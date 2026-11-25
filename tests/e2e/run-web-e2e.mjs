@@ -30,6 +30,7 @@ const REPORT_PATH = path.join(ROOT, '.tmp', 'web-e2e-report.json');
 const SHOT_DIR = path.join(ROOT, '.tmp', 'web-e2e');
 const SERVER_NAME = 'web-e2e';
 const EMAIL = 'ui@tounar.local';
+const PLUGIN_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension/manifest.json'), 'utf8')).version;
 
 const checks = [];
 let failed = 0;
@@ -174,7 +175,8 @@ try {
     (await page.locator('[data-test=login-send]').count()) === 1
       && (await page.locator('input[type=password]').count()) === 0,
     '纯 OTP 登录，无演示账号');
-  check('W-01a 登录页下载入口指向当前 0.2.12 包', (await page.locator('[data-test=login-download-plugin]').getAttribute('href')).endsWith('bangnili-extension-0.2.12.zip'));
+  check(`W-01a 登录页下载入口指向当前 ${PLUGIN_VERSION} 包`,
+    (await page.locator('[data-test=login-download-plugin]').getAttribute('href')).endsWith(`bangnili-extension-${PLUGIN_VERSION}.zip`));
   await shot(page, '01-login');
 
   await page.fill('[data-test=login-email]', EMAIL);
@@ -209,6 +211,11 @@ try {
   check('P0-深链 打开待确认', await page.locator('[data-test=nav-reviews].active').count() === 1);
   await page.goto('/');
   await page.waitForSelector('[data-test=open-manual]');
+  await page.waitForSelector('[data-test=onboarding-progress]', { timeout: 15000 });
+  const resumedGuide = await page.locator('[data-test=onboarding-guide]').innerText();
+  check('W-02d 未完成 4 步时切回台账，引导再次出现并停在未完成步骤',
+    resumedGuide.includes('装好插件') && resumedGuide.includes('1/4'), resumedGuide.slice(0, 160));
+  await page.locator('[data-test=onboarding-skip]').click();
 
   /* ================= 2. 手动补录：D12 拦截 / 成功 / 409 重复 ================= */
   await page.click('[data-test=open-manual]');
@@ -517,8 +524,8 @@ try {
   const installHref = await page.locator('[data-test=settings-page] [data-test=plugin-help-download]').getAttribute('href');
   const installDownload = await page.request.get(new URL(installHref, server.base).toString());
   const installBody = await installDownload.body();
-  check('W-18a 设置安装指引直接下载当前包，版本、文件名与实际 ZIP 一致',
-    installText.includes('0.2.12') && installHref.endsWith('bangnili-extension-0.2.12.zip')
+  check(`W-18a 设置安装指引直接下载当前 ${PLUGIN_VERSION} 包，版本、文件名与实际 ZIP 一致`,
+    installText.includes(PLUGIN_VERSION) && installHref.endsWith(`bangnili-extension-${PLUGIN_VERSION}.zip`)
       && installDownload.status() === 200 && installBody[0] === 0x50 && installBody[1] === 0x4b,
     `href=${installHref} status=${installDownload.status()} bytes=${installBody.length}`);
   await shot(page, '07b-settings-install');

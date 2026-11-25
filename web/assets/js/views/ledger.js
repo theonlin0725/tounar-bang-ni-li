@@ -3,16 +3,16 @@
    所有天数按后台 Asia/Shanghai 口径；请求乱序用 reqSeq 丢弃旧响应。 */
 
 import { api, errorText } from '../api.js';
-import { App, isStale } from '../app.js?v=20261124-1';
+import { App, isStale } from '../app.js?v=20261125-1';
 import {
   h, clear, fmtDateTime, debounce, idemKey,
   STATUS_LABELS, STATUS_ORDER, toast, fmtDate
 } from '../util.js';
-import { openDetail } from './detail.js?v=20261124-1';
-import { renderReviews } from './reviews.js?v=20261124-1';
-import { mountOnboardingGuide } from './onboarding.js?v=20261124-1';
+import { openDetail } from './detail.js?v=20261125-1';
+import { renderReviews } from './reviews.js?v=20261125-1';
+import { mountOnboardingGuide } from './onboarding.js?v=20261125-1';
 import { openManual } from './manual.js';
-import { openSettings } from './settings.js?v=20261124-1';
+import { openSettings } from './settings.js?v=20261125-1';
 
 export { openSettings };
 

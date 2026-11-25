@@ -3,7 +3,7 @@
 import { api, errorText } from '../api.js';
 import { h, clear, toast, fmtDateTime, openModal } from '../util.js';
 import { renderMarkdownNodes } from '../markdown.js';
-import { openJobPicker } from './job-picker.js?v=20261124-1';
+import { openJobPicker } from './job-picker.js?v=20261125-1';
 
 const STATUS_LABEL = {
   applied: '已投递', assessment: '笔试/测评', interview: '面试中',
@@ -17,6 +17,9 @@ const QUICK_CARDS = [
 ];
 
 export async function renderAssistant(container, { gen, applicationId = null, resumeId = null, onboarding = null } = {}) {
+  // The drawer previously appended a loading line outside this module. Clear it
+  // before mounting so the flex column always fills the drawer exactly.
+  clear(container);
   const root = h('div', { class: 'tn-assistant', 'data-test': 'assistant-view' });
   container.append(root);
   let context = null;
@@ -515,6 +518,8 @@ export async function renderAssistant(container, { gen, applicationId = null, re
   // Initial load: sessions -> session/context. A quick-entry application opens a new focused session.
   try {
     renderTop();
+    thread.append(h('div', { class: 'tn-agent-status', 'data-test': 'assistant-loading' },
+      h('span', { class: 'tn-agent-pulse' }), '正在读取对话…'));
     const sessionData = (await api.get('/api/v1/agent/sessions')).data || [];
     sessions = sessionData;
     if (applicationId || resumeId) await createAndLoadSession(applicationId, resumeId);
@@ -522,6 +527,7 @@ export async function renderAssistant(container, { gen, applicationId = null, re
     else await createAndLoadSession();
   } catch (error) {
     renderTop();
-    welcome.append(h('div', { class: 'tn-banner err' }, h('div', { class: 'tn-banner-body', text: errorMessage(error) })));
+    clear(thread);
+    thread.append(h('div', { class: 'tn-banner err' }, h('div', { class: 'tn-banner-body', text: errorMessage(error) })));
   }
 }

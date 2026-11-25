@@ -51,7 +51,10 @@ try{
  spaServer=http.createServer((req,res)=>{const u=new URL(req.url,spaBase);const id=u.searchParams.get('postId')||'5001';const markup=jobMarkup(id);const data={'@type':'JobPosting',title:'提示验收岗位'+id,hiringOrganization:{name:'提示验收科技'},identifier:{value:id},url:spaBase+'/jobdesc.html?postId='+id,description:'岗位职责\n负责提示和状态展示。\n\n任职要求\n熟悉浏览器测试。'};
   res.writeHead(200,{'Content-Type':'text/html;charset=utf-8'});res.end(`<!doctype html><html><meta charset="utf-8"><style>body{font:18px system-ui;margin:32px}.job-description{white-space:pre-wrap}button{padding:12px}</style>${markup}<script type="application/ld+json">${JSON.stringify(data)}</script><button id="next">切换到岗位5002</button><script>document.querySelector('#next').onclick=()=>{history.pushState({},'', '/jobdesc.html?postId=5002');document.querySelector('main').outerHTML=${JSON.stringify(jobMarkup('5002'))};const d=JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent);d.title='提示验收岗位5002';d.identifier.value='5002';d.url=location.href;document.querySelector('script[type="application/ld+json"]').textContent=JSON.stringify(d)};</script></html>`);
  });await new Promise(r=>spaServer.listen(0,'127.0.0.1',r));spaBase=`http://127.0.0.1:${spaServer.address().port}`;
- const ext=buildTestExtension({outDir:path.join(out,'extension')});const manifest=JSON.parse(fs.readFileSync(path.join(ext,'manifest.json')));delete manifest.content_scripts;fs.writeFileSync(path.join(ext,'manifest.json'),JSON.stringify(manifest));
+ // Keep the test build's static tracker for loopback fixtures: production
+ // captureOrigins() intentionally excludes localhost from dynamic grants, so
+ // deleting it would stop natural capture after the first explicit grant.
+ const ext=buildTestExtension({outDir:path.join(out,'extension')});
  const profile=path.join(out,'profile');
  context=await chromium.launchPersistentContext(profile,{headless:true,executablePath:(await resolveChromiumExecutable()).path,viewport:{width:1280,height:900},args:[`--disable-extensions-except=${ext}`,`--load-extension=${ext}`,'--no-first-run','--no-default-browser-check']});
  await context.tracing.start({screenshots:true,snapshots:true});

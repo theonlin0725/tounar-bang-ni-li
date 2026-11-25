@@ -3,7 +3,7 @@
    confirmation_token 仅保存在内存变量；刷新页面只会重新 GET，不会重复确认。 */
 
 import { api, ApiError, errorText } from '../api.js';
-import { App } from '../app.js?v=20261124-1';
+import { App } from '../app.js?v=20261125-1';
 import {
   h, clear, statusChip, fmtDateTime, daysText, idemKey, extLink
 } from '../util.js';

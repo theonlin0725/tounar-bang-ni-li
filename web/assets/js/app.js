@@ -1,16 +1,16 @@
-import { confirmPluginConnection, openSiteManager, promptPluginConnection } from './views/plugin-access.js?v=20261124-1';
+import { confirmPluginConnection, openSiteManager, promptPluginConnection } from './views/plugin-access.js?v=20261125-1';
 /* 应用壳：会话代际守卫、路由（/ 与 /r/<token>）、顶栏、视图挂载。
    要求：退出/换号立即作废旧请求（gen 校验），不把 A 用户的数据渲染给 B。 */
 
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
-import { renderLogin } from './views/login.js?v=20261124-1';
-import { renderLedger } from './views/ledger.js?v=20261124-1';
-import { renderLanding } from './views/landing.js?v=20261124-1';
-import { renderCareer } from './views/career.js?v=20261124-1';
-import { renderAssistant } from './views/assistant.js?v=20261124-1';
-import { renderSettingsPage } from './views/settings.js?v=20261124-1';
-import { startTaskManager, stopTaskManager } from './tasks.js?v=20261124-1';
+import { renderLogin } from './views/login.js?v=20261125-1';
+import { renderLedger } from './views/ledger.js?v=20261125-1';
+import { renderLanding } from './views/landing.js?v=20261125-1';
+import { renderCareer } from './views/career.js?v=20261125-1';
+import { renderAssistant } from './views/assistant.js?v=20261125-1';
+import { renderSettingsPage } from './views/settings.js?v=20261125-1';
+import { startTaskManager, stopTaskManager } from './tasks.js?v=20261125-1';
 
 export const App = {
   gen: 0,
@@ -26,7 +26,7 @@ function route() {
   if (match) return { name: 'landing', token: decodeURIComponent(match[1]) };
   const params = new URLSearchParams(location.search);
   return {
-    name: 'app', panel: params.get('panel'), applicationId: params.get('app'),
+    name: 'app', panel: params.get('panel'), applicationId: params.get('app') || params.get('applicationId'),
     apps: params.get('apps'), view: params.get('view'), section: params.get('section'), tab: params.get('tab'), autorun: params.get('autorun'), resume: params.get('resume'), report: params.get('report'), onboarding: params.get('onboarding'), draft: params.get('draft')
   };
 }
@@ -75,11 +75,29 @@ export async function enterApp(panel = null) {
     currentRoute.apps = null;
     currentRoute.autorun = null;
   }
-  const activePanel = panel || currentRoute.panel;
+  const requestedPanel = panel || currentRoute.panel;
+  const isAssistantLink = requestedPanel === 'assistant';
+  // v1.1.5: panel=assistant is a compatibility deep link only. The main
+  // workspace always stays on the ledger and the assistant opens as a drawer.
+  const activePanel = isAssistantLink ? 'ledger' : requestedPanel;
   const shell = buildShell({ panel: activePanel, view: currentRoute.view, section: currentRoute.section, gen });
   root.append(shell);
   startTaskManager();
   const main = shell.querySelector('#tn-main');
+  if (isAssistantLink) {
+    const assistantContext = {
+      applicationId: currentRoute.applicationId,
+      resumeId: currentRoute.resume,
+      onboarding: currentRoute.onboarding
+    };
+    const url = new URL(location.href);
+    for (const key of ['panel', 'app', 'applicationId', 'resume', 'onboarding']) url.searchParams.delete(key);
+    history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    await renderLedger(main, { gen, panel: 'ledger', initialView: 'applied' });
+    if (isStale(gen)) return;
+    await window.__tounarOpenAssistant?.(assistantContext);
+    return;
+  }
   if (['settings', 'mail-admin', 'plugin-connect', 'plugin-sites'].includes(activePanel)) {
     const requestedTab = activePanel === 'mail-admin' ? 'mail-admin'
       : ['plugin-connect', 'plugin-sites'].includes(activePanel) ? 'data' : currentRoute.tab;
@@ -91,10 +109,6 @@ export async function enterApp(panel = null) {
     if (isStale(gen)) return;
     if (activePanel === 'plugin-connect') confirmPluginConnection();
     else if (activePanel === 'plugin-sites') openSiteManager();
-    return;
-  }
-  if (activePanel === 'assistant') {
-    await renderAssistant(main, { gen, applicationId: currentRoute.applicationId, resumeId: currentRoute.resume, onboarding: currentRoute.onboarding });
     return;
   }
   if (activePanel === 'career') {
@@ -147,7 +161,6 @@ function navButton({ label, test, icon = null, onclick, sub = false }) {
 function navGroup(label) { return h('div', { class: 'tn-nav-group-label', text: label }); }
 
 function navState({ panel, view, section }) {
-  if (panel === 'assistant') return 'assistant';
   if (panel === 'career') return ['resume', 'rewrite'].includes(section) ? 'resume' : 'match';
   if (panel === 'reviews' || view === 'reviews') return 'reviews';
   if (view === 'viewed') return 'viewed';
@@ -185,13 +198,10 @@ function buildShell({ panel, view, section, gen }) {
     class: `tn-nav-item${nav === 'reviews' ? ' active' : ''}`, href: '/?panel=reviews', 'data-test': 'nav-reviews',
     ...(nav === 'reviews' ? { 'aria-current': 'page' } : {}), onclick: closeMobileNav
   }, navIcon('reviews'), h('span', { class: 'tn-nav-label', text: '待确认' }), pendingBadge);
+  // v1.1.5: assistant is no longer an analysis sub-page. It becomes a
+  // bottom entry above the account area and toggles the half-screen drawer.
   const analysis = h('div', { class: 'tn-nav-section' },
     navGroup('分析'),
-    (() => {
-      const button = navButton({ label: 'AI 助手', test: 'nav-assistant', icon: 'assistant', onclick: () => openAssistantDrawer() });
-      if (nav === 'assistant') { button.classList.add('active'); button.setAttribute('aria-current', 'page'); }
-      return button;
-    })(),
     navLink({ href: '/?panel=career&section=match', label: '匹配分析', test: 'nav-match', active: nav === 'match', icon: 'match' }),
     navLink({ href: '/?panel=career&section=resume', label: '简历库', test: 'nav-resume', active: nav === 'resume', icon: 'resume' })
   );
@@ -199,6 +209,13 @@ function buildShell({ panel, view, section, gen }) {
     navGroup('设置'),
     navLink({ href: '/?panel=settings', label: '设置', test: 'nav-settings', active: nav === 'settings', icon: 'settings' })
   );
+  const assistantEntry = navButton({
+    label: 'AI 投递助理', test: 'nav-assistant', icon: 'assistant',
+    onclick: () => toggleAssistantDrawer()
+  });
+  assistantEntry.classList.add('tn-assistant-entry');
+  assistantEntry.setAttribute('aria-controls', 'tn-assistant-drawer');
+  assistantEntry.setAttribute('aria-expanded', 'false');
   const account = h('div', { class: 'tn-account' },
     h('div', { class: 'tn-account-label', text: App.user?.is_admin ? '当前账号 · 管理员' : '当前账号' }),
     h('div', { class: 'tn-account-email', 'data-test': 'header-email', title: App.user?.email || '', text: App.user?.email || '' }),
@@ -218,14 +235,15 @@ function buildShell({ panel, view, section, gen }) {
       }
     })
   );
-  sidebar.append(brand, work, pendingLink, analysis, tools, account);
+  sidebar.append(brand, work, pendingLink, analysis, tools,
+    h('div', { class: 'tn-sidebar-bottom' }, assistantEntry, account));
 
   const menuButton = h('button', {
     class: 'tn-menu-button', type: 'button', 'data-test': 'sidebar-open',
     'aria-controls': 'tn-sidebar', 'aria-expanded': 'false', 'aria-label': '打开导航菜单',
     onclick: () => toggleMobileNav(true)
   }, h('span', { class: 'tn-menu-lines', 'aria-hidden': 'true' }));
-  const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'assistant' ? 'AI 求职助手' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
+  const titleFor = (view) => view === 'reviews' ? '待确认' : view === 'match' ? '匹配分析' : view === 'resume' ? '简历库'
     : view === 'viewed' ? '看过没投' : view === 'archived' ? '已归档'
       : view === 'settings' ? '设置' : '投递台账';
   const pageTitleEl = h('h1', { class: 'tn-topbar-title', 'data-test': 'page-title', text: titleFor(nav) });
@@ -237,44 +255,122 @@ function buildShell({ panel, view, section, gen }) {
   const main = h('div', { class: 'tn-main', id: 'tn-main' });
   const workspace = h('div', { class: 'tn-workspace' }, topbar, main);
   const shell = h('div', { class: 'tn-shell' }, sidebar, h('div', { class: 'tn-nav-scrim', onclick: () => toggleMobileNav(false) }), workspace);
-  const assistantDrawer = h('aside', { class: 'tn-assistant-drawer', 'data-test': 'assistant-drawer', 'aria-label': 'AI 求职助手', hidden: true });
+  const assistantDrawer = h('aside', { class: 'tn-assistant-drawer', id: 'tn-assistant-drawer', 'data-test': 'assistant-drawer', 'aria-label': 'AI 投递助理', hidden: true });
   const assistantMask = h('div', { class: 'tn-assistant-drawer-mask', hidden: true, onclick: () => closeAssistantDrawer() });
   const assistantBody = h('div', { class: 'tn-assistant-drawer-body' });
   const drawerContext = h('div', { class: 'tn-assistant-drawer-context', 'data-test': 'assistant-drawer-context' });
   let assistantOpen = false;
   let assistantWide = false;
+  let assistantReady = false;
+  let assistantRenderSeq = 0;
+  let assistantContextKey = null;
   const drawerClose = h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'assistant-drawer-close', text: '关闭', onclick: () => closeAssistantDrawer() });
-  const drawerWide = h('button', { class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'assistant-drawer-wide', text: '宽屏', onclick: () => { assistantWide = !assistantWide; assistantDrawer.classList.toggle('wide', assistantWide); drawerWide.textContent = assistantWide ? '窄屏' : '宽屏'; } });
-  const assistantFab = h('button', { class: 'tn-assistant-fab', type: 'button', 'data-test': 'assistant-fab', title: '打开 AI 助手', 'aria-label': '打开 AI 助手', onclick: () => openAssistantDrawer() }, h('span', { text: 'AI' }), h('span', { class: 'tn-assistant-fab-label', text: '助手' }));
+  const drawerWide = h('button', {
+    class: 'tn-btn tn-btn-sm tn-btn-ghost', type: 'button', 'data-test': 'assistant-drawer-wide',
+    'aria-pressed': 'false', text: '加宽',
+    onclick: () => {
+      assistantWide = !assistantWide;
+      assistantDrawer.classList.toggle('wide', assistantWide);
+      drawerWide.textContent = assistantWide ? '半屏' : '加宽';
+      drawerWide.setAttribute('aria-pressed', assistantWide ? 'true' : 'false');
+    }
+  });
+  const assistantFab = h('button', {
+    class: 'tn-assistant-fab', type: 'button', 'data-test': 'assistant-fab',
+    title: '打开 AI 投递助理', 'aria-label': '打开 AI 投递助理',
+    onclick: () => toggleAssistantDrawer()
+  }, h('span', { text: 'AI' }), h('span', { class: 'tn-assistant-fab-label', text: '投递助理' }));
   assistantDrawer.append(h('header', { class: 'tn-assistant-drawer-head' },
-    h('div', {}, h('strong', { text: 'AI 求职助手' }), drawerContext),
+    h('div', {}, h('strong', { text: 'AI 投递助理' }), drawerContext),
     h('div', { class: 'tn-action-row' }, drawerWide, drawerClose)), assistantBody);
   shell.append(assistantMask, assistantDrawer, assistantFab);
-  async function openAssistantDrawer() {
-    closeMobileNav();
+
+  function setAssistantEntryState(open) {
+    assistantEntry.classList.toggle('active', open);
+    assistantEntry.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) assistantEntry.setAttribute('aria-current', 'page');
+    else assistantEntry.removeAttribute('aria-current');
+  }
+  function focusAssistantInput() {
+    requestAnimationFrame(() => {
+      const input = assistantBody.querySelector('[data-test="assistant-input"]');
+      input?.focus({ preventScroll: true });
+    });
+  }
+  function assistantContextFrom(options = {}) {
+    const hasOptions = Boolean(options && Object.keys(options).length > 0);
     const params = new URLSearchParams(location.search);
-    const pageApp = params.get('app');
     const linked = window.__tounarAssistantContext?.type === 'application' ? window.__tounarAssistantContext : null;
-    const currentApp = pageApp || linked?.id || null;
-    drawerContext.textContent = linked ? `当前查看：${linked.label}` : (currentApp ? `当前页面：${params.get('panel') === 'career' ? '匹配分析' : '岗位详情'}` : `当前页面：${titleFor(nav)}`);
+    const pageContext = {
+      applicationId: params.get('app') || params.get('applicationId') || linked?.id || null,
+      resumeId: params.get('resume') || null,
+      onboarding: params.get('onboarding') || null
+    };
+    // Re-opening with the bottom entry must not discard an in-progress
+    // conversation. Reuse the mounted instance when the page adds no context.
+    if (!hasOptions && assistantReady && !pageContext.applicationId && !pageContext.resumeId && !pageContext.onboarding) {
+      try { return JSON.parse(assistantContextKey) || pageContext; } catch { return pageContext; }
+    }
+    if (!hasOptions) return pageContext;
+    return {
+      applicationId: options.applicationId ?? null,
+      resumeId: options.resumeId ?? null,
+      onboarding: options.onboarding ?? null
+    };
+  }
+  function describeAssistantContext(ctx) {
+    if (ctx.applicationId) {
+      const linked = window.__tounarAssistantContext;
+      return linked?.id === ctx.applicationId ? `当前查看：${linked.label}` : '当前上下文：岗位对话';
+    }
+    if (ctx.onboarding === 'profile') return '当前上下文：求职画像';
+    return `当前页面：${titleFor(nav)}`;
+  }
+  async function openAssistantDrawer(options = {}) {
+    closeMobileNav();
+    const context = assistantContextFrom(options);
+    const key = JSON.stringify(context);
+    drawerContext.textContent = describeAssistantContext(context);
     assistantOpen = true;
     assistantDrawer.hidden = false;
     assistantMask.hidden = false;
     shell.classList.add('assistant-drawer-open');
+    setAssistantEntryState(true);
+    if (assistantReady && key === assistantContextKey) {
+      focusAssistantInput();
+      return;
+    }
+    assistantReady = true;
+    assistantContextKey = key;
+    const renderSeq = ++assistantRenderSeq;
+    // assistant.js clears its container before mounting. Never leave a loading
+    // placeholder outside the assistant flex column: it squeezes the composer.
     clear(assistantBody);
-    assistantBody.append(h('div', { class: 'tn-empty' }, h('p', { text: '正在打开 AI 助手…' })));
     try {
-      await renderAssistant(assistantBody, { gen, applicationId: currentApp, resumeId: params.get('resume'), onboarding: params.get('onboarding') });
+      await renderAssistant(assistantBody, { gen, ...context });
+      if (renderSeq !== assistantRenderSeq) return;
+      if (assistantOpen) focusAssistantInput();
     } catch (error) {
-      clear(assistantBody); assistantBody.append(h('div', { class: 'tn-inline-msg err', text: 'AI 助手加载失败：' + errorText(error) }));
+      if (renderSeq !== assistantRenderSeq) return;
+      assistantReady = false;
+      clear(assistantBody);
+      assistantBody.append(h('div', { class: 'tn-inline-msg err', text: 'AI 助手加载失败：' + errorText(error) }));
     }
   }
   function closeAssistantDrawer() {
     assistantOpen = false;
-    assistantDrawer.hidden = true; assistantMask.hidden = true;
+    assistantDrawer.hidden = true;
+    assistantMask.hidden = true;
     shell.classList.remove('assistant-drawer-open');
-    clear(assistantBody);
+    setAssistantEntryState(false);
+    // Keep the assistant mounted so closing/reopening never drops a streaming
+    // reply. Context switches and account changes remount it explicitly.
   }
+  function toggleAssistantDrawer(options = {}) {
+    if (assistantOpen) closeAssistantDrawer();
+    else openAssistantDrawer(options);
+  }
+  setAssistantEntryState(false);
   const mobileQuery = window.matchMedia('(max-width: 900px)');
 
   function syncMobileFocus() {
@@ -317,7 +413,7 @@ function buildShell({ panel, view, section, gen }) {
       if (isActive) node.setAttribute('aria-current', 'page');
       else node.removeAttribute('aria-current');
     }
-    for (const test of ['nav-assistant', 'nav-match', 'nav-resume', 'nav-settings']) {
+    for (const test of ['nav-match', 'nav-resume', 'nav-settings']) {
       const node = sidebar.querySelector(`[data-test="${test}"]`);
       if (!node) continue;
       node.classList.remove('active');
@@ -326,7 +422,12 @@ function buildShell({ panel, view, section, gen }) {
     pageTitleEl.textContent = titleFor(view);
   }
   const onKey = (e) => {
-    if (e.key === 'Escape' && assistantOpen) { e.preventDefault(); closeAssistantDrawer(); return; }
+    // A modal inside the assistant (job picker, history, confirmation) owns
+    // Escape first; otherwise closing it would also collapse the drawer.
+    if (e.key === 'Escape' && assistantOpen) {
+      if (document.querySelector('.tn-modal-layer:not([hidden])')) return;
+      e.preventDefault(); closeAssistantDrawer(); return;
+    }
     if (e.key === 'Escape' && shell.classList.contains('nav-open')) { e.preventDefault(); toggleMobileNav(false); return; }
     if (e.key !== 'Tab' || !mobileQuery.matches || !shell.classList.contains('nav-open')) return;
     const focusables = [...sidebar.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex="0"]')]
@@ -339,8 +440,20 @@ function buildShell({ panel, view, section, gen }) {
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   };
   const onView = (event) => { if (!isStale(gen) && shell.isConnected) setViewChrome(event.detail?.view); };
+  const onOpenAssistant = (event) => {
+    if (isStale(gen) || !shell.isConnected) return;
+    openAssistantDrawer(event.detail || {});
+  };
   document.addEventListener('keydown', onKey);
   window.addEventListener('tounar:view', onView);
+  window.addEventListener('tounar:open-assistant', onOpenAssistant);
+  window.__tounarOpenAssistant = (options = {}) => {
+    if (isStale(gen) || !shell.isConnected) return undefined;
+    return openAssistantDrawer(options);
+  };
+  window.__tounarCloseAssistant = () => {
+    if (!isStale(gen) && shell.isConnected) closeAssistantDrawer();
+  };
   mobileQuery.addEventListener('change', syncMobileFocus);
   syncMobileFocus();
   // 侧栏计数使用与台账相同的服务端口径；加载失败保持未知，绝不显示假 0。
