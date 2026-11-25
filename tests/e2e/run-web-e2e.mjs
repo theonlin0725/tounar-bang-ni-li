@@ -169,7 +169,7 @@ try {
   });
 
   /* ================= 1. 登录页 + OTP 登录 ================= */
-  await page.goto('/');
+  await page.goto('/?view=login');
   await page.waitForSelector('[data-test=login-email]');
   check('W-01 未登录进入登录页（邮箱验证码；无密码输入）',
     (await page.locator('[data-test=login-send]').count()) === 1

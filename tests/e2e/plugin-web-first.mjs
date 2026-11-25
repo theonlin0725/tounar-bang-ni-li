@@ -22,7 +22,7 @@ try {
  // are not trusted to start a pairing from page JavaScript.
  await sw.evaluate(async base=>{await TounarCommon.setSettings({serverUrl:base});await syncContentScripts();},server.base);
  const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(server.base);await page.locator('[data-test=login-email]').waitFor();
+ await page.goto(server.base+'/?view=login');await page.locator('[data-test=login-email]').waitFor();
  check('logged out page does not prompt binding',await page.locator('[data-test=plugin-connect-modal]').count()===0);
  await page.evaluate(()=>sessionStorage.setItem('tounar.plugin.onboarding.demo@tounar.local','missing'));
  await login(context,'demo@tounar.local');await page.reload();

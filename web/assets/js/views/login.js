@@ -6,7 +6,7 @@ import { h, clear } from '../util.js';
 import { pluginDownloadLink, openPluginHelp } from './plugin-help.js?v=20261125-1';
 
 export function renderLogin(root, options = {}) {
-  const { notice = null, compact = false, onSuccess = () => {}, heading = null } = options;
+  const { notice = null, compact = false, onSuccess = () => {}, heading = null, onBack = null } = options;
   clear(root);
 
   const emailInput = h('input', {
@@ -193,6 +193,10 @@ export function renderLogin(root, options = {}) {
   );
 
   root.append(h('div', { class: 'tn-login-wrap' },
+    onBack ? h('a', {
+      class: 'tn-login-back', href: '/', 'data-test': 'login-back-home',
+      onclick: (event) => { event.preventDefault(); onBack(); }
+    }, '← 返回官网首页') : null,
     h('div', { class: 'tn-login-brand', text: 'Tounar · 帮你理' }),
     h('h1', { class: 'tn-login-slogan', text: 'Tounar. Your application tracker.' }),
     h('p', { class: 'tn-login-sub', text: '你的投递线索整理助手' }),

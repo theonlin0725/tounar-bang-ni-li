@@ -9,11 +9,14 @@ web/
 ├── index.html                 SPA 入口
 └── assets/
     ├── app.css                页面、表格、抽屉、弹窗及响应式样式
+    ├── home.css               官网首页（登录引导落地页）样式，作用域 .tn-home
+    ├── img/home/              官网首页真实产品截图（2x WebP，脱敏演示数据）
     └── js/
         ├── app.js             路由、会话代际守卫、顶栏和视图挂载
         ├── api.js             同源 Cookie 请求、统一错误、幂等头、401 处理
         ├── util.js            DOM、格式化、提示和确认弹窗工具
         └── views/
+            ├── home.js        官网首页：吸顶导航、ScrollSpy、滚动渐显与 CTA
             ├── career.js      简历上传/画像、岗位对比、未投递推荐
             ├── mail-admin.js  管理员模板、约束、预览、试发和业务触发记录
             ├── login.js       邮箱 OTP 登录和重验证
@@ -33,6 +36,7 @@ web/
 
 | 状态 | 已有能力与边界 |
 | --- | --- |
+| **已实现** | 官网首页（v1.2）：未登录访问 `/` 默认展示落地页；吸顶导航、四项功能 ScrollSpy、滚动渐显、真实产品截图与悬浮标注；CTA 跳转 `/?view=login`，登录页可返回官网；已登录用户 `/` 直接进工作台，`/?view=home` 可预览官网 |
 | **已实现** | 白名单邮箱验证码登录、退出、过期会话处理和敏感操作重验证；账号切换作废旧请求结果、清理抽屉和弹窗 |
 | **已实现** | 累计投递/进行中/面试统计；已投、看过没投、归档、待确认；关键词、状态、来源、回看条件筛选及分页 |
 | **已实现** | 详情展示 JD、字段来源/把握度、历史、投递时间精度；手动补录、纠错、归档/恢复、已查看动作 |
@@ -68,7 +72,10 @@ npm start
 ```bash
 CLOUD_LLM_ENABLED=false npm test
 CLOUD_LLM_ENABLED=false npm run test:web
+npm run test:home   # 官网引导页路由、吸顶导航、截图与登录衔接
 ```
+
+`tests/e2e/home-landing.mjs` 覆盖官网首页首入、ScrollSpy、真实截图加载、官网 ↔ 登录页历史、深链登录恢复、已登录直接进工作台和移动端无横向溢出；官网截图可用 `node tools/capture-home-screenshots.mjs` 在隔离数据库中重新采集（需要 cwebp）。
 
 `tests/e2e/run-web-e2e.mjs` 启动真实本地后端、隔离 SQLite/outbox 和 Playwright 浏览器，覆盖登录、台账、待确认、提醒设置与链接、设备、收信失败可见、删除等流程；`phase2-web.mjs` 补充邮件进展/阶段回看/移动视口验证。报告写入 `.tmp/web-e2e-report.json`，截图位于 `.tmp/web-e2e/`。
 

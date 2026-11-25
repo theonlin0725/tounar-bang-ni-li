@@ -57,6 +57,8 @@ a:hover { text-decoration: underline; }
 .tn-ok-text { color: var(--ok); }
 
 /* ---------- 登录页 ---------- */
+.tn-login-back { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+.tn-login-back:hover { color: var(--brand); text-decoration: none; }
 .tn-login-wrap { max-width: 460px; margin: 0 auto; padding: 7vh 20px 60px; }
 .tn-login-brand { font-family: var(--font-sans); color: var(--brand); font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; }
 .tn-login-slogan { font-family: var(--font-sans); font-size: 32px; line-height: 1.25; margin: 18px 0 6px; }

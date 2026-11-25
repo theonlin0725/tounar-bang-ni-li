@@ -4,6 +4,7 @@ import { confirmPluginConnection, openSiteManager, promptPluginConnection } from
 
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
+import { renderHome } from './views/home.js?v=20261126-1';
 import { renderLogin } from './views/login.js?v=20261125-1';
 import { renderLedger } from './views/ledger.js?v=20261125-1';
 import { renderLanding } from './views/landing.js?v=20261125-1';
@@ -33,6 +34,56 @@ function route() {
 
 function rootEl() { return document.getElementById('tn-root'); }
 
+/* 视图级清理：官网首页的 ScrollSpy / 定时器 / 滚动监听必须在切换视图时断开。 */
+let homeCleanup = null;
+function cleanupView() {
+  if (typeof homeCleanup === 'function') {
+    try { homeCleanup(); } catch { /* 清理失败不阻断路由 */ }
+  }
+  homeCleanup = null;
+}
+
+/* 保留托管平台的 ?sharecode=…，避免官网/登录分流把分享码丢掉。 */
+function currentShareCode() {
+  try { return new URLSearchParams(location.search).get('sharecode') || ''; } catch { return ''; }
+}
+function loginUrl() {
+  const share = currentShareCode();
+  return share ? `/?view=login&sharecode=${encodeURIComponent(share)}` : '/?view=login';
+}
+function homeUrl() {
+  const share = currentShareCode();
+  return share ? `/?sharecode=${encodeURIComponent(share)}` : '/';
+}
+
+/* 判断当前 URL 是否只是主站入口（没有深链参数）。 */
+function isPlainEntry(routeInfo) {
+  return !routeInfo.panel && !routeInfo.applicationId && !routeInfo.apps && !routeInfo.view
+    && !routeInfo.section && !routeInfo.tab && !routeInfo.autorun && !routeInfo.resume
+    && !routeInfo.report && !routeInfo.onboarding && !routeInfo.draft;
+}
+
+function showHomePage(loggedIn) {
+  cleanupView();
+  stopTaskManager();
+  App.gen += 1;
+  App.loggedIn = Boolean(loggedIn);
+  if (!loggedIn) App.user = null;
+  App.view = 'home';
+  resetOverlays();
+  const root = rootEl();
+  clear(root);
+  homeCleanup = renderHome(root, {
+    loggedIn: Boolean(loggedIn),
+    loginHref: loginUrl(),
+    onLogin: () => {
+      history.pushState({}, '', loginUrl());
+      showLogin();
+    },
+    onEnterApp: () => { void enterApp(); }
+  });
+}
+
 /* 登录/换号时清空抽屉与弹窗，防止上一账号的数据残留 */
 function resetOverlays() {
   for (const id of ['tn-modal-layer', 'tn-drawer-layer']) {
@@ -41,16 +92,22 @@ function resetOverlays() {
   }
 }
 
-export function showLogin(message) {
+export function showLogin(message, { url = null } = {}) {
+  cleanupView();
   stopTaskManager();
   App.loggedIn = false;
   App.gen += 1;
   App.view = 'login';
   resetOverlays();
+  if (url) history.replaceState({}, '', url);
   const root = rootEl();
   clear(root);
   renderLogin(root, {
     notice: message || null,
+    onBack: () => {
+      history.pushState({}, '', homeUrl());
+      showHomePage(false);
+    },
     onSuccess: (data) => {
       if (data?.user) App.user = data.user;
       return enterApp();
@@ -59,14 +116,36 @@ export function showLogin(message) {
 }
 
 export async function enterApp(panel = null) {
+  cleanupView();
   const gen = ++App.gen;
   App.loggedIn = true;
   App.view = 'app';
   resetOverlays();
   const root = rootEl();
   clear(root);
-  try { const me = await api.get('/api/v1/me'); if (isStale(gen)) return; App.user = me.data.user; } catch (err) { if (isStale(gen)) return; if (err.status === 401) return; root.append(h('p', { text: errorText(err) })); return; }
+  try {
+    const me = await api.get('/api/v1/me');
+    if (isStale(gen)) return;
+    App.user = me.data.user;
+  } catch (err) {
+    if (isStale(gen)) return;
+    if (err.status === 401) {
+      showLogin('登录状态已失效，请重新登录', { url: loginUrl() });
+      return;
+    }
+    root.append(h('p', { text: errorText(err) }));
+    return;
+  }
   const currentRoute = route();
+  // 从官网预览 / 登录页进入工作台后，去掉仅用于视图分流的 view 参数，
+  // 保证刷新仍是工作台。注意：view=viewed / archived 是台账自身的合法视图，
+  // 不能一并删除。
+  if (currentRoute.view === 'login' || currentRoute.view === 'home') {
+    const url = new URL(location.href);
+    url.searchParams.delete('view');
+    history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    currentRoute.view = null;
+  }
   if (currentRoute.panel === 'career' && (currentRoute.apps || currentRoute.autorun)) {
     const url = new URL(location.href);
     url.searchParams.delete('apps');
@@ -231,7 +310,7 @@ function buildShell({ panel, view, section, gen }) {
         if (!ok) return;
         try { await api.post('/api/v1/auth/logout'); } catch { /* 退出失败也回登录页 */ }
         App.user = null;
-        showLogin('已退出登录');
+        showLogin('已退出登录', { url: loginUrl() });
       }
     })
   );
@@ -484,31 +563,59 @@ function buildShell({ panel, view, section, gen }) {
 /* 顶栏在进入台账前挂载（登录页/落地页无顶栏） */
 
 async function boot() {
+  cleanupView();
   const r = route();
   if (r.name === 'landing') {
     App.view = 'landing';
     await renderLanding(rootEl(), r.token);
     return;
   }
-  // 主应用：先查会话，未登录不闪现上一用户台账
+
+  // 官网预览：显式 ?view=home 时无论是否登录都展示首页。
+  // 已登录用户的主按钮显示「进入工作台」，不会误触登录流程。
+  if (r.view === 'home') {
+    let loggedIn = false;
+    try {
+      const me = await api.get('/api/v1/me', { silent401: true });
+      App.user = me.data.user;
+      loggedIn = true;
+    } catch {
+      App.user = null;
+    }
+    showHomePage(loggedIn);
+    return;
+  }
+
+  // 登录深链：已登录直接进入工作台，未登录停留在登录页。
+  if (r.view === 'login') {
+    try {
+      const me = await api.get('/api/v1/me', { silent401: true });
+      App.user = me.data.user;
+      await enterApp(r.panel);
+    } catch (err) {
+      if (err.status === 401) showLogin();
+      else showLogin(`无法连接服务：${errorText(err)}`);
+    }
+    return;
+  }
+
+  // 主应用：先查会话，未登录不闪现上一用户台账。
   try {
     const me = await api.get('/api/v1/me', { silent401: true });
     App.user = me.data.user;
     await enterApp(r.panel);
   } catch (err) {
     if (err.status === 401) {
-      showLogin();
+      // 未登录访问 / 默认进入官网首页；带 panel/app 等深链参数时保持原行为，
+      // 先登录，登录成功后恢复进入对应面板。
+      if (isPlainEntry(r)) showHomePage(false);
+      else showLogin();
+    } else if (isPlainEntry(r)) {
+      // 官网是静态落地页；即使接口暂不可用也应可阅读。
+      showHomePage(false);
     } else {
       // 网络/503：保留会话判断，显示错误登录页（不塞演示数据）
-      const root = rootEl();
-      clear(root);
-      renderLogin(root, {
-        notice: `无法连接服务：${errorText(err)}`,
-        onSuccess: (data) => {
-          if (data?.user) App.user = data.user;
-          return enterApp();
-        }
-      });
+      showLogin(`无法连接服务：${errorText(err)}`);
     }
   }
 }
@@ -516,7 +623,12 @@ async function boot() {
 /* 401 全局处理：只在已登录且仍是当前代际时回落一次 */
 onUnauthorized(() => {
   if (App.loggedIn) {
-    showLogin('登录状态已失效，请重新登录');
+    const params = new URLSearchParams(location.search);
+    const viewParam = params.get('view');
+    const deepLink = Boolean(params.get('panel') || params.get('app') || params.get('apps') || params.get('applicationId'))
+      || (viewParam && !['login', 'home'].includes(viewParam))
+      || location.pathname.startsWith('/r/');
+    showLogin('登录状态已失效，请重新登录', deepLink ? {} : { url: loginUrl() });
     toast('登录状态已失效，请重新登录', 'err');
   }
 });
@@ -526,8 +638,9 @@ export function setUser(user) { App.user = user; }
 export const appExports = { buildShell, toast };
 
 window.addEventListener('popstate', () => {
-  if (App.loggedIn) enterApp();
-  else boot();
+  // popstate 统一走 boot：既支持工作台内部前进/后退，也支持官网 ↔ 登录页 ↔
+  // 深链之间的浏览器后退，不会因为 App.loggedIn 残留而跳过官网预览。
+  void boot();
 });
 
 boot();

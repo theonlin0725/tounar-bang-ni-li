@@ -111,7 +111,7 @@ try {
   await context.tracing.start({screenshots:true,snapshots:true});
   observeRuntime();
   sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');extensionId=new URL(sw.url()).host;
-  web=await context.newPage();await web.goto(server.base);
+  web=await context.newPage();await web.goto(server.base+'/?view=login');
   await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();
   await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();
   await web.locator('[data-test=nav-viewed]').waitFor();

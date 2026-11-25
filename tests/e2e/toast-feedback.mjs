@@ -60,7 +60,7 @@ try{
  await context.tracing.start({screenshots:true,snapshots:true});
  sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');extensionId=new URL(sw.url()).host;
  const cdp=await context.newCDPSession(context.pages()[0]);report.browser=(await cdp.send('Browser.getVersion')).product;await cdp.detach();
- web=await context.newPage();await web.goto(server.base);await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();await web.locator('[data-test=nav-viewed]').waitFor();cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
+ web=await context.newPage();await web.goto(server.base+'/?view=login');await web.locator('[data-test=login-email]').fill('demo@tounar.local');await web.locator('[data-test=login-send]').click();await web.locator('[data-test=login-code]').fill(await server.readOtpCode('demo@tounar.local'));await web.locator('[data-test=login-submit]').click();await web.locator('[data-test=nav-viewed]').waitFor();cookie=(await context.cookies(server.base)).map(c=>c.name+'='+c.value).join('; ');
  popup=await context.newPage();await popup.goto(`chrome-extension://${extensionId}/popup/popup.html`);await popup.locator('#server-url').fill(proxyBase);await popup.click('#save-server');await popup.click('#start-pairing');
  // This suite tests a proxy transport; use the session API for pairing setup.
  // The dedicated plugin-access suite covers the real confirmation UI.
