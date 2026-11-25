@@ -76,6 +76,8 @@ AI_PROVIDER=openai_compatible
 
 ## 验证
 
+简历改写审阅页的 Word 导出会先用 LibreOffice 实排，并用 Poppler `pdfinfo` 验证只有一页 A4。部署环境需安装两者及中文字体；可用 `RESUME_SOFFICE_BIN`、`RESUME_PDFINFO_BIN`、`RESUME_CJK_FONT` 指定程序和字体。无法验证时保留草稿，不生成未验证的成稿。
+
 ```bash
 node --test --test-concurrency=1 server/test/career-ai.test.js
 npm run test:career-ai

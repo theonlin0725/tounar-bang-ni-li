@@ -4,7 +4,7 @@ import { api, errorText } from '../api.js';
 import { isStale } from '../app.js?v=20261124-1';
 import { h, clear, toast, fmtDateTime, openModal, idemKey, debounce } from '../util.js';
 import { openDetail } from './detail.js?v=20261124-1';
-import { renderResumeRewrite } from './resume-rewrite.js?v=20261124-1';
+import { renderResumeRewrite } from './resume-rewrite.js?v=20261124-2';
 import { openJobPicker } from './job-picker.js?v=20261124-1';
 
 const MATCH_LABELS = { high: '相对匹配高', medium: '相对匹配中', low: '相对匹配低', insufficient: '资料不足' };

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { jdEnabled, extractJd } from '../modules/jd-extraction/service.js';
+import { recognizeJdCompany } from '../modules/jd-extraction/vision.js';
 import { getApplication, markApplicationChanged, transaction } from '../db.js';
 import { config, featureFlags } from '../config.js';
 import { all, dataRevision, one, run } from '../db.js';
@@ -170,7 +171,11 @@ export function registerRoutes() {
   }, {public:true});
   route('POST', '/api/v1/plugin-jd/extract', async (req) => {
     const device = authenticateDevice(req);
-    return {data:await extractJd(device.owner_id, req.body || {})};
+    return {data:await extractJd(device.owner_id, req.body || {}, {visionDevice:device.id})};
+  }, {public:true,csrf:false});
+  route('POST', '/api/v1/plugin-jd/company-vision', async (req) => {
+    const device = authenticateDevice(req);
+    return {data:await recognizeJdCompany(device.owner_id, device.id, req.body || {})};
   }, {public:true,csrf:false});
   route('POST', '/api/v1/applications/:id/organize-jd', async (req) => {
     const auth = requireAuth(req);

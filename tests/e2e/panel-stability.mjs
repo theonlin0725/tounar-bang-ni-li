@@ -9,8 +9,8 @@ const checks=[];let failed=0;
 const check=(name,ok,detail='')=>{const pass=Boolean(ok);if(!pass)failed++;checks.push({name,ok:pass,detail});console.log(`${pass?'✔':'✖'} ${name}${detail?' — '+detail:''}`);};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function waitFor(fn,{timeout=15000,interval=150,label='条件'}={}){const end=Date.now()+timeout;let last;while(Date.now()<end){last=await fn();if(last)return last;await sleep(interval);}throw new Error('等待超时：'+label+' '+(last?JSON.stringify(last):''));}
-const resolved=await resolveChromiumExecutable();
-const browser=await chromium.launch({executablePath:resolved.path,headless:true});
+const executablePath=process.env.E2E_CHROME || (await resolveChromiumExecutable())?.path;
+const browser=await chromium.launch({executablePath,headless:true});
 async function pageFor(url,html,{delayA=0}={}){
  const context=await browser.newContext({viewport:{width:1280,height:900}});
  await context.route('**/*',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:html}));
@@ -45,7 +45,7 @@ try{
   const state=await page.evaluate(()=>({models:window.__modelInputs.length,events:window.__captured.map(e=>({t:e.event_type,title:e.payload?.job_title}))}));
   const candidates=await page.evaluate(()=>window.__titleCandidates[0]||[]);
   check('全页时钟持续更新仍按岗位面板自动入账',state.models===1&&state.events.filter(e=>e.t==='job_viewed').length===1&&state.events.find(e=>e.t==='job_viewed')?.title==='平台工程师',JSON.stringify(state));
-  check('模型输入带独立标题候选且不含工作地点标签',candidates.some(c=>c.text==='平台工程师')&&!candidates.some(c=>/工作地点/.test(c.text)),JSON.stringify(candidates));
+  check('模型从正文读取标题，不再收到标题候选限制',candidates.length===0&&await page.evaluate(()=>window.__modelInputs[0]?.text.split('\n').includes('平台工程师')));
   await context.close();
  }
  // A list rail and a recommendation rail beside the detail must not enter model input.

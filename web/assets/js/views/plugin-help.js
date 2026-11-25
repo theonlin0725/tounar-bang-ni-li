@@ -1,7 +1,7 @@
 /* 插件下载与手动安装指引：只链接静态 ZIP，不读取或传递任何登录/设备/内部令牌。 */
 import { h, clear } from '../util.js';
 
-export const PLUGIN_VERSION = '0.2.12';
+export const PLUGIN_VERSION = '0.2.14';
 export const PLUGIN_ZIP = `/downloads/bangnili-extension-${PLUGIN_VERSION}.zip`;
 
 export function currentShareCode() {
@@ -28,6 +28,7 @@ export function pluginInstallContent() {
   const download = pluginDownloadLink({ label: `下载插件 ZIP（v${PLUGIN_VERSION}）`, test: 'plugin-help-download' });
   return h('div', { class: 'tn-plugin-help', 'data-test': 'plugin-help' },
     h('p', { class: 'tn-small tn-muted', text: 'Chrome 优先；其他浏览器未验收，不承诺自动安装。本轮使用下载 ZIP + 手动加载，不通过应用商店。安装后请保留解压目录，不要删除或移动。' }),
+    h('p', { class: 'tn-small tn-muted', text: '如服务端启用了看图兜底，文字未识别出公司名时，插件会把已授权招聘站当前岗位的整页图发给千问。浏览器会显示用于整页截图的调试权限提示。' }),
     h('div', { class: 'tn-action-row' }, download, h('span', { class: 'tn-small tn-muted', text: `当前目标版本 v${PLUGIN_VERSION}` })),
     h('ol', { class: 'tn-plugin-steps' },
       h('li', { text: '下载插件 ZIP，解压到固定文件夹（如「文档/帮你理插件」）；安装后保留该文件夹。' }),

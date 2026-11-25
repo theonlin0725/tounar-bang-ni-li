@@ -494,8 +494,9 @@
     while ((node = walker.nextNode())) {
       const parent = node.parentElement;
       if (!parent) continue;
-      if (parent.closest('script,style,noscript,nav,header,footer,aside,form,input,textarea,select,[contenteditable],button,[data-tounar-toast]')) continue;
+      if (parent.closest('script,style,noscript,nav,footer,aside,form,input,textarea,select,[contenteditable],button,[aria-hidden="true"],[role="navigation"],[role="status"],[role="alert"],[data-tounar-toast]')) continue;
       if (parent.closest('[class*="recommend"],[class*="Recommend"],[class*="similar"],[class*="related"],[class*="hot-job"],[class*="hotJob"],[class*="other-job"],[class*="otherJob"]')) continue;
+      if (parent.closest('.job-list,.position-list,.recruit-list')) continue;
       if (!visible(parent)) continue;
       const text = String(node.textContent || '').trim();
       if (text) lines.push(text);
@@ -516,6 +517,7 @@
   let modelSignature = '';
   let modelInFlight = null;
   let modelError = '';
+  let visionSuggestion = null;
   let modelRoute = location.href;
   let priorModelText = '';
   let panelStability = {signature:'', since:0, text:'', identity:'', at:0};
@@ -523,6 +525,29 @@
   let modelSource = '';
   let modelAttempts = 0;
   let modelRetryAt = 0;
+
+  function allowJdScreenshot(signature) {
+    if (document.visibilityState !== 'visible' || isSelfPage() || modelSignature !== signature) return false;
+    const current = modelCandidate(true);
+    if (!current || panelSnapshotFor(current.text, current.legacy).signature !== signature) return false;
+    const page = location.pathname + location.search;
+    if (/(?:^|[/?=&_-])(?:login|sign-in|signin|profile|resume|account|application-form|apply-form|passport)(?:$|[/?=&_-])/i.test(page)) return false;
+    if (document.querySelector('input[type=password], input[type=file], input[autocomplete^=cc-], input[autocomplete=one-time-code]')) return false;
+    if ([...document.querySelectorAll('form input, form textarea, [contenteditable=true]')].some(el =>
+      el.getClientRects().length && !['hidden','submit','button','checkbox','radio'].includes(el.type)
+      && String(el.isContentEditable ? el.textContent : el.value || '').trim())) return false;
+    return true;
+  }
+
+  function requestJdVision(ticket, signature) {
+    if (!ticket || !allowJdScreenshot(signature)) return;
+    chrome.runtime.sendMessage({type:'jd_company_vision',ticket,signature}).then(result => {
+      const suggestion = result?.ok && result.data?.suggestion;
+      if (!suggestion || !allowJdScreenshot(signature) || modelJob?.company_name) return;
+      visionSuggestion = {signature, name:suggestion.company_name};
+      showToast(`图片中可能是「${suggestion.company_name}」，请核对后手动补充`, {ttl:12000});
+    }).catch(() => {});
+  }
   let modelRequestSignature = '';
   const MODEL_STABLE_MS = 1200;
   const MODEL_POLL_MS = 350;
@@ -569,49 +594,6 @@
     return root;
   }
 
-  function collectTitleCandidates(legacy = null) {
-    const panel = findJobPanel() || (detectionScope !== document ? detectionScope : null);
-    const scope = panel || document;
-    const out = [];
-    const seen = new Set();
-    const add = (value, source, node = null) => {
-      const text = textOf(node) || String(value || '').replace(/\s+/g, ' ').trim();
-      if (!text || text.length < 2 || text.length > 200 || !validTitle(text)) return;
-      if (/^(工作地点|工作城市|公司名称|招聘人数|经验要求|学历要求|薪资|薪资范围|发布时间|职位ID|岗位编号|职位编号|岗位职责|任职要求)$/i.test(text)) return;
-      if (legacy?.location && text === legacy.location) return;
-      if (legacy?.company_name && text === legacy.company_name) return;
-      if (legacy?.recruitment_batch && text === legacy.recruitment_batch) return;
-      if (seen.has(text)) return;
-      seen.add(text);
-      const id = `t${out.length + 1}`;
-      out.push({
-        id, text, source,
-        site_job_id: legacy?.site_job_id || idFromUrl(location.href) || '',
-        job_url: legacy?.job_url || canonicalUrl(location.href) || ''
-      });
-    };
-    const scoped = scopedRecruitmentDetail();
-    if (scoped?.title) add(scoped.title, 'scoped_panel');
-    const posting = readJobPostingJsonLd();
-    if (posting && !posting.multiple && posting.title) add(posting.title, 'json_ld');
-    const titleSelectors = ['h1', '[itemprop="title"]', '[data-job-title]', '[data-position-title]', '[class*="job-title"]', '[class*="jobTitle"]', '[class*="position-title"]', '[class*="positionTitle"]', '[class*="post-title"]', '[class*="postTitle"]'];
-    for (const selector of titleSelectors) {
-      let nodes = [];
-      try { nodes = [...scope.querySelectorAll(selector)]; } catch { continue; }
-      for (const node of nodes) {
-        if (!visible(node) || node.closest('nav,header,footer,aside,[class*="recommend"],[class*="related"],[class*="similar"],[class*="list"]')) continue;
-        add('', 'visible_title_node', node);
-      }
-    }
-    // Explicit "岗位名称/职位名称" labels inside the current panel.
-    for (const node of [...scope.querySelectorAll('p,li,div,span,dt,dd,strong')]) {
-      if (!visible(node) || node.children.length > 3 || node.innerText.length > 160) continue;
-      const match = String(node.innerText || '').match(/(?:岗位名称|职位名称|职位|岗位)\s*[:：]\s*(.{2,100})/i);
-      if (match) add(match[1].trim(), 'label');
-    }
-    return out.slice(0, 12);
-  }
-
   function modelInput(legacy) {
     // Decide locally before sending anything to the JD provider. A list, account,
     // application or login page must never be classified by uploading its text.
@@ -633,14 +615,26 @@
     const redact = text => text.replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g,'[联系方式已省略]').replace(/(?<!\d)1[3-9]\d{9}(?!\d)/g,'[联系方式已省略]');
     const fields = [legacy?.job_title, legacy?.company_name, legacy?.location, legacy?.recruitment_batch];
     const localInput = () => legacy?.jd_text ? redact([...fields,legacy.jd_text].filter(Boolean).join('\n')) : '';
-    if (['verified_site_selector','json_ld','recruitment_detail_panel'].includes(legacy?.field_sources.jd_text)) return localInput();
+    const verifiedSource = ['verified_site_selector','json_ld','recruitment_detail_panel'].includes(legacy?.field_sources.jd_text);
+    const url = new URL(location.href);
+    const verifiedDetail = adapter.verifiedUrlPatterns?.some(pattern => pattern.test(url.href))
+      || Adapters.isPublicRecruitmentDetail(url)
+      || (url.hostname.endsWith('.jobs.feishu.cn') && /\/position\/\d+\/detail\/?$/.test(url.pathname))
+      || legacy?.field_sources.jd_text === 'recruitment_detail_panel';
+    if (verifiedDetail && !listLanding) {
+      // Single-job pages can put the title, team and JD in sibling containers.
+      // Read the public text together without requiring any title selector.
+      const pageText = panelText(document.body);
+      if ((JD_DUTY_SIGNAL.test(pageText) || JD_REQUIREMENT_SIGNAL.test(pageText)) && pageText.length >= 30) {
+        return redact([document.title, pageText].filter(Boolean).join('\n'));
+      }
+    }
 
-    const root = findJobPanel() || [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
+    const root = strictPanel || findJobPanel() || [...document.querySelectorAll('[data-tounar-job-id], [itemtype$="/JobPosting"], [class*="job-detail"], [class*="jobDetail"], [class*="position-detail"], main, [role="main"], article')]
       .find(node => visible(node) && (JD_DUTY_SIGNAL.test(node.innerText) || JD_REQUIREMENT_SIGNAL.test(node.innerText)));
     if (!root) return localInput();
     const headings = [...new Set([...root.querySelectorAll('h1,[class*="job-title"],[class*="jobTitle"],[class*="position-title"]')]
       .filter(visible).map(textOf).filter(Boolean))];
-    const title = headings[0] || '';
     const detailUrl = (adapter.jobUrlPatterns || []).some(pattern => pattern.test(location.href));
     const structuredJob = !!posting?.title;
     const sectionText = String(root?.innerText || '');
@@ -649,8 +643,9 @@
     const apply = [...root.querySelectorAll('button,[role="button"],a[href]')].some(node =>
       visible(node) && /^(?:立即申请|立即投递|申请职位|投递简历|Apply(?: now)?)$/i.test(textOf(node))
     );
-    if (headings.length !== 1 || !validTitle(title) || (!detailUrl && !structuredJob && !(duty && requirements && apply)) || !(duty || requirements)) return localInput();
-    return redact([...fields, title, document.title, panelText(root)].filter(Boolean).join('\n'));
+    const contextualDetail = detailUrl || structuredJob || verifiedSource || (duty && requirements && apply && headings.filter(validTitle).length === 1);
+    if (!contextualDetail || !(duty || requirements)) return localInput();
+    return redact([document.title, panelText(root)].filter(Boolean).join('\n'));
   }
 
   let candidateSnapshot;
@@ -659,7 +654,7 @@
     if (!force && candidateSnapshot?.href === location.href && now - candidateSnapshot.at < MODEL_POLL_MS) return candidateSnapshot;
     const legacy = detectJobLegacy();
     const text = modelInput(legacy);
-    candidateSnapshot = {href:location.href, at:now, legacy, text, titleCandidates:collectTitleCandidates(legacy)};
+    candidateSnapshot = {href:location.href, at:now, legacy, text};
     return candidateSnapshot;
   }
   function panelSnapshotFor(text, legacy) {
@@ -710,7 +705,7 @@
     }
     const href=location.href;
     modelInFlight = new Promise(resolve=>{
-      chrome.runtime.sendMessage({type:'jd_model_extract',text,title_candidates:candidate.titleCandidates},response=>{
+      chrome.runtime.sendMessage({type:'jd_model_extract',text},response=>{
         const runtimeError = chrome.runtime.lastError?.message;
         const current = location.href===href ? modelCandidate(true) : null;
         const currentStable = current ? panelSnapshotFor(current.text, current.legacy) : null;
@@ -745,6 +740,7 @@
             }
             sanitizeJobTitle(modelJob);
             modelSource='model';
+            if (!modelJob.company_name) requestJdVision(response.data?.vision_ticket,signature);
           } else {
             modelJob=legacy;modelSource='legacy';
             modelError=response?.error || runtimeError || '模型未确认岗位详情';
@@ -1492,6 +1488,10 @@
 
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg?.type === 'jd_vision_guard') {
+        sendResponse?.({ok:sender.id === chrome.runtime.id && allowJdScreenshot(msg.signature)});
+        return false;
+      }
       if (msg?.type === 'tounar_feedback_settings') {
         feedbackEnabled = msg.enabled !== false;
         if (!feedbackEnabled) hideToast();
@@ -1599,7 +1599,9 @@
       review_item_id: result?.result?.review_item_id || null,
       error: result?.result?.error || null,
       model_used: job.field_sources?.jd_text === 'model_source_quote',
-      model_notice: jdModelMode === true && modelError ? '智能整理未完成，已使用网页识别结果' : null,
+      model_notice: !job.company_name && visionSuggestion?.signature === modelSignature
+        ? `图片建议：${visionSuggestion.name}（请手动确认）`
+        : jdModelMode === true && modelError ? '智能整理未完成，已使用网页识别结果' : null,
       learned: learned ? learned.status : null,
       job: { job_title: job.job_title, company_name: job.company_name || '', jd_chars: (job.jd_text || '').length }
     };

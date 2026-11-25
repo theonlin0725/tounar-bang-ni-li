@@ -1,4 +1,4 @@
-/* 网易互娱 campus.game.163.com 四岗离线 DOM 回归：规则、模型候选、模型失败三条路径。
+/* 网易互娱 campus.game.163.com 四岗离线 DOM 回归：规则、全文模型、模型失败三条路径。
  * 不访问真实站点；fixture 由已渲染实页去除脚本/图片/二维码后固定保存。 */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +21,7 @@ function check(name, ok, detail = '') {
   console.log(`${pass ? '✔' : '✖'} ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-const browser = await chromium.launch({ executablePath: (await resolveChromiumExecutable())?.path, headless: true });
+const browser = await chromium.launch({ executablePath: process.env.E2E_CHROME || (await resolveChromiumExecutable())?.path, headless: true });
 try {
   for (const mode of ['rules', 'model', 'model-fail']) {
     for (const id of FIXTURES) {
@@ -55,7 +55,7 @@ try {
       await page.goto(`https://campus.game.163.com/app/detail/index?id=${id}&projectId=102`, { waitUntil: 'domcontentloaded' });
       await page.addScriptTag({ path: path.join(ROOT, 'extension/content/adapters.js') });
       await page.addScriptTag({ path: path.join(ROOT, 'extension/content/tracker.js') });
-      await page.waitForTimeout(12000);
+      await page.waitForFunction(() => window.__captured.some(item => item.event_type === 'job_viewed'), null, { timeout: 12000 }).catch(() => {});
       const state = await page.evaluate(() => ({ events: window.__captured, models: window.__models }));
       const event = state.events.find((item) => item.event_type === 'job_viewed');
       check(`${mode} / ${id} 同岗浏览事件`, !!event, `events=${state.events.length}`);
@@ -76,11 +76,9 @@ try {
           JSON.stringify(event.payload.field_sources));
       }
       if (mode === 'model') {
-        const candidates = state.models[0]?.candidates || [];
-        check(`${id} 模型候选只含独立名称，不含名称+标签父节点`,
-          candidates.some((item) => item.text === expected[0])
-          && !candidates.some((item) => item.text.includes(expected[2]) || item.text === `${expected[0]} ${expected[2]}`),
-          JSON.stringify(candidates.map((item) => item.text)));
+        const input = state.models[0];
+        check(`${id} 模型收到独立岗位原文且不受候选限制`,
+          input?.candidates.length === 0 && input.text.split('\n').includes(expected[0]));
       }
       if (mode !== 'rules') check(`${mode} / ${id} 模型调用至少一次`, state.models.length >= 1, `models=${state.models.length}`);
       await context.close();

@@ -7,19 +7,18 @@ const checks=[];const check=(name,value)=>{assert.ok(value,name);checks.push(nam
 let calls=0;
 const fake=http.createServer(async(req,res)=>{
  let body='';for await(const c of req)body+=c;
- const user=JSON.parse(JSON.parse(body).messages[1].content);const paragraphs=user.paragraphs;const candidates=user.title_candidates||[];
+ const user=JSON.parse(JSON.parse(body).messages[1].content);const paragraphs=user.paragraphs;
  const find=text=>paragraphs.find(p=>p.text===text)?.line;
- const evidence=text=>candidates.find(c=>c.text===text)?.id||null;
  if (find('校园AI产品经理') !== undefined || find('校园数据产品经理') !== undefined) {
   calls++;
   if (find('校园数据产品经理') !== undefined) { res.writeHead(503);res.end();return; }
-  const raw={is_job:true,job_title:'校园AI产品经理',job_title_evidence:evidence('校园AI产品经理'),company_name:'腾讯',sections:{团队介绍:[],岗位职责:[{line:find('负责定义和验证产品需求。')}],任职要求:[{line:find('能够阅读技术文档并清晰沟通。')}],其他信息:[]}};
+  const raw={is_job:true,job_title_line:find('校园AI产品经理'),company_name:'腾讯',sections:{团队介绍:[{line:find('团队负责研究校招产品体验。')}],岗位职责:[{line:find('负责定义和验证产品需求。')}],任职要求:[{line:find('能够阅读技术文档并清晰沟通。')}],其他信息:[]}};
   res.setHeader('Content-Type','application/json');
   res.end(JSON.stringify({model:'fixture',choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
   return;
  }
  if (find('1、设计平台。')===undefined) console.log('Fixture paragraphs:',JSON.stringify(paragraphs));
- const raw={is_job:true,job_title:'平台工程师',job_title_evidence:evidence('平台工程师'),company_name:'测试公司',location:'北京',recruitment_batch:null,sections:{团队介绍:[],岗位职责:[{line:find('1、设计平台。')},{line:find('2、维护服务。')}],任职要求:[{line:find('1、本科以上学历。')}],其他信息:[]}};
+ const raw={is_job:true,job_title_line:find('平台工程师'),company_name:'测试公司',location:'北京',recruitment_batch:null,sections:{团队介绍:[],岗位职责:[{line:find('1、设计平台。')},{line:find('2、维护服务。')}],任职要求:[{line:find('1、本科以上学历。')}],其他信息:[]}};
  calls++;res.setHeader('Content-Type','application/json');res.end(JSON.stringify({model:'fixture',usage:{prompt_tokens:100,completion_tokens:50},choices:[{finish_reason:'stop',message:{content:JSON.stringify(raw)}}]}));
 });
 await new Promise(r=>fake.listen(0,'127.0.0.1',r));
@@ -119,8 +118,8 @@ try{
  const capturedDetail=(await server.request(`/api/v1/applications/${captured.result.application_id}`,{cookie})).json.data;
  check('real extension saves separated JD with unchanged pending state',capturedDetail.jd_text.includes('任职要求')&&capturedDetail.status==='pending');
  await extensionContext.route('https://join.qq.com/post_detail.html?*', route=>{
-  const title=route.request().url().endsWith('101')?'校园AI产品经理':'校园数据产品经理';
-  return route.fulfill({contentType:'text/html; charset=utf-8',body:`<title>岗位详情 | 腾讯校招</title><div class="bannerTipLeft"><div class="bannerItemText">${title}</div></div><ul class="post_detail"><li class="detail_box"><div class="subtitle">岗位描述</div><div class="text_box"><p class="detail_text">负责定义和验证产品需求。</p></div></li><li class="detail_box"><div class="subtitle">岗位要求</div><div class="text_box"><p class="detail_text">能够阅读技术文档并清晰沟通。</p></div></li></ul>`});
+  const newLayout=route.request().url().endsWith('101');
+  return route.fulfill({contentType:'text/html; charset=utf-8',body:`<title>岗位详情 | 腾讯校招</title>${newLayout?'<h1>腾讯校招专区</h1><section><p>团队负责研究校招产品体验。</p></section>':'<div class="bannerTipLeft"><div class="bannerItemText">校园数据产品经理</div></div>'}<ul class="post_detail"><li class="detail_box"><div class="subtitle">岗位描述</div><div class="text_box"><p class="detail_text">负责定义和验证产品需求。</p></div></li><li class="detail_box"><div class="subtitle">岗位要求</div><div class="text_box"><p class="detail_text">能够阅读技术文档并清晰沟通。</p></div></li></ul>${newLayout?'<div>校园AI产品经理</div>':''}`});
  });
  for (const id of ['1283126456553382101','1283126456553382102']) {
   const url='https://join.qq.com/post_detail.html?postid='+id;
@@ -128,6 +127,7 @@ try{
   await campus.goto(url);await campus.bringToFront();
   if (id.endsWith('102')) await campus.evaluate(()=>{
     const notice=document.createElement('div');
+    notice.setAttribute('role','status');
     document.body.append(notice);
     setInterval(()=>{notice.textContent='更新公告 '+Date.now();},250);
   });
@@ -138,6 +138,8 @@ try{
   const saved=(await server.request('/api/v1/applications/'+campusResult.result.application_id,{cookie})).json.data;
   check('Tencent campus keeps canonical URL and both JD blocks '+id,saved.job_url===url && saved.jd_text.includes('负责定义和验证产品需求。') && saved.jd_text.includes('能够阅读技术文档并清晰沟通。'));
   check(fromLocal?'provider failure preserves original Tencent JD':'model organizes Tencent campus JD',Boolean(campusResult.result.model_notice)===fromLocal);
+  if (!fromLocal) check('Tencent model reads title without a selector and team text outside JD blocks',
+    campusResult.result.job.job_title==='校园AI产品经理'&&saved.jd_text.includes('团队负责研究校招产品体验。'));
   await campus.close();
  }
  console.log(JSON.stringify({passed:checks.length,provider:'local fake; no paid requests'}));

@@ -16,6 +16,8 @@ function profileOf(row) {
 }
 function projection(row, { includeText = false } = {}) {
   if (!row) return null;
+  const layoutMeta = row.layout_meta_json ? safeJsonParse(row.layout_meta_json, null) : null;
+  const { photo, links, ...publicLayout } = layoutMeta || {};
   return {
     id: row.id,
     filename: row.filename,
@@ -31,7 +33,7 @@ function projection(row, { includeText = false } = {}) {
     target_application_id: row.target_application_id || null,
     rewrite_summary: row.rewrite_summary_json ? safeJsonParse(row.rewrite_summary_json, null) : null,
     export_docx_path: row.export_docx_path || null,
-    layout_meta: row.layout_meta_json ? safeJsonParse(row.layout_meta_json, null) : null,
+    layout_meta: includeText ? layoutMeta : layoutMeta && publicLayout,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...(includeText ? { text: row.text } : { text_preview: String(row.text || '').slice(0, 800) })
@@ -58,7 +60,8 @@ export async function createResumeFromBuffer({ ownerId, filename, mime, buffer }
   const parsed = await extractResumeText({ filename, mime, buffer });
   return storeResume({
     ownerId, filename, mime, size: buffer.length, text: parsed.text, truncated: parsed.truncated,
-    layoutMeta: { format: parsed.format, source_filename: filename, source_mime: mime || null, profile: 'standard' }
+    layoutMeta: { format: parsed.format, source_filename: filename, source_mime: mime || null, profile: 'standard',
+      ...(parsed.photo ? { photo: parsed.photo } : {}), ...(parsed.links.length ? { links: parsed.links } : {}) }
   });
 }
 
@@ -85,7 +88,7 @@ function decodeResumeCursor(value) {
 }
 export function createResumeVersionFromText({
   ownerId, text, filename, parentResumeId = null, targetApplicationId = null,
-  rewriteSummary = null, setCurrent = false
+  rewriteSummary = null, setCurrent = false, photo = null, links = []
 }) {
   const clean = String(text || '').replace(/\u0000/g, '').replace(/\r\n?/g, '\n').trim();
   if (clean.length < 20) throw new AppError(422, 'RESUME_TEXT_TOO_SHORT', '改写后的简历文本太短，无法保存');
@@ -100,7 +103,8 @@ export function createResumeVersionFromText({
     ownerId, filename: filename || '简历 · 定向改写版', mime: 'text/plain',
     size: Buffer.byteLength(clean), text: clean.slice(0, MAX_RESUME_TEXT), truncated: clean.length > MAX_RESUME_TEXT,
     makeCurrent: !!setCurrent, parentResumeId, targetApplicationId, rewriteSummary,
-    layoutMeta: { format: 'rewritten_text', source_mime: 'text/plain', profile: 'standard' }
+    layoutMeta: { format: 'rewritten_text', source_mime: 'text/plain', profile: 'standard',
+      ...(photo ? { photo } : {}), ...(links.length ? { links } : {}) }
   });
 }
 

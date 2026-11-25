@@ -1,5 +1,6 @@
 /* Tounar 帮你理 · MV3 service worker（classic，importScripts 共享 lib） */
 importScripts('../lib/common.js', '../lib/queue.js', '../lib/api.js', '../content/adapters.js', '../lib/site-access.js', 'site-access.js');
+importScripts('jd-screenshot.js');
 
 const { getSettings, setSettings, clearPairing } = globalThis.TounarCommon;
 const Queue = globalThis.TounarQueue;
@@ -461,6 +462,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message?.type) {
       case 'jd_model_config':
+      case 'jd_company_vision':
       case 'jd_model_extract': {
         const settings = await getSettings();
         try {
@@ -468,10 +470,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const url = new URL(sender.url);
           if (!/^https?:$/.test(url.protocol) || selfOrigins(settings.serverUrl).has(url.origin)) throw new Error('此页面不能采集');
           if (!await chrome.permissions.contains({origins:[TounarSiteAccess.hostPattern(url.href)]})) throw new Error(`请先在“数据与授权”中授权当前招聘网站（${url.host}）`);
+          if (message.type === 'jd_company_vision') {
+            if (!/^[0-9a-f]{64}$/.test(message.ticket) || typeof message.signature !== 'string') throw new Error('无有效的整页识别请求');
+            const guard = () => chrome.tabs.sendMessage(sender.tab.id, { type:'jd_vision_guard', signature:message.signature }, { documentId:sender.documentId });
+            if (!(await guard())?.ok) { sendResponse({ok:true,data:{suggestion:null}}); return; }
+            const image = await captureJdFullPage(sender,url.href);
+            if (!image || !(await guard())?.ok) { sendResponse({ok:true,data:{suggestion:null}}); return; }
+            const result = await Api.request('/api/v1/plugin-jd/company-vision', {
+              method:'POST', serverUrl:settings.serverUrl, token:settings.deviceToken, timeoutMs:23000,
+              body:{url:url.href,ticket:message.ticket,image}
+            });
+            sendResponse({ok:true,data:result.data});
+            return;
+          }
           const extract = message.type === 'jd_model_extract';
           const result = await Api.request('/api/v1/plugin-jd/'+(extract?'extract':'config'),{
             method:extract?'POST':'GET',serverUrl:settings.serverUrl,token:settings.deviceToken,timeoutMs:28000,
-            ...(extract?{body:{url:url.href,text:message.text,title_candidates:Array.isArray(message.title_candidates)?message.title_candidates:[]}}:{})
+            ...(extract?{body:{url:url.href,text:message.text}}:{})
           });
           sendResponse({ok:true,data:result.data});
         } catch(err) {sendResponse({ok:false,error:err.message || '岗位识别暂不可用'});}

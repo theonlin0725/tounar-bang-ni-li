@@ -33,7 +33,7 @@ try {
   const login = await server.login('demo@tounar.local');
   const cookie = login.cookie;
   const resumeBody = await server.request('/api/v1/resumes/text', {
-    method: 'POST', cookie, body: { text: '张三\n教育背景：本科计算机科学\n项目经历：使用 Python 做数据分析，完成用户增长项目，指标提升 20%。\n技能：Python SQL 数据分析', filename: '产品简历' }
+    method: 'POST', cookie, body: { text: '张三\n教育背景：本科计算机科学\n实习经历\n示例公司 05/2025 - 08/2025\n负责报表：使用 SQL 整理业务指标。\n项目经历\n用户增长项目 03/2026\n• 使用 Python 做数据分析，完成用户增长项目，指标提升 20%。\n第二个项目 07/2026\n• 设计访谈流程并整理反馈。\n技能：Python SQL 数据分析', filename: '产品简历' }
   });
   check('测试简历创建成功', resumeBody.status === 201, resumeBody.text);
   const app1 = (await server.request('/api/v1/applications/manual', {
@@ -188,33 +188,56 @@ try {
   await page.waitForSelector('[data-test=rewrite-progress]', { timeout: 5000 });
   check('改写生成期间展示真实进度条', (await page.locator('[data-test=rewrite-progress-percent]').count()) === 1);
   await page.waitForSelector('[data-test=rewrite-block]', { timeout: 20000 });
-  const rewriteCounts = {
-    blocks: await page.locator('[data-test=rewrite-block]').count(),
-    aligns: await page.locator('[data-test=rewrite-inline-badge]').count(),
-    jd: await page.locator('[data-test=rewrite-jd-overview]').count()
-  };
-  check('改写生成左右对照块与 JD 四类概览', rewriteCounts.blocks >= 2 && rewriteCounts.aligns >= 2 && rewriteCounts.jd === 1, JSON.stringify(rewriteCounts));
-  const paired = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('.tn-rewrite-row:not(.tn-rewrite-row-head)')];
-    return {
-      rows: rows.length,
-      aligned: rows.every((row) => {
-        const cells = row.querySelectorAll(':scope > .tn-rewrite-cell');
-        return cells.length === 2 && Math.abs(cells[0].getBoundingClientRect().top - cells[1].getBoundingClientRect().top) <= 1;
-      }),
-      inline: [...document.querySelectorAll('[data-test=rewrite-inline-badge]')].every((badge) => {
-        const parent = badge.parentElement;
-        return parent?.classList.contains('tn-rewrite-text-line') && parent.firstElementChild?.classList.contains('tn-rewrite-block');
-      })
-    };
-  });
-  check('左右对照逐块同一行对齐，状态标签紧跟句尾而非独占行', paired.rows >= 2 && paired.aligned && paired.inline, JSON.stringify(paired));
-  const rewriteOverflow = await page.evaluate(() => {
-    const rows = document.querySelector('.tn-rewrite-rows');
-    return { scrollWidth: rows?.scrollWidth || 0, clientWidth: rows?.clientWidth || 0 };
-  });
-  check('左右对照无横向裁切', rewriteOverflow.scrollWidth <= rewriteOverflow.clientWidth + 1, JSON.stringify(rewriteOverflow));
-  await page.locator('[data-test=rewrite-block]').first().fill('E2E 改写首段');
+  const editable = page.locator('[data-test=rewrite-description][contenteditable]');
+  check('只有实习和项目描述可编辑，标题与小标题锁定', (await page.locator('.tn-resume-paper').count()) === 1
+    && (await editable.count()) === 3 && (await page.locator('[data-test=rewrite-jd-overview]').count()) === 1
+    && (await page.getByText('负责报表：', { exact: true }).first().getAttribute('contenteditable')) === null);
+  await editable.first().fill('使用 Python 整理业务指标。');
+  await editable.nth(1).fill('使用 Python 做用户增长分析，项目指标提升 20%。');
+  await editable.nth(1).blur();
+  check('整条已改正文画绿色虚下划线，标题和标签不标记', await editable.first().evaluate((node) =>
+    node.textContent === '使用 Python 整理业务指标。' && getComputedStyle(node).textDecorationStyle === 'dashed')
+    && (await page.locator('.tn-resume-description-label.is-rewritten, .tn-resume-row[data-kind=entry] .is-rewritten').count()) === 0);
+  const initialSize = page.viewportSize();
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  const paper = page.locator('.tn-resume-paper');
+  const review = await page.locator('.tn-resume-review').boundingBox();
+  const centered = await paper.boundingBox();
+  check('没有打开原文时，简历在审阅区域居中', review.width >= 1156
+    && Math.abs(2 * centered.x + centered.width - (2 * review.x + review.width)) < 2);
+  await page.locator('[data-test=rewrite-change-count]').click();
+  const note = page.locator('.tn-resume-note-body:visible');
+  const opened = await paper.boundingBox();
+  const rail = await note.boundingBox();
+  check('桌面打开原文才留右栏，A4 纸宽和正文高度不变', opened.x < centered.x
+    && Math.abs(opened.width - centered.width) < 1 && Math.abs(opened.height - centered.height) < 1
+    && rail.x >= opened.x + opened.width && rail.x + rail.width <= review.x + review.width + 1);
+  check('查看原文显示整条干净原文，不划删除线', (await note.count()) === 1
+    && (await note.innerText()).includes('示例公司') && (await note.locator('.tn-resume-note-copy').innerText()) === '负责报表：使用 SQL 整理业务指标。'
+    && (await note.locator('del').count()) === 0 && (await page.locator('.tn-resume-note-toggle[aria-expanded=true]').innerText()) === '查看原文');
+  const projectToggle = editable.nth(1).locator('xpath=../..').locator('.tn-resume-note-toggle');
+  await projectToggle.click();
+  check('切换查看另一条原文不移动简历', (await note.innerText()).includes('用户增长项目')
+    && Math.abs((await paper.boundingBox()).x - opened.x) < 1);
+  await note.getByRole('button', { name: '关闭', exact: true }).click();
+  check('关闭原文后简历回到居中位置', (await note.count()) === 0 && Math.abs((await paper.boundingBox()).x - centered.x) < 1);
+  await page.locator('[data-test=rewrite-change-count]').click();
+  await note.getByRole('button', { name: '恢复本条原文' }).click();
+  check('恢复只修改当前条目并移除绿线', (await editable.first().innerText()).includes('SQL')
+    && !(await editable.first().evaluate((node) => node.classList.contains('is-rewritten'))) && (await editable.nth(1).innerText()).includes('做用户增长分析'));
+  await page.waitForResponse((res) => res.request().method() === 'PATCH' && /rewrite\/drafts\//.test(res.url()));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('[data-test=rewrite-description]');
+  await page.locator('[data-test=rewrite-change-count]').click();
+  check('刷新后标注与对应原文保持一致', (await note.count()) === 1 && (await note.innerText()).includes('用户增长项目')
+    && (await editable.nth(1).evaluate((node) => getComputedStyle(node).textDecorationStyle === 'dashed')));
+  await page.screenshot({ path: path.join(OUT, 'resume-line-compare.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileEditor = await editable.nth(1).boundingBox();
+  const mobileNote = await note.boundingBox();
+  check('窄屏原文在对应条目下方，不压住正文', mobileNote.y >= mobileEditor.y + mobileEditor.height - 1
+    && mobileNote.x + mobileNote.width <= 391);
+  await page.setViewportSize(initialSize);
   await page.fill('[data-test=rewrite-name]', 'E2E定向简历');
   await page.click('[data-test=rewrite-confirm]');
   await page.waitForSelector('[data-test=rewrite-success]', { timeout: 20000 });

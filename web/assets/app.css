@@ -996,6 +996,66 @@ table.tn-table { min-width: 760px; table-layout: fixed; }
 .tn-rewrite-jd-overview { display:flex; gap:7px; flex-wrap:wrap; }
 .tn-rewrite-jd-chip { border:1px solid #dce8da; background:#f8fcf8; color:#466b52; border-radius:999px; padding:4px 9px; font-size:12px; }
 .tn-rewrite-rows { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.tn-career:has(.tn-resume-review) { max-width:1220px; }
+.tn-resume-review { container-type:inline-size; padding:4px 1px 16px; }
+.tn-resume-paper { position:relative; width:min(210mm, 100%); min-height:min(297mm, 141.43cqi); margin-inline:auto; background:white; color:#141414; outline:1px solid #dce1db; }
+.tn-resume-sheet { box-sizing:border-box; display:flow-root; padding:8mm; font:11pt/1.14 "Times New Roman", "Songti SC", SimSun, serif; overflow-wrap:anywhere; }
+.tn-resume-photo { position:absolute; top:4mm; right:8mm; width:21mm; height:27mm; object-fit:contain; }
+.tn-resume-row { position:relative; display:flex; align-items:baseline; gap:.5rem; }
+.tn-resume-line { flex:1; min-width:0; white-space:pre-wrap; }
+.tn-resume-row[data-kind="name"] { text-align:center; font-size:16pt; font-weight:bold; margin-bottom:4mm; }
+.tn-resume-row[data-kind="contact"] { text-align:center; }
+.tn-resume-row[data-kind="heading"] { margin-top:3.5mm; border-bottom:1.8pt solid currentColor; }
+.tn-resume-row[data-kind="heading"] h3 { margin:0; font: bold 12pt/1.1 "Times New Roman", "Songti SC", SimSun, serif; }
+.tn-resume-row[data-kind="entry"] { font-weight:bold; }
+.tn-resume-row[data-kind="subtitle"] { font-weight:bold; font-style:italic; }
+.tn-resume-entry-spaced { margin-top:2.8mm; }
+.tn-resume-row time { flex:none; font-style:italic; font-weight:normal; }
+.tn-resume-row[data-kind="bullet"] { padding-inline-start:6mm; }
+.tn-resume-row[data-kind="bullet"]::before { content:"•"; position:absolute; inset-inline-start:0; }
+.tn-resume-review-summary { display:flex; align-items:baseline; gap:8px 16px; flex-wrap:wrap; }
+.tn-resume-review-summary p { margin:0; }
+.tn-resume-change-jump,.tn-resume-note-action { border:0; background:none; color:#235943; font:inherit; font-weight:600; cursor:pointer; }
+.tn-resume-change-jump { border:1px solid #d4e4d9; border-radius:5px; padding:4px 10px; background:#f1f7f3; font-size:13px; }
+.tn-resume-change-jump:disabled { background:transparent; border-color:#e0e4df; color:#626d66; cursor:default; }
+.tn-resume-note-action { padding:2px 0; }
+.tn-resume-note-action:hover { text-decoration:underline; }
+.tn-resume-description[contenteditable]:focus { outline:1px solid #487861; outline-offset:2px; }
+.tn-resume-description.is-rewritten { text-decoration:underline dashed #2d8057 1px; text-underline-offset:3px; text-decoration-skip-ink:none; }
+.tn-resume-row:has(.tn-resume-note:not([hidden])) { display:grid; grid-template-columns:minmax(0, 1fr) auto; column-gap:8px; row-gap:0; }
+.tn-resume-note { display:contents; font:13px/1.55 system-ui,sans-serif; font-weight:normal; }
+.tn-resume-note[hidden],.tn-resume-note-body[hidden],.tn-resume-note-action[hidden] { display:none; }
+.tn-resume-note-toggle { align-self:start; color:#285d47; border:0; border-radius:4px; padding:1px 5px; background:#f0f6f1; cursor:pointer; white-space:nowrap; }
+.tn-resume-note-toggle[aria-expanded="true"] { background:#dbece0; }
+.tn-resume-note-body { grid-column:1 / -1; box-sizing:border-box; max-height:min(23rem, 60dvh); overflow:auto; margin:6px 0 10px; padding:12px 14px; border:1px solid #d8e2d9; border-inline-start:3px solid #5f9174; border-radius:4px; background:#f7faf7; white-space:pre-wrap; color:#182820; }
+.tn-resume-note-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.tn-resume-note-label { color:#285d47; }
+.tn-resume-note-context { font-size:12px; color:#56665c; margin-top:3px; }
+.tn-resume-note-copy { margin:8px 0; }
+.tn-resume-note-reason { color:#52665a; margin:6px 0; font-size:12px; }
+.tn-resume-note-reason summary { cursor:pointer; }
+.tn-resume-note-reason p { margin:4px 0; }
+.tn-resume-note-toggle.is-pending,.tn-resume-overflow { color:#8a4908; }
+@container (min-width:1080px) {
+  /* A4 plus the note rail; only reserve the rail while a note is visible. */
+  .tn-resume-paper:has(.tn-resume-note-body:not([hidden])) {
+    margin-inline:max(0px, calc((100% - 210mm - 360px) / 2)) auto;
+  }
+  .tn-resume-row:has(.tn-resume-note:not([hidden])) { display:flex; }
+  .tn-resume-note { display:block; position:absolute; inset-inline-start:calc(100% + 9mm); top:0; }
+  .tn-resume-note-toggle:not(.is-pending) { opacity:0; }
+  .tn-resume-row:hover .tn-resume-note-toggle,.tn-resume-row:focus-within .tn-resume-note-toggle,.tn-resume-note-toggle[aria-expanded="true"] { opacity:1; }
+  .tn-resume-note-body { position:absolute; z-index:2; inset-inline-start:calc(100% + 6px); top:0; width:min(278px, calc(100cqi - 210mm - 82px)); margin:0; }
+}
+@media (hover:none) { .tn-resume-note .tn-resume-note-toggle:not(.is-pending) { opacity:1; } }
+@container (max-width:520px) {
+  .tn-resume-sheet { padding:5mm; }
+}
+@media print {
+  .tn-resume-note,.tn-resume-review-summary { display:none !important; }
+  .tn-resume-row:has(.tn-resume-note) { display:flex; }
+  .tn-resume-description.is-rewritten { text-decoration:none; }
+}
 .tn-rewrite-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; align-items:start; min-width:0; }
 .tn-rewrite-row-head { align-items:center; padding:0 2px; }
 .tn-rewrite-row-head h3 { margin:0; font-size:13px; color:#52665a; }

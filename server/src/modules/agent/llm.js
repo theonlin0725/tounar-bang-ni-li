@@ -100,6 +100,7 @@ export async function chatAgent({
         headers: headers(),
         body: JSON.stringify({
           model,
+          ...(new URL(endpoint()).hostname === 'api.deepseek.com' ? { thinking: { type: 'disabled' } } : {}),
           temperature,
           max_tokens: currentMaxTokens,
           messages,

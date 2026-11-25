@@ -1,12 +1,9 @@
-/* v1.1.1 简历库「简历改写」工作台：岗位/简历/画像/JD 配置 → 左右对照编辑 → 新版本 + Word。 */
+/* 简历改写：岗位配置 → A4 审阅 → 新版本 + Word。 */
 import { api, errorText } from '../api.js';
 import { isStale } from '../app.js?v=20261124-1';
-import { h, clear, toast, openModal, idemKey, debounce } from '../util.js';
+import { h, clear, toast, openModal, idemKey } from '../util.js';
 import { openJobPicker } from './job-picker.js?v=20261124-1';
-
-const ALIGN_LABEL = {
-  supported_optimize: '已优化', improvable: '可优化', needs_user_fact: '待补事实', unsupported_blocked: '已拦截', unchanged: '未改动'
-};
+import { hasResumeDescriptionChange } from './resume-diff.js';
 
 export async function renderResumeRewrite(container, { gen, applicationId = null, draftId = null } = {}) {
   const root = h('div', { class: 'tn-rewrite-workbench', 'data-test': 'resume-rewrite-view' });
@@ -20,6 +17,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
   let draft = null;
   let busy = false;
   let saveTimer = null;
+  let saveInFlight = Promise.resolve();
   let pollTimer = null;
 
   function tabs() {
@@ -130,7 +128,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       if (!active()) return;
       draft = response.data;
       if (draft.status === 'failed') { busy = false; renderProgress(); return; }
-      if (Number(draft.progress_percent ?? 100) >= 100 && Array.isArray(draft.blocks) && draft.blocks.length) {
+      if (draft.status === 'confirmed' || (Number(draft.progress_percent ?? 100) >= 100 && Array.isArray(draft.blocks) && draft.blocks.length)) {
         busy = false;
         renderDraft();
         requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
@@ -146,10 +144,15 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
   }
 
   async function persistDraft() {
-    if (!draft) return;
+    if (!draft || draft.status !== 'ready') return;
     clearTimeout(saveTimer);
-    const response = await api.patch(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draft.id)}`, { blocks: draft.blocks, proposed_name: draft.proposed_name });
-    draft = response.data;
+    const { id, proposed_name } = draft;
+    const blocks = draft.blocks.filter((block) => block.editable).map(({ block_id, rewritten_text, description_prefix }) => ({
+      block_id, description_text: rewritten_text.slice((description_prefix || '').length)
+    }));
+    saveInFlight = saveInFlight.catch(() => {}).then(() => api.patch(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(id)}`, { blocks, proposed_name }));
+    const response = await saveInFlight;
+    if (draft?.id === response.data?.id) draft.proposed_name ||= response.data.proposed_name;
   }
   function scheduleSave() {
     clearTimeout(saveTimer);
@@ -159,71 +162,166 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
   }
   function renderDraft() {
     clear(root);
+    const confirmed = draft.status === 'confirmed';
     const app = draft.application || selectedApp;
     const source = draft.source_resume || selectedResume;
     const header = h('div', { class: 'tn-rewrite-draft-head' },
-      h('div', {}, h('h2', { text: '左右对照审阅' }),
+      h('div', {}, h('h2', { text: '简历改写审阅' }),
         h('p', { class: 'tn-small tn-muted', text: `${app?.company_name || ''} · ${app?.job_title || ''} · 原简历 ${source?.filename || ''}` })),
-      h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '返回配置', onclick: () => { draft = null; renderConfig(); } })));
+      h('div', { class: 'tn-action-row' }, h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: confirmed ? '重新改写' : '返回配置', onclick: async () => {
+        try {
+          await persistDraft();
+          selectedResume = resumes.find((resume) => resume.id === source?.id) || selectedResume;
+          if (app?.id && app.id !== selectedApp?.id) selectedApp = (await api.get(`/api/v1/applications/${encodeURIComponent(app.id)}`)).data;
+          draft = null;
+          const url = new URL(location.href); url.searchParams.delete('draft'); history.replaceState({}, '', url);
+          renderConfig();
+        }
+        catch (error) { toast('草稿保存失败：' + errorText(error), 'err'); }
+      } })));
     const jd = draft.jd_analysis || {};
     const jdOverview = h('div', { class: 'tn-rewrite-jd-overview', 'data-test': 'rewrite-jd-overview' },
       ...[['硬性要求', jd.hard_requirements], ['核心能力', jd.core_competencies], ['加分项', jd.plus_items], ['其他', jd.other_requirements]]
         .map(([label, values]) => h('span', { class: 'tn-rewrite-jd-chip', title: Array.isArray(values) ? values.join('、') : '', text: `${label}${Array.isArray(values) && values.length ? ` ${values.length}` : ''}` })));
-    const rows = h('div', { class: 'tn-rewrite-rows' },
-      h('div', { class: 'tn-rewrite-row tn-rewrite-row-head' }, h('h3', { text: '原简历' }), h('h3', { text: 'AI 改写稿（点击编辑）' })));
-    function diffNodes(original, rewritten) {
-      if (!rewritten || rewritten === original) return [document.createTextNode(original)];
-      let start = 0;
-      while (start < original.length && start < rewritten.length && original[start] === rewritten[start]) start += 1;
-      let end = 0;
-      while (end < original.length - start && end < rewritten.length - start
-        && original[original.length - 1 - end] === rewritten[rewritten.length - 1 - end]) end += 1;
-      const prefix = original.slice(0, start);
-      const suffix = original.slice(original.length - end);
-      const changed = rewritten.slice(start, rewritten.length - end);
-      return [
-        ...(prefix ? [document.createTextNode(prefix)] : []),
-        h('mark', { class: 'tn-rewrite-diff-mark', text: changed }),
-        ...(suffix ? [document.createTextNode(suffix)] : [])
-      ];
+    const sheet = h('article', { class: 'tn-resume-sheet', 'aria-label': 'A4 简历改写稿' });
+    if (['image/jpeg', 'image/png'].includes(draft.photo?.mime) && draft.photo?.base64) {
+      sheet.append(h('img', { class: 'tn-resume-photo', alt: '简历照片', src: 'data:' + draft.photo.mime + ';base64,' + draft.photo.base64 }));
     }
+    const paper = h('div', { class: 'tn-resume-paper' }, sheet);
+    const status = h('p', { class: 'tn-small tn-muted', role: 'status' });
+    const jump = h('button', { class: 'tn-resume-change-jump', type: 'button', 'data-test': 'rewrite-change-count', onclick: () => {
+      const firstChanged = [...rows.values()].find((item) => item.changed);
+      if (!firstChanged) return;
+      firstChanged.toggle.focus({ preventScroll: true });
+      firstChanged.row.scrollIntoView({ block: 'center', behavior: 'instant' });
+      if (firstChanged.note.hidden) firstChanged.toggle.click();
+    } });
+    let openNote;
+    function checkPage() {
+      const size = sheet.getBoundingClientRect();
+      const over = size.width >= 210 / 25.4 * 96 - 1 && size.height > 297 / 25.4 * 96 + 1;
+      status.textContent = over ? '预览可能超过一页 A4；导出时会实际检查 Word 页数。' : 'A4 简历预览 · 导出时校验一页';
+      status.classList.toggle('tn-resume-overflow', over);
+    }
+    const rows = new Map();
+    function updateSummary() {
+      const count = [...rows.values()].filter((item) => item.changed).length;
+      jump.textContent = count ? `有改动的条目 · ${count} 条` : '未生成有效改写';
+      jump.disabled = !count;
+    }
+    function addNote(row, block, editor, label, prefix, context) {
+      const original = block.original_text.slice(prefix.length);
+      const needsFact = block.alignment_type === 'needs_user_fact';
+      const copy = h('p', { class: 'tn-resume-note-copy', text: label + original });
+      const action = !confirmed ? h('button', { class: 'tn-resume-note-action', type: 'button', text: '恢复本条原文', onclick: () => {
+        block.rewritten_text = block.original_text;
+        refresh(true);
+        editor.focus({ preventScroll: true });
+        scheduleSave();
+        checkPage();
+      } }) : null;
+      const note = h('div', { class: 'tn-resume-note-body', id: 'tn-resume-note-' + block.block_id, hidden: true },
+        h('div', { class: 'tn-resume-note-head' }, h('strong', { class: 'tn-resume-note-label', text: '原文 · 只读' }),
+          h('button', { class: 'tn-resume-note-action', type: 'button', text: '关闭', onclick: () => { openNote?.(); toggle.focus(); } })),
+        h('div', { class: 'tn-resume-note-context', text: context }), copy,
+        needsFact && block.reason ? h('p', { class: 'tn-resume-note-reason', text: `待核实：${block.reason}` }) : null,
+        !needsFact && (block.reason || block.jd_evidence) ? h('details', { class: 'tn-resume-note-reason' },
+          h('summary', { text: '为什么改' }), block.reason ? h('p', { text: block.reason }) : null,
+          block.jd_evidence ? h('p', { text: '岗位依据：' + block.jd_evidence }) : null) : null, action);
+      const toggle = h('button', {
+        type: 'button', class: 'tn-resume-note-toggle' + (needsFact ? ' is-pending' : ''), 'aria-expanded': 'false',
+        'aria-controls': note.id, 'aria-label': `查看原文：${context} ${label || original.slice(0, 18)}${needsFact ? '（待核实）' : ''}`,
+        text: '查看原文',
+        onclick: () => {
+          const wasOpen = !note.hidden;
+          openNote?.();
+          if (wasOpen) return;
+          note.hidden = false;
+          toggle.setAttribute('aria-expanded', 'true');
+          openNote = () => { note.hidden = true; toggle.setAttribute('aria-expanded', 'false'); openNote = null; };
+        }
+      });
+      const aside = h('aside', { class: 'tn-resume-note', onkeydown: (event) => {
+        if (event.key === 'Escape' && !note.hidden) { openNote?.(); toggle.focus(); }
+      } }, toggle, note);
+      row.append(aside);
+      const item = { row, note, toggle, changed: false };
+      rows.set(block.block_id, item);
+      function refresh(renderEditor) {
+        const body = (block.rewritten_text || block.original_text).slice(prefix.length);
+        item.changed = hasResumeDescriptionChange(original, body);
+        if (renderEditor && editor.textContent !== body) editor.textContent = body;
+        editor.classList.toggle('is-rewritten', item.changed);
+        if (action) action.hidden = !item.changed;
+        aside.hidden = !item.changed && !needsFact;
+        if (aside.hidden && !note.hidden) openNote?.();
+        updateSummary();
+      }
+      editor.addEventListener('input', () => {
+        const body = editor.innerText.replace(/\r\n?/g, '\n').trim();
+        block.rewritten_text = body ? prefix + body : block.original_text;
+        refresh(false);
+        scheduleSave();
+        checkPage();
+      });
+      editor.addEventListener('blur', () => refresh(true));
+      refresh(true);
+    }
+    let first = true;
+    let previousEntry = false;
+    const datedSections = new Set();
+    let context = '';
     for (const block of draft.blocks) {
       const heading = block.kind === 'heading';
-      const left = h('div', { class: 'tn-rewrite-cell original' },
-        h(heading ? 'h4' : 'p', { class: 'tn-rewrite-original-block', text: block.original_text }));
-      const editable = h(heading ? 'h4' : 'div', {
-        class: `tn-rewrite-block ${block.alignment_type}`, contenteditable: 'true', spellcheck: 'false',
-        'data-test': 'rewrite-block', 'data-block-id': block.block_id,
-        title: [block.reason, block.jd_evidence ? `JD：${block.jd_evidence}` : ''].filter(Boolean).join('\n')
-      });
-      if (block.alignment_type === 'unchanged' || block.rewritten_text === block.original_text) editable.textContent = block.original_text;
-      else editable.append(...diffNodes(block.original_text, block.rewritten_text || block.original_text));
-      const showBadge = !heading && block.alignment_type !== 'unchanged';
-      const badge = showBadge ? h('span', {
-        class: `tn-rewrite-inline-badge ${block.alignment_type === 'needs_user_fact' ? 'is-needs' : block.alignment_type === 'unsupported_blocked' ? 'is-blocked' : 'is-optimized'}`,
-        'data-test': 'rewrite-inline-badge',
-        text: ALIGN_LABEL[block.alignment_type] || block.alignment_type
+      const original = block.original_text;
+      const value = block.editable ? (block.rewritten_text || original) : original;
+      const identity = first && !heading && block.section === '基本信息';
+      first = false;
+      const date = !block.editable && !heading && value.match(/\s+((?:\d{1,2}\/20\d{2}|20\d{2}[.\/-]\d{1,2})(?:\s*[-–—至]\s*(?:[\d./-]+|至今|今|Present))?)$/i);
+      const entry = !heading && (block.kind === 'entry' || Boolean(date));
+      const bullet = !heading && !entry && (/^[·•●▪◦]|^[-*]\s|^(?:总\s*GPA|核心课程|证书技能|语言能力)[：:]/.test(original)
+        || (['实习经历', '项目经历'].includes(block.section) && /^[^：:]{2,18}[：:]/.test(original)));
+      const unbullet = (str) => bullet ? str.replace(/^[·•●▪◦]\s*|^[-*]\s+/, '') : str;
+      const prefix = block.description_prefix || '';
+      const label = unbullet(prefix);
+      const editor = block.editable ? h('span', {
+        class: 'tn-resume-description', contenteditable: !confirmed ? 'plaintext-only' : null,
+        role: !confirmed ? 'textbox' : null, 'aria-multiline': !confirmed ? 'true' : null,
+        'aria-label': !confirmed ? `${block.section}正文${label ? '：' + label.trim() : ''}` : null,
+        'data-test': 'rewrite-description', spellcheck: 'false'
       }) : null;
-      editable.addEventListener('focus', () => {
-        if (badge) badge.hidden = true;
-        if (editable.dataset.plain === '1') return;
-        editable.textContent = block.rewritten_text || block.original_text;
-        editable.dataset.plain = '1';
-      });
-      editable.addEventListener('blur', () => { if (badge) badge.hidden = false; });
-      editable.addEventListener('input', () => { block.rewritten_text = editable.innerText; editable.dataset.plain = '1'; scheduleSave(); });
-      const annotation = h('div', { class: 'tn-rewrite-annotation' },
-        block.reason ? h('span', { class: 'tn-rewrite-reason', title: block.reason, text: block.reason }) : null,
-        block.jd_evidence ? h('span', { class: 'tn-rewrite-jd-evidence', title: block.jd_evidence, text: `JD：${block.jd_evidence}` }) : null,
-        block.alignment_type !== 'unchanged' && block.rewritten_text !== block.original_text ? h('button', { class: 'tn-rewrite-restore', type: 'button', text: '还原原句', onclick: () => { block.rewritten_text = block.original_text; block.alignment_type = 'unchanged'; renderDraft(); } }) : null);
-      rows.append(h('div', { class: 'tn-rewrite-row' }, left, h('div', { class: 'tn-rewrite-cell rewritten' },
-        h('div', { class: `tn-rewrite-text-line ${block.alignment_type}` }, editable, badge), annotation)));
+      const editable = h(heading ? 'h3' : 'div', {
+        class: 'tn-resume-line', 'data-test': 'rewrite-block', 'data-block-id': block.block_id
+      }, editor ? (label ? h('strong', { class: 'tn-resume-description-label', text: label }) : null) : document.createTextNode(unbullet(date ? value.slice(0, date.index) : value)), editor);
+      const row = h('div', { class: 'tn-resume-row', dataset: {
+        kind: heading ? 'heading' : identity ? 'name' : block.section === '基本信息' ? 'contact' : entry ? 'entry'
+          : bullet ? 'bullet' : block.kind === 'subtitle' || (previousEntry && ['实习经历', '教育背景', '教育经历'].includes(block.section)) ? 'subtitle' : 'body'
+      } }, editable, date ? h('time', { text: date[1] }) : null);
+      previousEntry = entry;
+      if (entry && ['实习经历', '项目经历'].includes(block.section)) {
+        if (datedSections.has(block.section)) row.classList.add('tn-resume-entry-spaced');
+        datedSections.add(block.section);
+      }
+      if (heading) context = block.section;
+      else if (entry) context = `${block.section} · ${date ? original.slice(0, date.index) : original}`;
+      if (!block.editable && /^https?:\/\//i.test(block.link_url || '')) {
+        const label = editable.textContent;
+        const index = label.lastIndexOf('链接');
+        if (index >= 0) editable.replaceChildren(label.slice(0, index), h('a', {
+          href: block.link_url, target: '_blank', rel: 'noopener noreferrer', text: '链接'
+        }), label.slice(index + 2));
+      }
+      if (editor) addNote(row, block, editor, label, prefix, context || block.section);
+      sheet.append(row);
     }
+    updateSummary();
+    queueMicrotask(checkPage);
+    document.fonts?.ready.then(checkPage);
     const needs = Array.isArray(draft.report?.needs_user_fact) ? draft.report.needs_user_fact : [];
     const missing = draft.blocks.filter((block) => block.alignment_type === 'needs_user_fact').map((block) => ({ block_id: block.block_id, prompt: block.reason }));
     const report = draft.report || {};
     const reportBox = h('details', { class: 'tn-rewrite-report', 'data-test': 'rewrite-report' },
-      h('summary', { text: `改写报告 · 已优化 ${report.optimized_count || 0} 段 · 待补 ${report.needs_user_fact_count || 0} 项 · 拦截 ${report.blocked_count || 0} 项` }),
+      h('summary', { text: `改写报告 · 待补 ${report.needs_user_fact_count || 0} 项 · 拦截 ${report.blocked_count || 0} 项` }),
       h('div', { class: 'tn-small tn-muted', text: report.gaps?.length ? `能力差距：${report.gaps.join('；')}` : '暂无额外能力差距。' }),
       (missing.length || needs.length) ? h('div', { class: 'tn-rewrite-needs', 'data-test': 'rewrite-needs-facts' },
         h('strong', { text: '需要你补充的真实事实' }),
@@ -232,6 +330,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
     name.addEventListener('input', () => { draft.proposed_name = name.value; scheduleSave(); });
     const setCurrent = h('input', { type: 'checkbox' });
     const confirmButton = h('button', { class: 'tn-btn tn-btn-primary', type: 'button', 'data-test': 'rewrite-confirm', text: '确认并生成 Word', onclick: async () => {
+      checkPage();
       confirmButton.disabled = true;
       try {
         await persistDraft();
@@ -244,6 +343,8 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
           h('strong', { text: created?.filename || '新版本已保存' }),
           h('a', { class: 'tn-btn tn-btn-primary tn-btn-sm', 'data-test': 'rewrite-download', href: `/api/v1/resumes/${encodeURIComponent(created?.id || '')}/export.docx`, text: '下载 Word' }),
           h('button', { class: 'tn-btn tn-btn-sm', type: 'button', text: '查看简历库', onclick: () => { location.href = '/?panel=career&section=resume'; } }));
+        draft = response.data.draft || { ...draft, status: 'confirmed', result_resume_id: created?.id };
+        renderDraft();
         root.prepend(success);
         success.querySelector('a')?.click();
       } catch (error) {
@@ -255,7 +356,11 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
       h('div', { class: 'tn-rewrite-name' }, h('span', { class: 'tn-small tn-muted', text: '新简历名称' }), name),
       h('label', { class: 'tn-small' }, setCurrent, document.createTextNode(' 保存后设为当前主简历')),
       confirmButton);
-    root.append(tabs(), header, jdOverview, rows, reportBox, footer);
+    const saved = confirmed && draft.result_resume_id ? h('div', { class: 'tn-rewrite-success' },
+      h('strong', { text: '此版本已确认，原简历未覆盖' }),
+      h('a', { class: 'tn-btn tn-btn-sm', href: `/api/v1/resumes/${encodeURIComponent(draft.result_resume_id)}/export.docx`, text: '下载已保存的 Word' })) : null;
+    root.append(tabs(), header, ...(saved ? [saved] : []), jdOverview,
+      h('div', { class: 'tn-resume-review-summary' }, jump, status), h('div', { class: 'tn-resume-review' }, paper), reportBox, ...(!confirmed ? [footer] : []));
   }
   async function load() {
     try {
@@ -273,7 +378,7 @@ export async function renderResumeRewrite(container, { gen, applicationId = null
         try {
           draft = (await api.get(`/api/v1/resumes/rewrite/drafts/${encodeURIComponent(draftId)}`)).data;
           if (active() && draft) {
-            if (draft.status === 'ready' && Number(draft.progress_percent ?? 100) >= 100 && draft.blocks?.length) renderDraft();
+            if (draft.status === 'confirmed' || (draft.status === 'ready' && Number(draft.progress_percent ?? 100) >= 100 && draft.blocks?.length)) renderDraft();
             else { renderProgress(); pollDraft(); }
             return;
           }
