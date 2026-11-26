@@ -218,6 +218,199 @@ try {
     `overflow=${overflow}`);
   await mobile.close();
 
+  /* ================= 7. 中英文多语言切换与本地字体专项 ================= */
+  const fontResponses = [];
+  const i18nCtx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, baseURL: server.base, locale: 'zh-CN' });
+  const pi = await i18nCtx.newPage();
+  pi.setDefaultTimeout(20000);
+  pi.on('pageerror', (error) => errors.push(`i18n pageerror: ${error.message}`));
+  pi.on('console', (msg) => {
+    if (msg.type() === 'error' && !/401|404/.test(msg.text())) errors.push(`i18n console: ${msg.text()}`);
+  });
+  pi.on('response', (res) => {
+    if (res.url().includes('/assets/fonts/') && res.url().endsWith('.woff2')) {
+      fontResponses.push({ url: res.url(), status: res.status(), contentType: res.headers()['content-type'] || '' });
+    }
+  });
+  await pi.addInitScript(() => {
+    window.__cspViolations = [];
+    document.addEventListener('securitypolicyviolation', (e) => {
+      window.__cspViolations.push(`${e.violatedDirective}:${e.blockedURI}`);
+    });
+  });
+
+  await pi.goto('/', { waitUntil: 'networkidle' });
+  await pi.waitForSelector('[data-test=home-page]');
+  check('H-22 默认打开 / 为中文，右上角语言切换器可见',
+    (await pi.locator('[data-test=home-lang-switch]').isVisible())
+      && (await pi.getAttribute('html', 'lang')) === 'zh-CN'
+      && (await pi.getAttribute('[data-test=home-lang-zh]', 'aria-pressed')) === 'true');
+
+  // 先把采集状态切换到「已投递」，后续验证语言切换后仍保留状态
+  await pi.click('[data-test=home-capture-toggle-applied]');
+  await pi.click('[data-test=home-lang-en]');
+  await pi.waitForFunction(() => document.documentElement.lang === 'en');
+  await pi.evaluate(() => document.fonts.ready);
+
+  const enSnapshot = await pi.evaluate(() => {
+    const pageEl = document.querySelector('[data-test=home-page]');
+    const titleEl = document.querySelector('.tn-home-hero-title');
+    const bodyStyle = getComputedStyle(pageEl);
+    const titleStyle = getComputedStyle(titleEl);
+    const loadedNunito = [...document.fonts].filter((f) => f.family.replace(/["']/g, '') === 'Nunito' && f.status === 'loaded');
+    return {
+      docTitle: document.title,
+      metaDesc: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
+      dataLang: pageEl?.getAttribute('data-lang'),
+      htmlLang: document.documentElement.lang,
+      bodyText: pageEl?.innerText || '',
+      downloadTitle: document.querySelector('[data-test=home-download-plugin]')?.getAttribute('title') || '',
+      captureAppliedPressed: document.querySelector('[data-test=home-capture-toggle-applied]')?.getAttribute('aria-pressed'),
+      bodyFont: bodyStyle.fontFamily,
+      titleFont: titleStyle.fontFamily,
+      loadedNunitoCount: loadedNunito.length,
+      cspViolations: window.__cspViolations || []
+    };
+  });
+  check('H-23 切换 EN 后文档标题、Hero/Tab/悬浮标注/底部 CTA 全部切为英文',
+    enSnapshot.dataLang === 'en'
+      && enSnapshot.htmlLang === 'en'
+      && enSnapshot.docTitle === 'Tounar — Keep every job application in sync'
+      && enSnapshot.metaDesc.includes('Personal job application tracker and AI copilot')
+      && enSnapshot.bodyText.includes('Apply smarter. Stay organized.')
+      && enSnapshot.bodyText.includes('Auto-Capture')
+      && enSnapshot.bodyText.includes('Resume Tailor')
+      && enSnapshot.bodyText.includes('Email Sync')
+      && enSnapshot.bodyText.includes('AI Copilot')
+      && enSnapshot.bodyText.includes('Captured from site')
+      && enSnapshot.bodyText.includes('Ready to organize your job search?')
+      && enSnapshot.bodyText.includes('Install Guide')
+      && enSnapshot.downloadTitle.includes('Download extension ZIP')
+      && enSnapshot.captureAppliedPressed === 'true',
+    enSnapshot.docTitle);
+
+  check('H-24 本地 Nunito .woff2 字体 HTTP 200 加载成功且无 CSP 违规',
+    fontResponses.some((r) => r.status === 200 && r.contentType.includes('font/woff2'))
+      && enSnapshot.loadedNunitoCount > 0
+      && enSnapshot.bodyFont.includes('Nunito')
+      && enSnapshot.titleFont.includes('Nunito')
+      && enSnapshot.cspViolations.length === 0,
+    JSON.stringify({ fontResponses, loadedNunitoCount: enSnapshot.loadedNunitoCount, bodyFont: enSnapshot.bodyFont, csp: enSnapshot.cspViolations }));
+
+  // 滚动到 #mail 并验证 EN <-> 中 留在原处且 navPill 对齐
+  await pi.click('[data-test=home-tab-mail]');
+  await waitFor(() => pi.evaluate(() => location.hash === '#mail' && document.querySelector('#mail .tn-home-reveal.is-visible') !== null), { label: '滚动到 #mail 并渐显' });
+  await sleep(320);
+  const beforeScroll = await pi.evaluate(() => ({
+    y: window.scrollY,
+    mailVisible: document.querySelector('#mail .tn-home-feature-copy')?.classList.contains('is-visible') || false
+  }));
+  await pi.click('[data-test=home-lang-zh]');
+  await pi.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+  await sleep(320);
+  const zhAfterToggle = await pi.evaluate(() => {
+    const tab = document.querySelector('[data-test=home-tab-mail]');
+    const pill = document.querySelector('.tn-home-nav-pill');
+    const tr = new DOMMatrixReadOnly(getComputedStyle(pill).transform).m41;
+    return {
+      y: window.scrollY,
+      mailVisible: document.querySelector('#mail .tn-home-feature-copy')?.classList.contains('is-visible') || false,
+      captureAppliedPressed: document.querySelector('[data-test=home-capture-toggle-applied]')?.getAttribute('aria-pressed'),
+      pillWidthDiff: Math.abs(pill.getBoundingClientRect().width - tab.offsetWidth),
+      pillLeftDiff: Math.abs(tr - tab.offsetLeft),
+      tabActive: tab.classList.contains('is-active')
+    };
+  });
+  check('H-25 滚动至 #mail 后切换 EN → 中 保持原位、保留状态且指示条精准对齐',
+    Math.abs(zhAfterToggle.y - beforeScroll.y) < 20
+      && beforeScroll.mailVisible && zhAfterToggle.mailVisible
+      && zhAfterToggle.captureAppliedPressed === 'true'
+      && zhAfterToggle.tabActive
+      && zhAfterToggle.pillWidthDiff <= 2
+      && zhAfterToggle.pillLeftDiff <= 2,
+    JSON.stringify({ beforeY: beforeScroll.y, afterY: zhAfterToggle.y, ...zhAfterToggle }));
+
+  await pi.click('[data-test=home-lang-en]');
+  await pi.waitForFunction(() => document.documentElement.lang === 'en');
+  await pi.evaluate(() => document.fonts.ready);
+  await sleep(320);
+  const enAfterToggle = await pi.evaluate(() => {
+    const tab = document.querySelector('[data-test=home-tab-mail]');
+    const pill = document.querySelector('.tn-home-nav-pill');
+    const tr = new DOMMatrixReadOnly(getComputedStyle(pill).transform).m41;
+    return {
+      y: window.scrollY,
+      pillWidthDiff: Math.abs(pill.getBoundingClientRect().width - tab.offsetWidth),
+      pillLeftDiff: Math.abs(tr - tab.offsetLeft),
+      tabActive: tab.classList.contains('is-active')
+    };
+  });
+  check('H-26 切换 中 → EN 同样保持原位且英文 Tab 指示条对齐',
+    Math.abs(enAfterToggle.y - zhAfterToggle.y) < 20
+      && enAfterToggle.tabActive
+      && enAfterToggle.pillWidthDiff <= 2
+      && enAfterToggle.pillLeftDiff <= 2,
+    JSON.stringify(enAfterToggle));
+
+  // 刷新保留 localStorage 选择的英文状态
+  await pi.reload({ waitUntil: 'networkidle' });
+  await pi.waitForSelector('[data-test=home-page]');
+  check('H-27 刷新页面后保留 localStorage 中选择的英文状态',
+    (await pi.getAttribute('html', 'lang')) === 'en'
+      && (await pi.evaluate(() => localStorage.getItem('tounar.home.lang'))) === 'en'
+      && (await pi.locator('[data-test=home-cta-login]').innerText()).includes('Start Tracking'));
+
+  // 从英文官网进入登录页，检查 <html lang="zh-CN"> 与标题恢复正常
+  await pi.click('[data-test=home-cta-login]');
+  await pi.waitForSelector('[data-test=login-email]');
+  const loginMeta = await pi.evaluate(() => ({
+    lang: document.documentElement.lang,
+    title: document.title
+  }));
+  check('H-28 从英文官网进入登录页后 <html lang="zh-CN"> 与默认中文标题恢复',
+    loginMeta.lang === 'zh-CN' && loginMeta.title.includes('让投递更省心'),
+    JSON.stringify(loginMeta));
+
+  // 通过 ?lang=en 直开英文官网（不受 localStorage 为 zh 影响）
+  await pi.evaluate(() => localStorage.setItem('tounar.home.lang', 'zh'));
+  await pi.goto('/?lang=en', { waitUntil: 'networkidle' });
+  await pi.waitForSelector('[data-test=home-page]');
+  check('H-29 URL 参数 ?lang=en 优先级高于 localStorage，直开英文官网',
+    (await pi.getAttribute('html', 'lang')) === 'en'
+      && (await pi.locator('[data-test=home-nav-login]').innerText()).includes('Sign In'));
+  await i18nCtx.close();
+
+  // 已登录访问 /?view=home&lang=en
+  const authedEn = await browser.newContext({ viewport: { width: 1280, height: 900 }, baseURL: server.base, locale: 'zh-CN' });
+  await addSessionCookie(authedEn, server.base, login.cookie);
+  const pAuthedEn = await authedEn.newPage();
+  pAuthedEn.on('pageerror', (error) => errors.push(`authed-en pageerror: ${error.message}`));
+  await pAuthedEn.goto('/?view=home&lang=en', { waitUntil: 'networkidle' });
+  await pAuthedEn.waitForSelector('[data-test=home-page]');
+  const authedNavText = await pAuthedEn.locator('[data-test=home-nav-login]').innerText();
+  const authedCtaText = await pAuthedEn.locator('[data-test=home-cta-login]').innerText();
+  check('H-30 已登录访问 /?view=home&lang=en 主按钮显示 Open App / Open Workspace',
+    authedNavText.includes('Open App') && authedCtaText.includes('Open Workspace'),
+    `${authedNavText.trim()} | ${authedCtaText.trim()}`);
+  await authedEn.close();
+
+  // 390px 移动端英文模式下无横向溢出且切换器可见可用
+  const mobileEn = await browser.newContext({ viewport: { width: 390, height: 844 }, baseURL: server.base, locale: 'zh-CN' });
+  const pme = await mobileEn.newPage();
+  pme.on('pageerror', (error) => errors.push(`mobile-en pageerror: ${error.message}`));
+  await pme.goto('/?lang=en', { waitUntil: 'networkidle' });
+  await pme.waitForSelector('[data-test=home-page]');
+  await pme.evaluate(() => document.fonts.ready);
+  const mobileEnOverflow = await pme.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const langSwitchVisible = await pme.locator('[data-test=home-lang-switch]').isVisible();
+  await pme.click('[data-test=home-lang-zh]');
+  await pme.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+  const mobileZhOverflow = await pme.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  check('H-31 390px 移动端英文模式下无横向溢出且语言切换器可见可用',
+    mobileEnOverflow <= 0 && mobileZhOverflow <= 0 && langSwitchVisible,
+    `enOverflow=${mobileEnOverflow}, zhOverflow=${mobileZhOverflow}, switchVisible=${langSwitchVisible}`);
+  await mobileEn.close();
+
   check('H-21 页面无脚本错误', errors.length === 0, errors.join(' | '));
 } catch (error) {
   failed += 1;

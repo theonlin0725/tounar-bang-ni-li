@@ -1,104 +1,24 @@
 /* 官网首页（登录引导落地页）。
-   零依赖原生实现：吸顶导航 + ScrollSpy + 滚动渐显 + 邮件状态轮播。
+   零依赖原生实现：吸顶导航 + ScrollSpy + 滚动渐显 + 邮件状态轮播 + 中英文切换。
    renderHome() 返回清理函数，路由切换时必须调用，避免 IntersectionObserver
-   与定时器在已卸载的 DOM 上继续运行。 */
+   与定时器在已卸载的 DOM 上继续运行，并还原文档语言与标题元数据。 */
 
 import { h, clear } from '../util.js';
 import { pluginDownloadLink, openPluginHelp } from './plugin-help.js?v=20261125-1';
+import { HOME_COPY, persistHomeLang, resolveInitialHomeLang } from './home-i18n.js?v=20261127-1';
 
-const NAV_ITEMS = [
-  { id: 'capture', label: '岗位抓取' },
-  { id: 'resume', label: '简历改写' },
-  { id: 'mail', label: '邮件追踪' },
-  { id: 'assistant', label: 'AI 助手' }
-];
-
-const MAIL_STEPS = ['一面', '二面', '三面'];
-
-const FEATURES = [
-  {
-    id: 'capture',
-    index: '01',
-    label: '岗位抓取',
-    slogan: '逛官网顺手记，投过看过不漏单。',
-    intro: '直接去目标公司官网浏览和投递，随时随地自动记录你的「已投递」与「看过没投」状态，不用再手动复制粘贴 Excel。',
-    points: [
-      ['官网原生采集', '照常在各公司招聘官网浏览与投递，浏览器插件静默识别公司、岗位与完整 JD。'],
-      ['看过也能留痕', '犹豫还没投的岗位自动归入「看过没投」，想投时一键转入投递台账。'],
-      ['只采你访问的页面', '不替你后台爬虫，不碰账号密码与 Cookie，采集记录可控可撤销。']
-    ],
-    image: {
-      src: '/assets/img/home/feature-capture.webp',
-      alt: '待确认页中展示插件捕获的公司、岗位与 JD 预览卡片',
-      path: 'tounar · 待确认 · 插件线索',
-      width: 960,
-      height: 600
-    }
-  },
-  {
-    id: 'resume',
-    index: '02',
-    label: '简历匹配与改写',
-    slogan: '照着心仪岗位改简历，不瞎编、按模板直接出稿。',
-    intro: '选中台账里的目标岗位，结合你的真实简历与个性化要求，逐条对齐 JD 重点进行改写，并按标准模板生成对应版本，方便多版本管理。',
-    points: [
-      ['先看匹配再动笔', '对照岗位硬门槛与能力维度给出清晰结论，短板与优势一目了然。'],
-      ['支持个性化要求', '可补充「突出某段项目」「精简篇幅」「偏重数据分析」等定制指令，不凭空捏造经历。'],
-      ['逐行对照 + 模板生成', '原文与改写稿左右对照高亮改动，一键保存为新简历版本并按模板导出。']
-    ],
-    image: {
-      src: '/assets/img/home/feature-resume.webp',
-      alt: '简历改写工作台，左侧原文与右侧浅绿高亮改写稿逐段对照',
-      path: 'tounar · 简历改写工作台',
-      width: 960,
-      height: 600
-    }
-  },
-  {
-    id: 'mail',
-    index: '03',
-    label: '邮件状态更新与提醒',
-    slogan: '一面变二面、二面变三面，邮件一来状态自己跳。',
-    intro: '授权连接招聘邮箱后，自动识别笔试、面试邀约与结果邮件，实时更新对应岗位的投递阶段；长时间没回音的投递支持定期回看提醒。',
-    points: [
-      ['自动识别阶段流转', '收到新邮件自动将台账状态从「已投递 → 笔试 → 一面 → 二面 → 三面 / Offer」精准推进。'],
-      ['定期回看不错过', '自定义静默天数阈值（如 7 天未更新），到期汇总提醒你复盘或跟进。'],
-      ['隐私边界清晰', '仅筛选招聘相关邮件提取状态，不读取附件、不保存邮件原文，随时可一键断开。']
-    ],
-    image: {
-      src: '/assets/img/home/feature-mail.webp',
-      alt: '岗位详情抽屉中的状态流转时间线，展示已投递、一面、二面的邮件自动推进',
-      path: 'tounar · 投递台账 · 状态时间线',
-      width: 960,
-      height: 600
-    }
-  },
-  {
-    id: 'assistant',
-    index: '04',
-    label: 'AI 助手全面打通',
-    slogan: '懂你全盘台账的 AI，帮你查进度、挑岗位、记偏好。',
-    intro: 'AI 助手直接打通你的台账、简历与历史互动，不仅能一句话整理进度、分析对比多个岗位，还能在对话中逐步沉淀你的个人求职偏好。',
-    points: [
-      ['一句话管理台账', '直接问「这周有哪些面试」「把某公司标成二面」，确认后直接写入真实台账。'],
-      ['跨岗位分析与匹配', '结合简历帮你横向比较多个备选岗位，给出投递优先级与面试准备建议。'],
-      ['沉淀个人求职偏好', '记录你的意向城市、岗位方向、避雷项与薪资底线，越用越懂你想找什么工作。']
-    ],
-    image: {
-      src: '/assets/img/home/feature-assistant.webp',
-      alt: '右侧 AI 投递助理抽屉，展示台账查询结论、岗位对比与待确认操作卡片',
-      path: 'tounar · AI 投递助理',
-      width: 960,
-      height: 620
-    }
-  }
-];
+const NAV_TAB_IDS = ['capture', 'resume', 'mail', 'assistant'];
 
 function brandMark() {
   return h('span', { class: 'tn-brand-mark tn-home-brand-mark', 'aria-hidden': 'true', text: 'T' });
 }
 
-function tabLink({ id, label }, { mobile = false } = {}) {
+function setMetaDescription(content) {
+  const meta = document.querySelector('meta[name="description"]');
+  if (meta) meta.setAttribute('content', content);
+}
+
+function tabLink(id, label, { mobile = false } = {}) {
   return h('a', {
     class: `tn-home-nav-tab${mobile ? ' tn-home-mobile-tab' : ''}`,
     href: `#${id}`,
@@ -135,93 +55,161 @@ function shotFrame({ image, badge = null, badges = null, test }) {
       h('div', { class: 'tn-home-fallback-foot' }, h('span'), h('span'))
     )
   );
+  const pathEl = h('span', { class: 'tn-home-shot-path', text: image.path });
   frame.append(
     h('div', { class: 'tn-home-shot-bar' },
       h('span', { class: 'tn-home-shot-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
-      h('span', { class: 'tn-home-shot-path', text: image.path })
+      pathEl
     ),
     viewport
   );
   const allBadges = badges || (badge ? [badge] : []);
   for (const item of allBadges) frame.append(item);
-  return frame;
+  return { frame, img, pathEl };
 }
 
-function featureBadges(feature) {
+function featureBadges(feature, featureIndex, bind) {
   if (feature.id === 'capture') {
+    const strong = h('strong', { text: feature.badges.strong });
+    const viewedBtn = h('button', {
+      class: 'tn-home-toggle', type: 'button',
+      'data-test': 'home-capture-toggle-viewed', 'aria-pressed': 'true',
+      text: feature.badges.viewed
+    });
+    const appliedBtn = h('button', {
+      class: 'tn-home-toggle', type: 'button',
+      'data-test': 'home-capture-toggle-applied', 'aria-pressed': 'false',
+      text: feature.badges.applied
+    });
+    const group = h('div', {
+      class: 'tn-home-toggle-group', role: 'group',
+      'aria-label': feature.badges.toggleAriaLabel
+    }, viewedBtn, appliedBtn);
+
+    bind((copy) => {
+      const next = copy.features[featureIndex].badges;
+      strong.textContent = next.strong;
+      group.setAttribute('aria-label', next.toggleAriaLabel);
+      viewedBtn.textContent = next.viewed;
+      appliedBtn.textContent = next.applied;
+    });
+
     return [h('div', { class: 'tn-home-shot-badge tn-home-capture-badge', 'data-test': 'home-capture-badge' },
       h('span', { class: 'tn-home-badge-dot', 'aria-hidden': 'true' }),
-      h('strong', { text: '官网插件已捕获' }),
+      strong,
       h('span', { class: 'tn-home-badge-divider', 'aria-hidden': 'true' }),
-      h('div', { class: 'tn-home-toggle-group', role: 'group', 'aria-label': '采集状态示例' },
-        h('button', { class: 'tn-home-toggle', type: 'button', 'data-test': 'home-capture-toggle-viewed', 'aria-pressed': 'true', text: '看过没投' }),
-        h('button', { class: 'tn-home-toggle', type: 'button', 'data-test': 'home-capture-toggle-applied', 'aria-pressed': 'false', text: '已投递' })
-      )
+      group
     )];
   }
   if (feature.id === 'resume') {
+    const promptStrong = h('strong', { text: feature.badges.prompt });
+    const exportTag = h('span', { class: 'tn-home-mono-tag', text: feature.badges.exportTag });
+    const exportText = h('span', { text: feature.badges.exportText });
+    bind((copy) => {
+      const next = copy.features[featureIndex].badges;
+      promptStrong.textContent = next.prompt;
+      exportTag.textContent = next.exportTag;
+      exportText.textContent = next.exportText;
+    });
     return [
       h('div', { class: 'tn-home-shot-badge tn-home-resume-badge', 'data-test': 'home-resume-badge' },
         h('span', { class: 'tn-home-check', 'aria-hidden': 'true', text: '✓' }),
-        h('strong', { text: '已融入个性化要求' })),
+        promptStrong),
       h('div', { class: 'tn-home-shot-badge tn-home-export-badge' },
-        h('span', { class: 'tn-home-mono-tag', text: 'DOCX' }),
-        h('span', { text: '按标准模板一键导出' }))
+        exportTag,
+        exportText)
     ];
   }
   if (feature.id === 'mail') {
-    return [h('div', { class: 'tn-home-shot-badge tn-home-mail-badge', 'data-test': 'home-mail-badge' },
-      h('div', { class: 'tn-home-mail-flow', 'aria-label': '邮件自动推进示例' },
-        ...MAIL_STEPS.map((label, index) => h('span', {
-          class: `tn-home-mail-step${index === 0 ? ' is-active' : ''}`,
-          'data-home-mail-step': String(index),
-          text: label
-        })),
+    const stepNodes = feature.badges.steps.map((label, index) => h('span', {
+      class: `tn-home-mail-step${index === 0 ? ' is-active' : ''}`,
+      'data-home-mail-step': String(index),
+      text: label
+    }));
+    const dueEl = h('span', { class: 'tn-home-due-badge', text: feature.badges.due });
+    const flowEl = h('div', { class: 'tn-home-mail-flow', 'aria-label': feature.badges.flowAriaLabel },
+      ...stepNodes,
       h('span', { class: 'tn-home-badge-divider', 'aria-hidden': 'true' }),
-      h('span', { class: 'tn-home-due-badge', text: '⏰ 7 天未推进定期回看' })))
-    ];
+      dueEl
+    );
+    bind((copy) => {
+      const next = copy.features[featureIndex].badges;
+      flowEl.setAttribute('aria-label', next.flowAriaLabel);
+      stepNodes.forEach((node, idx) => { node.textContent = next.steps[idx]; });
+      dueEl.textContent = next.due;
+    });
+    return [h('div', { class: 'tn-home-shot-badge tn-home-mail-badge', 'data-test': 'home-mail-badge' }, flowEl)];
   }
-  return [h('div', { class: 'tn-home-shot-badge tn-home-assistant-badge', 'data-test': 'home-assistant-badge' },
-    h('span', { class: 'tn-home-pref-pill', text: '意向：AI 产品' }),
-    h('span', { class: 'tn-home-pref-pill', text: '城市：上海/杭州' }),
-    h('span', { class: 'tn-home-pref-pill is-warn', text: '避雷：外包' })
-  )];
+  const pillNodes = feature.badges.pills.map((pill) => h('span', {
+    class: `tn-home-pref-pill${pill.warn ? ' is-warn' : ''}`,
+    text: pill.text
+  }));
+  bind((copy) => {
+    const nextPills = copy.features[featureIndex].badges.pills;
+    pillNodes.forEach((node, idx) => { node.textContent = nextPills[idx].text; });
+  });
+  return [h('div', { class: 'tn-home-shot-badge tn-home-assistant-badge', 'data-test': 'home-assistant-badge' }, ...pillNodes)];
 }
 
-function featureSection(feature) {
+function featureSection(feature, featureIndex, bind) {
   const flip = feature.index === '02' || feature.index === '04';
-  const frame = shotFrame({
+  const shot = shotFrame({
     image: feature.image,
-    badges: featureBadges(feature),
+    badges: featureBadges(feature, featureIndex, bind),
     test: `home-shot-${feature.id}`
   });
-  const copy = h('div', { class: 'tn-home-feature-copy tn-home-reveal' },
+  const eyebrowLabel = h('span', { text: `· ${feature.label}` });
+  const titleEl = h('h2', { class: 'tn-home-feature-title', id: `home-${feature.id}-title`, text: feature.slogan });
+  const introEl = h('p', { class: 'tn-home-feature-intro', text: feature.intro });
+  const pointNodes = feature.points.map(([title, desc]) => {
+    const strongEl = h('strong', { text: title });
+    const descEl = h('span', { text: desc });
+    const item = h('li', {},
+      h('span', { class: 'tn-home-point-check', 'aria-hidden': 'true', text: '✓' }),
+      h('div', {}, strongEl, descEl));
+    return { item, strongEl, descEl };
+  });
+
+  bind((copy) => {
+    const next = copy.features[featureIndex];
+    eyebrowLabel.textContent = `· ${next.label}`;
+    titleEl.textContent = next.slogan;
+    introEl.textContent = next.intro;
+    shot.img.alt = next.image.alt;
+    shot.pathEl.textContent = next.image.path;
+    pointNodes.forEach((p, idx) => {
+      const [nextTitle, nextDesc] = next.points[idx];
+      p.strongEl.textContent = nextTitle;
+      p.descEl.textContent = nextDesc;
+    });
+  });
+
+  const copyBlock = h('div', { class: 'tn-home-feature-copy tn-home-reveal' },
     h('div', { class: 'tn-home-eyebrow' },
       h('span', { class: 'tn-home-eyebrow-num', text: feature.index }),
-      h('span', { text: `· ${feature.label}` })),
-    h('h2', { class: 'tn-home-feature-title', text: feature.slogan }),
-    h('p', { class: 'tn-home-feature-intro', text: feature.intro }),
-    h('ul', { class: 'tn-home-feature-points' },
-      ...feature.points.map(([title, desc]) => h('li', {},
-        h('span', { class: 'tn-home-point-check', 'aria-hidden': 'true', text: '✓' }),
-        h('div', {}, h('strong', { text: title }), h('span', { text: desc })))))
+      eyebrowLabel),
+    titleEl,
+    introEl,
+    h('ul', { class: 'tn-home-feature-points' }, ...pointNodes.map((p) => p.item))
   );
-  const visual = h('div', { class: 'tn-home-feature-visual tn-home-reveal', 'data-reveal-delay': '1' }, frame);
+  const visual = h('div', { class: 'tn-home-feature-visual tn-home-reveal', 'data-reveal-delay': '1' }, shot.frame);
   return h('section', {
     class: `tn-home-feature${flip ? ' is-flip' : ''}`,
     id: feature.id,
     'data-home-section': feature.id,
     'aria-labelledby': `home-${feature.id}-title`
-  }, copy, visual);
+  }, copyBlock, visual);
 }
 
 export function renderHome(root, { loggedIn = false, onLogin = null, onEnterApp = null, loginHref = '/?view=login' } = {}) {
   clear(root);
 
   const cleanups = [];
+  const updaters = [];
+  const bind = (fn) => updaters.push(fn);
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches || false;
-  const primaryLabel = loggedIn ? '进入工作台' : '立即登录，开始整理';
-  const navPrimaryLabel = loggedIn ? '进入工作台' : '登录 / 开始使用';
+  let currentLang = resolveInitialHomeLang();
+  const initCopy = HOME_COPY[currentLang];
 
   function goPrimary(event) {
     event?.preventDefault?.();
@@ -230,113 +218,287 @@ export function renderHome(root, { loggedIn = false, onLogin = null, onEnterApp 
     else location.href = '/?view=login';
   }
 
-  const desktopTabs = h('nav', { class: 'tn-home-nav-tabs tn-home-desktop-tabs', 'aria-label': '核心功能' });
-  for (const item of NAV_ITEMS) desktopTabs.append(tabLink(item));
+  /* ---------- 导航与语言切换 ---------- */
+  const desktopTabs = h('nav', { class: 'tn-home-nav-tabs tn-home-desktop-tabs', 'aria-label': initCopy.nav.desktopAriaLabel });
+  const desktopTabNodes = NAV_TAB_IDS.map((id) => tabLink(id, initCopy.nav.tabs[id]));
+  for (const tab of desktopTabNodes) desktopTabs.append(tab);
   const navPill = h('span', { class: 'tn-home-nav-pill', 'aria-hidden': 'true' });
   desktopTabs.append(navPill);
 
+  const mobileTabs = h('nav', { class: 'tn-home-mobile-tabs', 'aria-label': initCopy.nav.mobileAriaLabel });
+  const mobileTabNodes = NAV_TAB_IDS.map((id) => tabLink(id, initCopy.nav.tabs[id], { mobile: true }));
+  for (const tab of mobileTabNodes) mobileTabs.append(tab);
+
+  const brandSub = h('span', { text: initCopy.brand.sub });
+  const brandLink = h('a', { class: 'tn-home-brand', href: '#top', 'aria-label': initCopy.brand.ariaLabel },
+    brandMark(),
+    h('span', { class: 'tn-home-brand-word' },
+      h('strong', { text: initCopy.brand.name }),
+      brandSub
+    )
+  );
+  bind((copy) => {
+    brandLink.setAttribute('aria-label', copy.brand.ariaLabel);
+    brandSub.textContent = copy.brand.sub;
+  });
+
+  const langZhBtn = h('button', {
+    class: 'tn-home-lang-btn',
+    type: 'button',
+    'data-test': 'home-lang-zh',
+    'aria-pressed': 'true',
+    text: '中',
+    onclick: () => switchLang('zh')
+  });
+  const langEnBtn = h('button', {
+    class: 'tn-home-lang-btn',
+    type: 'button',
+    'data-test': 'home-lang-en',
+    'aria-pressed': 'false',
+    text: 'EN',
+    onclick: () => switchLang('en')
+  });
+  const langSwitch = h('div', {
+    class: 'tn-home-lang',
+    'data-test': 'home-lang-switch',
+    role: 'group',
+    'aria-label': '切换语言 / Switch language'
+  }, langZhBtn, langEnBtn);
+
+  const navDownload = pluginDownloadLink({
+    class: 'tn-home-btn tn-home-btn-ghost tn-home-nav-download',
+    label: initCopy.nav.download,
+    test: 'home-download-plugin'
+  });
+  const navPrimaryText = h('span', { text: loggedIn ? initCopy.nav.enterApp : initCopy.nav.login });
+
+  bind((copy) => {
+    desktopTabs.setAttribute('aria-label', copy.nav.desktopAriaLabel);
+    mobileTabs.setAttribute('aria-label', copy.nav.mobileAriaLabel);
+    NAV_TAB_IDS.forEach((id, idx) => {
+      desktopTabNodes[idx].textContent = copy.nav.tabs[id];
+      mobileTabNodes[idx].textContent = copy.nav.tabs[id];
+    });
+    navDownload.textContent = copy.nav.download;
+    navDownload.title = copy.nav.downloadTitle;
+    navPrimaryText.textContent = loggedIn ? copy.nav.enterApp : copy.nav.login;
+  });
+
   const navBar = h('header', { class: 'tn-home-nav', 'data-test': 'home-nav' },
     h('div', { class: 'tn-home-nav-inner' },
-      h('a', { class: 'tn-home-brand', href: '#top', 'aria-label': 'TOUNAR 帮你理 首页' },
-        brandMark(),
-        h('span', { class: 'tn-home-brand-word' }, h('strong', { text: 'TOUNAR' }), h('span', { text: '帮你理' }))),
+      brandLink,
       desktopTabs,
       h('div', { class: 'tn-home-nav-actions' },
-        pluginDownloadLink({ class: 'tn-home-btn tn-home-btn-ghost tn-home-nav-download', label: '下载插件', test: 'home-download-plugin' }),
+        langSwitch,
+        navDownload,
         h('a', {
           class: 'tn-home-btn tn-home-btn-primary', href: loggedIn ? '/' : loginHref,
           'data-test': 'home-nav-login', onclick: goPrimary
-        }, h('span', { text: navPrimaryLabel }), h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' }))
+        }, navPrimaryText, h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' }))
       )
     ),
-    (() => {
-      const mobile = h('nav', { class: 'tn-home-mobile-tabs', 'aria-label': '核心功能（移动端）' });
-      for (const item of NAV_ITEMS) mobile.append(tabLink(item, { mobile: true }));
-      return mobile;
-    })()
+    mobileTabs
   );
 
+  /* ---------- Hero ---------- */
+  const heroBadgeText = h('span', { text: initCopy.hero.badge });
   const heroShot = shotFrame({
     image: {
       src: '/assets/img/home/hero-ledger.webp',
-      alt: 'Tounar 投递台账：累计投递、进行中、面试中统计与多条不同状态的岗位记录',
-      path: 'tounar · 投递台账',
+      alt: initCopy.hero.shotAlt,
+      path: initCopy.hero.shotPath,
       width: 1020,
       height: 660
     },
     test: 'home-hero-shot',
     badge: h('div', { class: 'tn-home-shot-badge tn-home-hero-badge', 'data-test': 'home-hero-badge' },
       h('span', { class: 'tn-home-badge-dot', 'aria-hidden': 'true' }),
-      h('span', { text: 'AI 助手：已按目标 JD 拆解 3 处简历改写建议' }))
+      heroBadgeText)
+  });
+
+  const heroEyebrowText = h('span', { text: initCopy.hero.eyebrow });
+  const heroBrandEl = h('span', { class: 'tn-home-hero-brand', text: initCopy.hero.brand });
+  const heroSloganEl = h('span', { class: 'tn-home-hero-slogan', text: initCopy.hero.slogan });
+  const heroLeadText = document.createTextNode(initCopy.hero.copy);
+  const heroEmEl = h('span', { class: 'tn-home-hero-em', text: initCopy.hero.emphasis });
+  const heroPrimaryText = h('span', { text: loggedIn ? initCopy.hero.ctaEnterApp : initCopy.hero.ctaLogin });
+  const heroHowLink = h('a', { class: 'tn-home-btn tn-home-btn-secondary tn-home-btn-lg', href: '#details', 'data-test': 'home-cta-how', text: initCopy.hero.ctaHow });
+  const stepsTagEl = h('span', { class: 'tn-home-mono-tag', text: initCopy.hero.stepsTag });
+  const stepsSmallEl = h('span', { class: 'tn-home-small', text: initCopy.hero.stepsSmall });
+  const stepNums = ['①', '②', '③'];
+  const stepTextEls = initCopy.hero.steps.map((text) => h('span', { text }));
+
+  bind((copy) => {
+    heroEyebrowText.textContent = copy.hero.eyebrow;
+    heroBrandEl.textContent = copy.hero.brand;
+    heroSloganEl.textContent = copy.hero.slogan;
+    heroLeadText.nodeValue = copy.hero.copy;
+    heroEmEl.textContent = copy.hero.emphasis;
+    heroPrimaryText.textContent = loggedIn ? copy.hero.ctaEnterApp : copy.hero.ctaLogin;
+    heroHowLink.textContent = copy.hero.ctaHow;
+    stepsTagEl.textContent = copy.hero.stepsTag;
+    stepsSmallEl.textContent = copy.hero.stepsSmall;
+    stepTextEls.forEach((node, idx) => { node.textContent = copy.hero.steps[idx]; });
+    heroShot.img.alt = copy.hero.shotAlt;
+    heroShot.pathEl.textContent = copy.hero.shotPath;
+    heroBadgeText.textContent = copy.hero.badge;
   });
 
   const hero = h('section', { class: 'tn-home-hero', id: 'top', 'aria-labelledby': 'home-hero-title' },
     h('div', { class: 'tn-home-hero-copy' },
       h('div', { class: 'tn-home-hero-eyebrow tn-home-hero-in' },
         h('span', { class: 'tn-home-badge-dot', 'aria-hidden': 'true' }),
-        h('span', { text: 'Tounar 帮你理 · 个人求职台账与 AI 助手' })),
+        heroEyebrowText),
       h('h1', { class: 'tn-home-hero-title tn-home-hero-in', id: 'home-hero-title' },
-        h('span', { class: 'tn-home-hero-brand', text: 'Tounar 帮你理' }),
-        h('span', { class: 'tn-home-hero-slogan', text: '让投递更省心' })),
+        heroBrandEl,
+        heroSloganEl),
       h('p', { class: 'tn-home-hero-copytext tn-home-hero-in', 'data-hero-delay': '1' },
-        '逛官网时顺手记下岗位，改简历时照着 JD 逐条对齐，面试邮件来了自动推进状态。',
-        h('span', { class: 'tn-home-hero-em', text: '你只管准备面试，琐碎的事交给我们理清楚。' })),
+        heroLeadText,
+        heroEmEl),
       h('div', { class: 'tn-home-hero-actions tn-home-hero-in', 'data-hero-delay': '2' },
         h('a', { class: 'tn-home-btn tn-home-btn-primary tn-home-btn-lg', href: loggedIn ? '/' : loginHref, 'data-test': 'home-cta-login', onclick: goPrimary },
-          h('span', { text: primaryLabel }), h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' })),
-        h('a', { class: 'tn-home-btn tn-home-btn-secondary tn-home-btn-lg', href: '#details', 'data-test': 'home-cta-how', text: '看看怎么用 ↓' })),
+          heroPrimaryText, h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' })),
+        heroHowLink),
       h('div', { class: 'tn-home-steps tn-home-hero-in', 'data-hero-delay': '3', 'data-test': 'home-steps' },
-        h('div', { class: 'tn-home-steps-label' }, h('span', { class: 'tn-home-mono-tag', text: '直接开始' }), h('span', { class: 'tn-home-small', text: '3 步上手' })),
+        h('div', { class: 'tn-home-steps-label' }, stepsTagEl, stepsSmallEl),
         h('ol', { class: 'tn-home-steps-list' },
-          h('li', {}, h('span', { class: 'tn-home-step-num', text: '①' }), h('span', { text: '邮箱验证码登录' })),
-          h('li', {}, h('span', { class: 'tn-home-step-num', text: '②' }), h('span', { text: '装好插件或连上招聘邮箱' })),
-          h('li', {}, h('span', { class: 'tn-home-step-num', text: '③' }), h('span', { text: '照常逛官网、投简历，台账自动归位' }))))
+          ...stepNums.map((num, idx) => h('li', {}, h('span', { class: 'tn-home-step-num', text: num }), stepTextEls[idx]))))
     ),
-    h('div', { class: 'tn-home-hero-visual tn-home-hero-in', 'data-hero-delay': '2' }, heroShot)
+    h('div', { class: 'tn-home-hero-visual tn-home-hero-in', 'data-hero-delay': '2' }, heroShot.frame)
   );
 
+  /* ---------- Details ---------- */
   const detailPills = h('div', { class: 'tn-home-detail-pills' });
-  for (const item of FEATURES) {
+  const detailPillLabels = initCopy.features.map((item) => {
+    const labelSpan = h('span', { text: item.label });
     detailPills.append(h('a', {
       class: 'tn-home-detail-pill', href: `#${item.id}`, 'data-test': `home-detail-${item.id}`
-    }, h('span', { class: 'tn-home-detail-num', text: item.index }), h('span', { text: item.label })));
-  }
+    }, h('span', { class: 'tn-home-detail-num', text: item.index }), labelSpan));
+    return labelSpan;
+  });
+  const detailsMainEl = h('p', { class: 'tn-home-detail-main', id: 'home-details-title' }, initCopy.details.main);
+  const detailsSubEl = h('p', { class: 'tn-home-detail-sub', text: initCopy.details.sub });
+  bind((copy) => {
+    detailsMainEl.textContent = copy.details.main;
+    detailsSubEl.textContent = copy.details.sub;
+    detailPillLabels.forEach((node, idx) => { node.textContent = copy.features[idx].label; });
+  });
   const details = h('section', { class: 'tn-home-details', id: 'details', 'aria-labelledby': 'home-details-title' },
     h('div', { class: 'tn-home-detail-card tn-home-reveal' },
-      h('p', { class: 'tn-home-detail-main', id: 'home-details-title' },
-        '投到第 30 个岗位时，最累的往往不是面试，而是记不清自己投了谁、发了哪版简历、该不该去催进度。'),
-      h('p', { class: 'tn-home-detail-sub', text: '不替你海投，也不瞎编经历。Tounar 帮你理只做四件实在的事：' }),
+      detailsMainEl,
+      detailsSubEl,
       detailPills)
   );
 
-  const features = h('div', { class: 'tn-home-features' }, ...FEATURES.map(featureSection));
+  /* ---------- Features ---------- */
+  const features = h('div', { class: 'tn-home-features' },
+    ...initCopy.features.map((feature, idx) => featureSection(feature, idx, bind)));
+
+  /* ---------- Start / Trust / Footer ---------- */
+  const startEyebrow = h('span', { text: initCopy.start.eyebrow });
+  const startTitle = h('h2', { class: 'tn-home-start-title', id: 'home-start-title', text: initCopy.start.title });
+  const startSub = h('p', { class: 'tn-home-start-sub', text: initCopy.start.sub });
+  const footerPrimaryText = h('span', { text: loggedIn ? initCopy.start.enterApp : initCopy.start.login });
+  const footerDownload = pluginDownloadLink({
+    class: 'tn-home-btn tn-home-btn-outline-light tn-home-btn-lg',
+    label: initCopy.start.download,
+    test: 'home-footer-download'
+  });
+  const helpBtn = h('button', {
+    class: 'tn-home-btn tn-home-btn-ghost-light tn-home-btn-lg',
+    type: 'button',
+    'data-test': 'home-plugin-help',
+    text: initCopy.start.help,
+    onclick: () => openPluginHelp()
+  });
+  const trustNodes = initCopy.trust.map(([title, desc]) => {
+    const strongEl = h('strong', { text: title });
+    const descEl = h('span', { text: desc });
+    const item = h('div', { class: 'tn-home-trust-item' }, strongEl, descEl);
+    return { item, strongEl, descEl };
+  });
+  const footerBrandText = h('span', { text: initCopy.footer.brand });
+  const footerNoteEl = h('p', { class: 'tn-home-footer-note', text: initCopy.footer.note });
+
+  bind((copy) => {
+    startEyebrow.textContent = copy.start.eyebrow;
+    startTitle.textContent = copy.start.title;
+    startSub.textContent = copy.start.sub;
+    footerPrimaryText.textContent = loggedIn ? copy.start.enterApp : copy.start.login;
+    footerDownload.textContent = copy.start.download;
+    footerDownload.title = copy.nav.downloadTitle;
+    helpBtn.textContent = copy.start.help;
+    trustNodes.forEach((node, idx) => {
+      const [nextTitle, nextDesc] = copy.trust[idx];
+      node.strongEl.textContent = nextTitle;
+      node.descEl.textContent = nextDesc;
+    });
+    footerBrandText.textContent = copy.footer.brand;
+    footerNoteEl.textContent = copy.footer.note;
+  });
 
   const start = h('section', { class: 'tn-home-start', id: 'start', 'aria-labelledby': 'home-start-title' },
     h('div', { class: 'tn-home-start-card tn-home-reveal' },
       h('div', { class: 'tn-home-start-copy' },
-        h('div', { class: 'tn-home-eyebrow is-light' }, h('span', { text: '准备开始' })),
-        h('h2', { class: 'tn-home-start-title', id: 'home-start-title', text: '准备好把投递理清楚了吗？' }),
-        h('p', { class: 'tn-home-start-sub', text: '无需复杂配置，邮箱验证码登录即可开始；支持随时下载浏览器插件或按需连接招聘邮箱。' })),
+        h('div', { class: 'tn-home-eyebrow is-light' }, startEyebrow),
+        startTitle,
+        startSub),
       h('div', { class: 'tn-home-start-actions' },
         h('a', { class: 'tn-home-btn tn-home-btn-light tn-home-btn-lg', href: loggedIn ? '/' : loginHref, 'data-test': 'home-footer-login', onclick: goPrimary },
-          h('span', { text: loggedIn ? '进入工作台' : '立即登录' }), h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' })),
-        pluginDownloadLink({ class: 'tn-home-btn tn-home-btn-outline-light tn-home-btn-lg', label: '下载浏览器插件', test: 'home-footer-download' }),
-        h('button', { class: 'tn-home-btn tn-home-btn-ghost-light tn-home-btn-lg', type: 'button', 'data-test': 'home-plugin-help', text: '查看插件安装指引', onclick: () => openPluginHelp() }))),
-    h('div', { class: 'tn-home-trust tn-home-reveal', 'data-reveal-delay': '1' },
-      h('div', { class: 'tn-home-trust-item' }, h('strong', { text: '按需授权' }), h('span', { text: '插件与邮箱独立开关，不开也能手动补录。' })),
-      h('div', { class: 'tn-home-trust-item' }, h('strong', { text: '不留敏感原文' }), h('span', { text: '不读附件、不存正文、不传 Cookie。' })),
-      h('div', { class: 'tn-home-trust-item' }, h('strong', { text: '随时可撤回' }), h('span', { text: '一键断开授权，或彻底删除全部数据。' }))),
+          footerPrimaryText, h('span', { class: 'tn-home-btn-arrow', 'aria-hidden': 'true', text: '→' })),
+        footerDownload,
+        helpBtn)),
+    h('div', { class: 'tn-home-trust tn-home-reveal', 'data-reveal-delay': '1' }, ...trustNodes.map((n) => n.item)),
     h('footer', { class: 'tn-home-footer' },
-      h('div', { class: 'tn-home-footer-brand' }, brandMark(), h('span', { text: 'Tounar · 帮你理 — 让投递更省心' })),
-      h('p', { class: 'tn-home-footer-note', text: '内测说明：当前面向受邀用户开放，老账号可直接邮箱登录。' }))
+      h('div', { class: 'tn-home-footer-brand' }, brandMark(), footerBrandText),
+      footerNoteEl)
   );
 
-  const page = h('div', { class: 'tn-home', 'data-test': 'home-page' },
+  const page = h('div', { class: 'tn-home', 'data-test': 'home-page', 'data-lang': currentLang },
     h('div', { class: 'tn-home-sentinel', 'aria-hidden': 'true' }),
     navBar,
     h('main', { class: 'tn-home-main' }, hero, details, features, start)
   );
   root.append(page);
+
+  /* ---------- 语言应用与原地切换 ---------- */
+  function applyLang(lang, { persist = false } = {}) {
+    currentLang = lang === 'en' ? 'en' : 'zh';
+    if (persist) persistHomeLang(currentLang);
+    const copy = HOME_COPY[currentLang];
+    page.dataset.lang = currentLang;
+    document.documentElement.lang = copy.htmlLang;
+    document.title = copy.docTitle;
+    setMetaDescription(copy.metaDescription);
+    const isEn = currentLang === 'en';
+    langZhBtn.classList.toggle('is-active', !isEn);
+    langZhBtn.setAttribute('aria-pressed', isEn ? 'false' : 'true');
+    langEnBtn.classList.toggle('is-active', isEn);
+    langEnBtn.setAttribute('aria-pressed', isEn ? 'true' : 'false');
+    for (const update of updaters) update(copy);
+  }
+
+  function switchLang(nextLang) {
+    if (nextLang === currentLang) return;
+    const prevScrollY = window.scrollY;
+    applyLang(nextLang, { persist: true });
+    if (window.scrollY !== prevScrollY) {
+      window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+    }
+    requestAnimationFrame(() => {
+      if (!page.isConnected) return;
+      if (window.scrollY !== prevScrollY) {
+        window.scrollTo({ top: prevScrollY, behavior: 'instant' });
+      }
+      placePill();
+    });
+    document.fonts?.ready?.then(() => {
+      if (!page.isConnected) return;
+      placePill();
+    });
+  }
+
+  applyLang(currentLang, { persist: false });
 
   /* ---------- 吸顶状态 ---------- */
   const onScroll = () => navBar.classList.toggle('is-scrolled', window.scrollY > 24);
@@ -386,9 +548,14 @@ export function renderHome(root, { loggedIn = false, onLogin = null, onEnterApp 
   window.addEventListener('resize', onResize);
   cleanups.push(() => window.removeEventListener('resize', onResize));
 
-  requestAnimationFrame(() => {
+  const initPillRaf = requestAnimationFrame(() => {
     if (!page.isConnected) return;
     setActiveTab(activeTab);
+  });
+  cleanups.push(() => cancelAnimationFrame(initPillRaf));
+  document.fonts?.ready?.then(() => {
+    if (!page.isConnected) return;
+    placePill();
   });
 
   if ('IntersectionObserver' in window) {
@@ -454,7 +621,7 @@ export function renderHome(root, { loggedIn = false, onLogin = null, onEnterApp 
       timer = setInterval(() => { step = (step + 1) % steps.length; paint(); }, 2400);
     };
     const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    cleanups.push(() => clearInterval(timer));
+    cleanups.push(() => stop());
     const sync = () => { if (visible && !paused) start(); else stop(); };
 
     const mailSection = document.getElementById('mail');
@@ -488,5 +655,8 @@ export function renderHome(root, { loggedIn = false, onLogin = null, onEnterApp 
     for (const cleanup of cleanups.splice(0)) {
       try { cleanup(); } catch { /* 视图已卸载，忽略清理异常 */ }
     }
+    document.documentElement.lang = HOME_COPY.zh.htmlLang;
+    document.title = HOME_COPY.zh.docTitle;
+    setMetaDescription(HOME_COPY.zh.metaDescription);
   };
 }

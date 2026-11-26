@@ -2,6 +2,15 @@
    仅作用于 .tn-home，不修改工作台 / 登录页 / 落地页现有样式。
    零构建、零外网字体依赖；所有动效均可用 prefers-reduced-motion 关闭。 */
 
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/assets/fonts/nunito-latin-var.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 .tn-home {
   --home-font-display: "Inter", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
   --home-font-body: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, sans-serif;
@@ -85,6 +94,26 @@
 .tn-home-nav-tab:hover { color: var(--home-brand-dark); }
 .tn-home-nav-tab.is-active { color: #103f36; font-weight: 600; }
 .tn-home-nav-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+
+.tn-home-lang {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  border: 1px solid #dce5da; background: #eef3ec;
+  flex: 0 0 auto;
+}
+.tn-home-lang-btn {
+  border: 0; background: transparent; border-radius: 999px;
+  min-width: 30px; height: 26px; padding: 0 8px;
+  color: #5b6661; font-family: var(--home-font-body); font-size: 12px; font-weight: 600; line-height: 1;
+  cursor: pointer; white-space: nowrap;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.tn-home-lang-btn:hover { color: var(--home-brand-dark); }
+.tn-home-lang-btn.is-active {
+  background: #fff; color: var(--home-brand-dark);
+  box-shadow: 0 1px 4px rgba(16, 63, 54, 0.14);
+}
+.tn-home-lang-btn:focus-visible { outline: 2px solid var(--home-brand); outline-offset: 1px; }
 
 .tn-home-mobile-tabs {
   display: none; gap: 6px; overflow-x: auto; scrollbar-width: none;
@@ -388,6 +417,7 @@
   .tn-home-desktop-tabs { display: none; }
   .tn-home-mobile-tabs { display: flex; }
   .tn-home-nav-inner { height: 60px; }
+  .tn-home-nav-actions { margin-left: auto; }
   .tn-home-hero { padding-top: 48px; gap: 40px; }
   .tn-home-feature { gap: 42px; }
   .tn-home-details,
@@ -414,10 +444,11 @@
 /* ---------- 手机 ---------- */
 @media (max-width: 760px) {
   .tn-home { font-size: 15px; }
-  .tn-home-nav-inner { padding: 0 18px; gap: 12px; }
-  .tn-home-nav-actions { margin-left: auto; }
+  .tn-home-nav-inner { padding: 0 16px; gap: 10px; }
+  .tn-home-nav-actions { margin-left: auto; gap: 6px; }
+  .tn-home-lang-btn { min-width: 28px; height: 24px; padding: 0 7px; font-size: 11.5px; }
   .tn-home-nav-download { display: none; }
-  .tn-home-nav-actions .tn-home-btn-primary { min-height: 34px; padding: 7px 12px; font-size: 12.5px; }
+  .tn-home-nav-actions .tn-home-btn-primary { min-height: 32px; padding: 6px 11px; font-size: 12px; }
   .tn-home-nav-actions .tn-home-btn-arrow { display: none; }
   .tn-home-brand-word strong { font-size: 13px; }
   .tn-home-brand-word span { font-size: 11px; }
@@ -472,6 +503,75 @@
   .tn-home-feature-points li { gap: 9px; }
   .tn-home-shot-badge { font-size: 11px; padding: 8px 10px; }
   .tn-home-start-actions .tn-home-btn { flex-basis: 100%; }
+}
+
+/* ---------- 英文圆润排版与本地字体作用域 ---------- */
+.tn-home[data-lang="en"] {
+  --home-font-display: "Nunito", ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", "Segoe UI", system-ui, sans-serif;
+  --home-font-body: "Nunito", ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.tn-home[data-lang="en"] .tn-home-nav-tab {
+  padding: 5px 12px;
+  font-size: 13.5px;
+}
+.tn-home[data-lang="en"] .tn-home-hero-title {
+  font-size: 46px;
+  line-height: 1.14;
+  text-wrap: balance;
+}
+.tn-home[data-lang="en"] .tn-home-detail-main,
+.tn-home[data-lang="en"] .tn-home-feature-title,
+.tn-home[data-lang="en"] .tn-home-start-title {
+  text-wrap: balance;
+}
+.tn-home[data-lang="en"] .tn-home-hero-copytext {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.tn-home[data-lang="en"] .tn-home-hero-em {
+  margin-top: 6px;
+}
+.tn-home[data-lang="en"] .tn-home-feature-intro {
+  font-size: 15.5px;
+  line-height: 1.62;
+}
+.tn-home[data-lang="en"] .tn-home-shot-badge {
+  max-width: min(460px, calc(100% - 20px));
+}
+.tn-home[data-lang="en"] .tn-home-mail-badge {
+  max-width: min(490px, calc(100% - 20px));
+}
+.tn-home[data-lang="en"] .tn-home-assistant-badge {
+  max-width: 295px;
+}
+
+@media (max-width: 960px) {
+  .tn-home[data-lang="en"] .tn-home-detail-main { font-size: 23px; }
+}
+
+@media (max-width: 760px) {
+  .tn-home[data-lang="en"] {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .tn-home[data-lang="en"] .tn-home-hero-title {
+    font-size: 31px;
+    line-height: 1.18;
+  }
+  .tn-home[data-lang="en"] .tn-home-hero-copytext {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .tn-home[data-lang="en"] .tn-home-detail-main { font-size: 20px; }
+  .tn-home[data-lang="en"] .tn-home-feature-title { font-size: 23px; }
+  .tn-home[data-lang="en"] .tn-home-feature-intro { font-size: 14.5px; }
+  .tn-home[data-lang="en"] .tn-home-shot-badge,
+  .tn-home[data-lang="en"] .tn-home-mail-badge,
+  .tn-home[data-lang="en"] .tn-home-assistant-badge {
+    max-width: 100%;
+  }
 }
 
 /* ---------- 减动效 ---------- */

@@ -4,7 +4,7 @@ import { confirmPluginConnection, openSiteManager, promptPluginConnection } from
 
 import { api, onUnauthorized, errorText } from './api.js';
 import { h, clear, toast, confirmDialog } from './util.js';
-import { renderHome } from './views/home.js?v=20261126-1';
+import { renderHome } from './views/home.js?v=20261127-1';
 import { renderLogin } from './views/login.js?v=20261125-1';
 import { renderLedger } from './views/ledger.js?v=20261125-1';
 import { renderLanding } from './views/landing.js?v=20261125-1';
