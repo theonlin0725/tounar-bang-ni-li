@@ -129,7 +129,8 @@ export async function confirmPluginConnection({webFirst = false, existingBinding
 }
 
 export function openSiteManager({onboarding = false, onClose = null} = {}) {
-  const card = createSiteAccessCard({manager:!onboarding});
+  // 首次引导直接展开完整列表，用户打开即可全选或一键授权全部常见官网。
+  const card = createSiteAccessCard({manager:!onboarding, expanded:onboarding});
   return openModal({title:'招聘网站授权', subtitle:'管理当前浏览器的采集权限', body:card.element, stacked:true, testid:'site-access-modal', onClose:() => { card.dispose(); onClose?.(); }});
 }
 
@@ -143,11 +144,16 @@ async function maybeProfileOnboarding() {
   } catch { /* onboarding must never block normal navigation */ }
 }
 
-export function createSiteAccessCard({manager = false} = {}) {
+export function createSiteAccessCard({manager = false, expanded: initiallyExpanded = false} = {}) {
   const element = h('section', {class:'tn-pref-group', 'data-test':'site-access-card'});
   const gen = App.gen;
   let permissionDialog = null, permissionBusy = false;
-  let disposed = false, timer, data, signature = '', selected = null, expanded = false, query = '', tab = manager ? 'granted' : 'add';
+  let disposed = false, timer, data, signature = '', selected = null;
+  let expanded = Boolean(initiallyExpanded);
+  let query = '', tab = manager ? 'granted' : 'add';
+  let listScrollTop = 0;
+  let refreshSeq = 0;
+  const openDetails = new Set();
   const revokeSelection = new Set();
   const summary = h('p', {class:'tn-small', text:'正在读取授权范围…', 'data-test':'site-access-summary'});
   const content = h('div');
@@ -157,6 +163,17 @@ export function createSiteAccessCard({manager = false} = {}) {
   async function remember() {
     try {await extensionRequest('preferences', {selection:[...selected]});}
     catch (err) {if (!disposed) message.textContent=errorText(err);}
+  }
+  function captureOpenDetails() {
+    for (const details of content.querySelectorAll('details[data-group-id]')) {
+      if (details.open) openDetails.add(details.dataset.groupId);
+      else openDetails.delete(details.dataset.groupId);
+    }
+  }
+  function captureListState() {
+    const currentList = content.querySelector('[data-test="site-access-list"]');
+    if (currentList) listScrollTop = currentList.scrollTop;
+    captureOpenDetails();
   }
   async function act(operation, origins) {
     if (permissionBusy || disposed) return;
@@ -179,7 +196,15 @@ export function createSiteAccessCard({manager = false} = {}) {
         if (event.source !== frame.contentWindow || event.origin !== origin || event.data?.channel !== 'tounar-permission-frame' || event.data.id !== prepared.id) return;
         if (event.data.type === 'ready') {clearTimeout(readyTimer);loading.remove();}
         if (event.data.type === 'height' && Number.isFinite(event.data.height)) frame.style.height=Math.min(390,Math.max(180,event.data.height))+'px';
-        if (event.data.type === 'complete') {finished=true;permissionDialog?.close();message.textContent=operation === 'grant' ? '授权完成，正在更新网站状态。' : '已撤销所选网站授权，已有台账保留。';}
+        if (event.data.type === 'complete') {
+          finished=true;permissionDialog?.close();
+          message.textContent=operation === 'grant' ? '授权完成，正在更新网站状态。' : '已撤销所选网站授权，已有台账保留。';
+          // 插件写入 Chrome 权限可能比 complete 事件晚几十毫秒：先立即刷新，
+          // 再补一次校验，避免用户还要等 2 秒轮询才看到已授权状态。
+          clearTimeout(timer);
+          refresh();
+          setTimeout(() => {if (!disposed) refresh();}, 350);
+        }
         if (event.data.type === 'cancel') permissionDialog?.close();
       };
       const escape=event => {if(event.key === 'Escape') {event.preventDefault();event.stopImmediatePropagation();permissionDialog?.close();}};
@@ -205,6 +230,7 @@ export function createSiteAccessCard({manager = false} = {}) {
   }
   function render() {
     if (!data) return;
+    captureListState();
     clear(content);
     const granted = data.groups.filter(g => g.granted.length);
     summary.textContent=`已授权 ${granted.length} 个网站`;
@@ -213,70 +239,239 @@ export function createSiteAccessCard({manager = false} = {}) {
       for (const [id,label] of [['granted','已授权'],['add','添加网站']]) tabs.append(h('button', {class:`tn-btn${tab === id ? ' tn-btn-primary' : ''}`, text:label, onclick:() => {tab=id;query='';render();}}));
       content.append(tabs);
     }
-    const list = h('div', {style:{maxHeight:'300px', overflowY:'auto', marginTop:'12px'}, 'data-test':'site-access-list'});
+    const selectAll = h('input', {type:'checkbox', 'data-test':'site-access-select-all', 'aria-label':'全选当前列表'});
+    const selectCount = h('span', {class:'tn-site-select-count', 'data-test':'site-access-select-count', text:'已选 0 个网站'});
+    const clearSelection = h('button', {class:'tn-btn tn-btn-sm tn-btn-ghost', type:'button', 'data-test':'site-access-clear-selection', text:'清空选择'});
+    const selectBar = h('div', {class:'tn-site-select-bar', 'data-test':'site-access-select-bar'},
+      h('label', {class:'tn-site-select-all'}, selectAll, h('span', {text:'全选当前列表'})),
+      selectCount,
+      h('span', {class:'tn-grow'}),
+      clearSelection);
+    const list = h('div', {class:'tn-site-scroll', 'data-test':'site-access-list'});
     const search=h('input', {class:'tn-input', placeholder:'搜索公司或域名', value:query, 'aria-label':'搜索公司或域名', oninput:e => {query=e.target.value; renderList();}});
     if (manager || expanded) content.append(search);
-    content.append(list);
+    content.append(selectBar, list);
     const count=h('span', {class:'tn-small'});
-    const grantButton=h('button', {class:'tn-btn tn-btn-primary', text:'授权选中网站', 'data-test':'site-access-grant', onclick:() => act('grant',[...selected].filter(p => data.groups.some(g => g.domains.some(d => 'https://'+d.host+'/*' === p && !d.granted))))});
-    function selectionCount() {
-      const countValue=data.groups.filter(g => g.domains.some(d => !d.granted && selected.has('https://'+d.host+'/*'))).length;
-      count.textContent=`已选 ${countValue} 个网站`; grantButton.disabled=!countValue;
+    const grantButton=h('button', {class:'tn-btn', text:'授权选中网站', 'data-test':'site-access-grant', onclick:() => act('grant',[...selected].filter(p => missingOrigins().includes(p)))});
+    const grantAllButton=h('button', {class:'tn-btn tn-btn-primary', type:'button', text:'一键授权全部', 'data-test':'site-access-grant-all', onclick:() => act('grant',missingOrigins())});
+    const groupChecks = new Map();
+    const domainChecks = new Map();
+    let visibleGroups = [];
+    let revokeSelectedButton = null;
+
+    function missingOriginsFor(group) {
+      return group.domains.filter(d => !d.granted).map(d => 'https://'+d.host+'/*');
     }
-    function renderList() {
+    function missingOrigins() {
+      return [...new Set(data.groups.flatMap(group => missingOriginsFor(group)))];
+    }
+    function currentGroups() {
+      if (tab === 'granted') return data.groups.filter(g => g.granted.length);
+      if (!manager && !expanded) {
+        const granted = data.groups.filter(g => g.granted.length);
+        return granted.length ? [granted.find(g => g.id === 'bytedance') || granted[0]] : data.groups.filter(g => g.id === 'bytedance');
+      }
+      return data.groups;
+    }
+    function matchesQuery(group) {
+      return `${group.label} ${group.hosts.join(' ')}`.toLowerCase().includes(query.toLowerCase());
+    }
+    function paintGroupRow(group, check, row) {
+      if (tab === 'granted') {
+        check.checked = revokeSelection.has(group.id);
+        check.indeterminate = false;
+        row.classList.toggle('is-selected', check.checked);
+        return;
+      }
+      const missing = missingOriginsFor(group);
+      if (!missing.length) {
+        check.checked = true;
+        check.indeterminate = false;
+        row.classList.remove('is-selected');
+        return;
+      }
+      const selectedCount = missing.filter(p => selected.has(p)).length;
+      check.checked = selectedCount === missing.length;
+      check.indeterminate = selectedCount > 0 && !check.checked;
+      row.classList.toggle('is-selected', selectedCount > 0);
+    }
+    function syncSelectionUI() {
+      if (!data) return;
+      if (tab === 'granted') {
+        const total = visibleGroups.length;
+        const selectedCount = visibleGroups.filter(g => revokeSelection.has(g.id)).length;
+        selectAll.checked = total > 0 && selectedCount === total;
+        selectAll.indeterminate = selectedCount > 0 && selectedCount < total;
+        selectAll.disabled = total === 0;
+        selectCount.textContent = `已选 ${selectedCount} / ${total} 个已授权网站`;
+        clearSelection.disabled = revokeSelection.size === 0;
+        if (revokeSelectedButton) revokeSelectedButton.disabled = revokeSelection.size === 0;
+      } else {
+        const candidates = visibleGroups.flatMap(group => missingOriginsFor(group));
+        const selectedCandidates = candidates.filter(p => selected.has(p));
+        const totalSites = visibleGroups.filter(group => missingOriginsFor(group).length > 0).length;
+        const selectedSites = visibleGroups.filter(group => missingOriginsFor(group).some(p => selected.has(p))).length;
+        selectAll.checked = candidates.length > 0 && selectedCandidates.length === candidates.length;
+        selectAll.indeterminate = selectedCandidates.length > 0 && !selectAll.checked;
+        selectAll.disabled = candidates.length === 0;
+        selectCount.textContent = `已选 ${selectedSites} / ${totalSites} 个待授权网站`;
+        clearSelection.disabled = selected.size === 0;
+      }
+      const selectedSitesAll = data.groups.filter(group => missingOriginsFor(group).some(p => selected.has(p))).length;
+      count.textContent = `已选 ${selectedSitesAll} 个网站`;
+      grantButton.textContent = `授权选中网站（${selectedSitesAll}）`;
+      grantButton.disabled = selectedSitesAll === 0;
+      const totalMissing = missingOrigins().length;
+      grantAllButton.hidden = tab !== 'add' || totalMissing === 0;
+      grantAllButton.disabled = totalMissing === 0;
+    }
+    function renderList({restoreTop = null} = {}) {
+      if (restoreTop === null) {
+        if (list.isConnected) listScrollTop = list.scrollTop;
+        captureOpenDetails();
+      } else {
+        listScrollTop = restoreTop;
+      }
       clear(list);
-      let groups = data.groups;
-      if (tab === 'granted') groups=granted;
-      if (!manager && !expanded) groups=granted.length ? [granted.find(g => g.id === 'bytedance') || granted[0]] : groups.filter(g => g.id === 'bytedance');
-      groups=groups.filter(g => `${g.label} ${g.hosts.join(' ')}`.toLowerCase().includes(query.toLowerCase()));
-      if (!groups.length) list.append(h('p', {class:'tn-small tn-muted', text:query ? '未找到匹配的网站。可在招聘页面通过插件授权当前网站。' : '尚未授权网站，切换到「添加网站」开始授权。'}));
-      for (const group of groups) {
-        const row=h('div', {style:{padding:'12px 0', borderBottom:'1px solid var(--tn-border, #e5e7eb)'}});
-        const missing=group.domains.filter(d => !d.granted).map(d => 'https://'+d.host+'/*');
-        const check=h('input', {type:'checkbox', 'aria-label':group.label});
-        check.checked=tab === 'granted' ? revokeSelection.has(group.id) : missing.length ? missing.every(p => selected.has(p)) : true;
-        check.indeterminate=tab !== 'granted' && missing.some(p => selected.has(p)) && !check.checked;
-        check.disabled=tab !== 'granted' && !missing.length;
+      groupChecks.clear();
+      domainChecks.clear();
+      visibleGroups = currentGroups().filter(matchesQuery);
+      if (!visibleGroups.length) {
+        list.append(h('p', {class:'tn-small tn-muted', 'data-test':'site-access-empty', text:query ? '未找到匹配的网站。可在招聘页面通过插件授权当前网站。' : '尚未授权网站，切换到「添加网站」开始授权。'}));
+      }
+      for (const group of visibleGroups) {
+        const missing = missingOriginsFor(group);
+        const row = h('div', {class:'tn-site-row'});
+        const check = h('input', {type:'checkbox', 'aria-label':group.label, 'data-test':`site-access-group-${group.id}`});
+        groupChecks.set(group.id, check);
+        check.disabled = tab !== 'granted' && !missing.length;
         check.addEventListener('change', () => {
-          if (tab === 'granted') {if(check.checked) revokeSelection.add(group.id); else revokeSelection.delete(group.id);}
-          else {for(const p of missing) {if(check.checked) selected.add(p); else selected.delete(p);} remember(); renderList();selectionCount();}
+          if (tab === 'granted') {
+            if (check.checked) revokeSelection.add(group.id); else revokeSelection.delete(group.id);
+            row.classList.toggle('is-selected', check.checked);
+            syncSelectionUI();
+            return;
+          }
+          for (const p of missing) {
+            if (check.checked) selected.add(p); else selected.delete(p);
+          }
+          const inputs = domainChecks.get(group.id);
+          if (inputs) for (const [origin, input] of inputs) if (missing.includes(origin)) input.checked = check.checked;
+          row.classList.toggle('is-selected', check.checked);
+          remember();
+          syncSelectionUI();
         });
-        const state=group.granted.length ? (group.domains.every(d => d.granted) ? '已授权' : '部分域名已授权') : '待授权';
-        row.append(h('label', {class:'tn-check', style:{margin:'0'}}, check, h('strong', {text:group.label}), h('span', {class:'tn-small tn-muted', text:state})));
-        const details=h('details', {style:{marginLeft:'24px', marginTop:'6px'}}, h('summary', {class:'tn-small tn-muted', style:{cursor:'pointer'}, text:'查看域名'}));
+        const state = group.granted.length ? (group.domains.every(d => d.granted) ? '已授权' : '部分域名已授权') : '待授权';
+        row.append(h('label', {class:'tn-check tn-site-row-label'}, check, h('strong', {text:group.label}), h('span', {class:`tn-small tn-muted tn-site-state${group.domains.every(d => d.granted) ? ' is-granted' : ''}`, text:state})));
+        const details = h('details', {class:'tn-site-domains'}, h('summary', {class:'tn-small tn-muted', text:'查看域名'}));
+        details.dataset.groupId = group.id;
+        details.open = openDetails.has(group.id);
+        details.addEventListener('toggle', () => {
+          if (details.open) openDetails.add(group.id); else openDetails.delete(group.id);
+        });
         if (group.entryUrl) {
           details.append(h('p', {class:'tn-small'}, h('a', {href:group.entryUrl, target:'_blank', rel:'noopener noreferrer', text:group.campusFirst ? '打开校招入口' : '打开招聘入口'})));
         }
         if (group.socialUrl && group.socialUrl !== group.entryUrl) {
           details.append(h('p', {class:'tn-small'}, h('a', {href:group.socialUrl, target:'_blank', rel:'noopener noreferrer', text:'打开社招入口'})));
         }
+        const inputs = new Map();
+        domainChecks.set(group.id, inputs);
         for (const domain of group.domains) {
           const origin='https://'+domain.host+'/*';
-          const domainCheck=h('input', {type:'checkbox', 'aria-label':domain.host});
-          domainCheck.checked=domain.granted || selected.has(origin); domainCheck.disabled=domain.granted || tab === 'granted';
-          domainCheck.addEventListener('change', () => {if(domainCheck.checked) selected.add(origin); else selected.delete(origin); remember();check.checked=missing.every(p => selected.has(p));check.indeterminate=missing.some(p => selected.has(p))&&!check.checked; selectionCount();});
-          const domainRow=h('div', {class:'tn-action-row'}, h('label', {class:'tn-check'}, domainCheck, domain.host));
+          const domainCheck = h('input', {type:'checkbox', 'aria-label':domain.host, 'data-test':`site-access-domain-${domain.host}`});
+          inputs.set(origin, domainCheck);
+          domainCheck.checked = domain.granted || selected.has(origin);
+          domainCheck.disabled = domain.granted || tab === 'granted';
+          domainCheck.addEventListener('change', () => {
+            if (domainCheck.checked) selected.add(origin); else selected.delete(origin);
+            const anySelected = missing.some(p => selected.has(p));
+            row.classList.toggle('is-selected', anySelected);
+            check.checked = missing.length > 0 && missing.every(p => selected.has(p));
+            check.indeterminate = anySelected && !check.checked;
+            remember();
+            syncSelectionUI();
+          });
+          const domainRow = h('div', {class:'tn-action-row tn-site-domain-row'}, h('label', {class:'tn-check'}, domainCheck, domain.host));
           if (domain.granted && manager) domainRow.append(h('button', {class:'tn-btn tn-btn-sm', text:'撤销', onclick:() => act('revoke',domain.origins || group.granted)}));
           details.append(domainRow);
         }
         row.append(details);
         if (tab === 'granted') row.append(h('button', {class:'tn-btn tn-btn-sm', text:'撤销此网站', onclick:() => act('revoke',group.granted)}));
+        paintGroupRow(group, check, row);
         list.append(row);
       }
+      list.scrollTop = listScrollTop;
+      requestAnimationFrame(() => {if (!disposed && list.isConnected) list.scrollTop = listScrollTop;});
+      syncSelectionUI();
     }
-    renderList(); selectionCount();
+    selectAll.addEventListener('change', () => {
+      if (tab === 'granted') {
+        for (const group of visibleGroups) {
+          if (selectAll.checked) revokeSelection.add(group.id); else revokeSelection.delete(group.id);
+          const check = groupChecks.get(group.id);
+          const row = check?.closest('.tn-site-row');
+          if (check && row) paintGroupRow(group, check, row);
+        }
+        syncSelectionUI();
+        return;
+      }
+      for (const group of visibleGroups) {
+        const missing = missingOriginsFor(group);
+        for (const p of missing) {
+          if (selectAll.checked) selected.add(p); else selected.delete(p);
+        }
+        const check = groupChecks.get(group.id);
+        const row = check?.closest('.tn-site-row');
+        const inputs = domainChecks.get(group.id);
+        if (inputs) for (const [origin, input] of inputs) if (missing.includes(origin)) input.checked = selectAll.checked;
+        if (check && row) paintGroupRow(group, check, row);
+      }
+      remember();
+      syncSelectionUI();
+    });
+    clearSelection.addEventListener('click', () => {
+      if (tab === 'granted') {
+        revokeSelection.clear();
+        for (const [id, check] of groupChecks) {
+          const group = visibleGroups.find(item => item.id === id);
+          const row = check.closest('.tn-site-row');
+          if (group && row) paintGroupRow(group, check, row);
+        }
+        syncSelectionUI();
+        return;
+      }
+      selected.clear();
+      for (const [id, check] of groupChecks) {
+        const group = visibleGroups.find(item => item.id === id);
+        const row = check.closest('.tn-site-row');
+        if (group && row) paintGroupRow(group, check, row);
+        const inputs = domainChecks.get(id);
+        if (inputs) for (const input of inputs.values()) if (!input.disabled) input.checked = false;
+      }
+      remember();
+      syncSelectionUI();
+    });
+    renderList({restoreTop:listScrollTop});
     if (!manager) content.append(h('button', {class:'tn-btn tn-btn-sm', text:expanded ? '收起更多 ▴' : '展开更多招聘网站 ▾', style:{marginTop:'10px'}, onclick:() => {expanded=!expanded; query=''; render();}}));
     const actions=h('div', {class:'tn-action-row', style:{marginTop:'12px'}});
-    if (tab === 'add') actions.append(count, grantButton);
-    else actions.append(h('button', {class:'tn-btn', text:'撤销选中网站', onclick:() => act('revoke',granted.filter(g => revokeSelection.has(g.id)).flatMap(g => g.granted))}), h('button', {class:'tn-btn tn-btn-danger', text:'全部撤销', onclick:() => act('revoke',granted.flatMap(g => g.granted))}));
+    if (tab === 'add') {
+      actions.append(count, grantAllButton, grantButton);
+    } else {
+      revokeSelectedButton = h('button', {class:'tn-btn', text:'撤销选中网站', onclick:() => act('revoke',granted.filter(g => revokeSelection.has(g.id)).flatMap(g => g.granted))});
+      actions.append(revokeSelectedButton, h('button', {class:'tn-btn tn-btn-danger', text:'全部撤销', onclick:() => act('revoke',granted.flatMap(g => g.granted))}));
+    }
     if (!manager) actions.append(h('button', {class:'tn-btn', text:'管理授权', onclick:openSiteManager}));
     content.append(actions);
+    syncSelectionUI();
   }
   async function refresh() {
     if (disposed || gen !== App.gen) {dispose();return;}
+    const seq = ++refreshSeq;
+    clearTimeout(timer);
     try {
       const next=await extensionRequest('status');
-      if (disposed || gen !== App.gen) return;
+      if (seq !== refreshSeq || disposed || gen !== App.gen) return;
       if (selected === null) {
         selected=new Set(next.selection ?? (next.groups.some(g => g.granted.length) ? [] : next.groups.find(g => g.id === 'bytedance')?.hosts.map(h => 'https://'+h+'/*') || []));
         await remember();
@@ -285,7 +480,7 @@ export function createSiteAccessCard({manager = false} = {}) {
       data=next;
       if (changed !== signature) {signature=changed; for(const group of data.groups) for(const domain of group.domains) if(domain.granted) selected.delete('https://'+domain.host+'/*'); await remember();render();}
     } catch (error) {if(!disposed) {summary.textContent='尚未读取到插件授权状态'; message.textContent=errorText(error);}}
-    finally {if(!disposed) timer=setTimeout(refresh,2000);}
+    finally {if (seq === refreshSeq && !disposed) timer=setTimeout(refresh,2000);}
   }
   refresh();
   return {element,dispose};

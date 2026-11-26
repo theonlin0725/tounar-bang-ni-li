@@ -71,10 +71,11 @@ try {
   await sw.evaluate(async base=>{await startPairing({serverUrl:base,deviceName:'Expiry test'});const s=await TounarCommon.getSettings();await TounarCommon.setSettings({pendingPairing:{...s.pendingPairing,expires_at:new Date(0).toISOString()}});},server.base);
   await page.goto(server.base+'/?panel=plugin-connect');await page.getByText('连接请求已取消或过期，请在插件中重新发起').waitFor();check('expired connection cannot be approved',await page.locator('[data-test="plugin-connect-confirm"]').count()===0);
   await page.goto(server.base+'/?panel=plugin-sites');
-  await page.getByRole('button',{name:'添加网站',exact:true}).click();
-  await page.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).check();
+  const siteManager=page.locator('[data-test=site-access-modal]');
+  await siteManager.getByRole('button',{name:'添加网站',exact:true}).click();
+  await siteManager.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).check();
   const pageCount=context.pages().length;
-  await page.getByRole('button',{name:'授权选中网站',exact:true}).click();
+  await siteManager.locator('[data-test=site-access-grant]').click();
   const prompt=page.frameLocator('[data-test=permission-frame]');
   await prompt.getByRole('button',{name:'确认授权',exact:true}).waitFor();
   check('permission request opens inline confirmation without a new tab',context.pages().length===pageCount);

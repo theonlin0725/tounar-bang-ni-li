@@ -14,6 +14,7 @@
     "test:e2e": "node tests/e2e/run-e2e.mjs",
     "test:web": "node tests/e2e/run-web-e2e.mjs",
     "test:home": "node tests/e2e/home-landing.mjs",
+    "test:site-access": "node tests/e2e/site-access-modal.mjs",
     "test:onboarding-v115": "node tests/e2e/onboarding-v115.mjs",
     "local:acceptance": "node server/scripts/local-acceptance.js",
     "local:stop": "node server/scripts/local-stop.js",

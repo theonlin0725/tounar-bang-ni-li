@@ -22,7 +22,7 @@ try {
  const card=page.locator('[data-test=site-access-card]');await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).waitFor();
  const beforeBackend=await sw.evaluate(()=>chrome.permissions.contains({origins:['http://127.0.0.1/*']}));
  const beforePages=context.pages().length;const beforeWindows=await sw.evaluate(async()=>(await chrome.windows.getAll()).length);
- await card.getByRole('button',{name:'授权选中网站',exact:true}).click();
+ await card.locator('[data-test=site-access-grant]').click();
  const modal=page.locator('[data-test=permission-confirm-modal]');await modal.waitFor();
  const frame=page.frameLocator('[data-test=permission-frame]');await frame.getByRole('button',{name:'确认授权',exact:true}).waitFor();
  await frame.getByText('字节跳动招聘 · 2 个域名',{exact:true}).waitFor();
@@ -33,7 +33,7 @@ try {
  await frame.getByRole('button',{name:'取消',exact:true}).click();await modal.waitFor({state:'detached'});
  check('cancel keeps parent card and selected website',await card.isVisible() && await card.getByRole('checkbox',{name:'字节跳动招聘',exact:true}).isChecked());
  check('cancel does not grant permission',!await sw.evaluate(()=>chrome.permissions.contains({origins:['https://jobs.bytedance.com/*']})));
- await card.getByRole('button',{name:'授权选中网站',exact:true}).click();await frame.getByRole('button',{name:'确认授权',exact:true}).waitFor();
+ await card.locator('[data-test=site-access-grant]').click();await frame.getByRole('button',{name:'确认授权',exact:true}).waitFor();
  await frame.locator('summary').click();check('domains expandable inside inline confirmation',await frame.getByText('https://jobs.bytedance.com/*',{exact:true}).isVisible());
  await frame.getByRole('button',{name:'确认授权',exact:true}).click();
  console.log('Waiting for the native Chrome permission confirmation');

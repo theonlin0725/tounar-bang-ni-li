@@ -73,6 +73,7 @@ npm start
 CLOUD_LLM_ENABLED=false npm test
 CLOUD_LLM_ENABLED=false npm run test:web
 npm run test:home   # 官网引导页路由、吸顶导航、截图与登录衔接
+npm run test:site-access   # 招聘网站授权弹窗：全选、一键授权、滚动不跳顶
 ```
 
 `tests/e2e/home-landing.mjs` 覆盖官网首页首入、ScrollSpy、真实截图加载、官网 ↔ 登录页历史、深链登录恢复、已登录直接进工作台和移动端无横向溢出；官网截图可用 `node tools/capture-home-screenshots.mjs` 在隔离数据库中重新采集（需要 cwebp）。
